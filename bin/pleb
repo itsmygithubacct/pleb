@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# pleb — manage the "Pleb" kilix kiosk desktop session.
+#
+#   pleb install            add "Pleb" as a choosable LightDM session (needs sudo)
+#   pleb uninstall          remove it
+#   pleb test [opts]        try it in a throwaway X server (see: pleb test --help)
+#   pleb autologin on|off   boot straight into Pleb (kiosk) / back to greeter
+#   pleb kiosk on|off       hard kiosk: respawn kilix if it exits / don't
+#   pleb update [-y]        pull latest kilix, rebuild, offer to restart the kiosk
+#   pleb status             show install + engine state
+#   pleb doctor             check prerequisites
+#   pleb session            exec the session now (for the current $DISPLAY)
+#
+# Non-destructive: your current desktop session is untouched; "Pleb" is another choice
+# at the login screen. Uninstall reverses everything.
+set -euo pipefail
+
+PLEB_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=/dev/null
+. "$PLEB_ROOT/lib/common.sh"
+. "$PLEB_ROOT/lib/install.sh"
+. "$PLEB_ROOT/lib/autologin.sh"
+. "$PLEB_ROOT/lib/test.sh"
+. "$PLEB_ROOT/lib/kiosk.sh"
+. "$PLEB_ROOT/lib/update.sh"
+
+# print the leading comment block (line 2 until the first non-comment line)
+usage() { awk 'NR>1 && /^#/ {sub(/^# ?/,""); print; next} NR>1 {exit}' "${BASH_SOURCE[0]}"; }
+
+cmd_status() {
+    log "Pleb kiosk desktop — status"
+    local eng="$KILIX_DEFAULT"
+    if [ -x "$eng" ] && "$eng" --which >/dev/null 2>&1; then
+        info "engine   : $("$eng" --which 2>/dev/null | tail -1)  [$eng]"
+    else
+        info "engine   : NOT RUNNABLE at $eng  (run ~/kilix/bootstrap.sh)"
+    fi
+    if [ -f "$XSESSION_DST" ]; then info "session  : installed ($XSESSION_DST)"
+    else info "session  : not installed  (run: pleb install)"; fi
+    if [ -x "$SESSION_BIN_DST" ]; then info "launcher : $SESSION_BIN_DST"
+    else info "launcher : not installed"; fi
+    if [ -f "$AUTOLOGIN_CONF" ]; then
+        info "autologin: ON  -> $(grep -sE '^autologin-user=' "$AUTOLOGIN_CONF" | cut -d= -f2)"
+    else
+        info "autologin: off (greeter shown)"
+    fi
+    if kiosk_is_on; then info "kiosk    : HARD (respawn kilix on exit)"
+    else info "kiosk    : soft (kilix exit ends the session)"; fi
+    local dm; dm="$(basename "$(readlink -f /etc/systemd/system/display-manager.service 2>/dev/null)" 2>/dev/null || echo '?')"
+    info "greeter  : $(systemctl is-active display-manager 2>/dev/null || echo unknown) ($dm)"
+}
+
+cmd_doctor() {
+    local ok=1
+    log "checking prerequisites"
+    if [ -x "$KILIX_DEFAULT" ] && "$KILIX_DEFAULT" --which >/dev/null 2>&1; then
+        info "[ok]  kilix engine: $("$KILIX_DEFAULT" --which 2>/dev/null | tail -1)"
+    else
+        info "[!!]  kilix engine not runnable at $KILIX_DEFAULT — run: ~/kilix/bootstrap.sh"; ok=0
+    fi
+    for t in Xorg startx xset xsetroot; do
+        if command -v "$t" >/dev/null 2>&1; then info "[ok]  $t"; else info "[!!]  missing: $t"; ok=0; fi
+    done
+    if command -v Xephyr >/dev/null 2>&1; then info "[ok]  Xephyr (nested testing)"
+    else info "[--]  Xephyr absent — 'pleb test' will use a spare VT instead"; fi
+    if [ -d /usr/share/xsessions ]; then info "[ok]  /usr/share/xsessions exists"
+    else info "[--]  /usr/share/xsessions missing (created on install)"; fi
+    if systemctl is-active --quiet lightdm 2>/dev/null; then info "[ok]  lightdm is the active greeter"
+    else info "[--]  lightdm not active — session choice UI may differ"; fi
+    echo
+    if [ "$ok" = 1 ]; then log "doctor: ready to install/test."; else warn "doctor: fix the [!!] items first."; fi
+    [ "$ok" = 1 ]
+}
+
+main() {
+    local cmd="${1:-help}"; shift || true
+    case "$cmd" in
+        install)    do_install ;;
+        uninstall)  do_uninstall ;;
+        test)       case "${1:-}" in
+                        -h|--help) grep -E '^#   pleb test' "$PLEB_ROOT/lib/test.sh" | sed 's/^# //' ;;
+                        *) run_test "$@" ;;
+                    esac ;;
+        autologin)  case "${1:-}" in
+                        on)  shift; autologin_on "$@" ;;
+                        off) autologin_off ;;
+                        *)   die "usage: pleb autologin on [user] | off" ;;
+                    esac ;;
+        kiosk)      case "${1:-}" in
+                        on)  kiosk_on ;;
+                        off) kiosk_off ;;
+                        *)   die "usage: pleb kiosk on | off" ;;
+                    esac ;;
+        update)     do_update "$@" ;;
+        status)     cmd_status ;;
+        doctor)     cmd_doctor ;;
+        session)    exec "$PLEB_BIN_SRC" ;;
+        help|-h|--help) usage ;;
+        *)          err "unknown command: $cmd"; usage; exit 1 ;;
+    esac
+}
+main "$@"

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Pleb
+Comment=kilix fullscreen kiosk desktop (a Tilix-styled kitty as the whole session)
+Exec=@SESSION_BIN@
+TryExec=@SESSION_BIN@
+Icon=utilities-terminal
+Type=Application
+DesktopNames=Pleb
+Keywords=kilix;kitty;terminal;kiosk;

@@ -1,0 +1,124 @@
+#!/bin/sh
+# pleb-session — the "Pleb" desktop: kilix fullscreen as the only X client.
+#
+# This is the X session entrypoint. It is run by:
+#   - LightDM, via /usr/share/xsessions/pleb.desktop  (Exec=/usr/local/bin/pleb-session)
+#   - startx / .xinitrc, for testing on a spare VT
+#   - `pleb test`, nested inside Xephyr
+#
+# It is deliberately SELF-CONTAINED (no sourcing of ~/pleb/lib) so it keeps
+# working after it is copied to /usr/local/bin, independent of ~/pleb.
+#
+# A no-window-manager X session: a single fullscreen kilix client. When kilix
+# exits, the X session ends (LightDM returns to the greeter), unless respawn
+# (hard-kiosk) mode keeps it alive — see PLEB_RESPAWN below.
+#
+# Environment knobs:
+#   KILIX             path to the kilix launcher   (default: $HOME/kilix/kilix)
+#   PLEB_KILIX_ARGS   extra args passed to kilix   (default: --start-as=fullscreen)
+#   PLEB_WM           window manager to run first  (default: none; e.g. "openbox")
+#   PLEB_NO_FILL      if =1, skip the no-WM screen-fill sizing (default: off)
+#   PLEB_BG           root window solid colour     (default: #101010)
+#   PLEB_LOG          session log file             (default: ~/.local/share/pleb/session.log)
+#   PLEB_RESPAWN      if =1, relaunch kilix if it exits (kiosk mode); default off
+#
+# Fullscreen note: kitty's --start-as=fullscreen uses _NET_WM_STATE_FULLSCREEN,
+# which only works when a window manager is running. This kiosk runs no WM by
+# default, so when none is detected we instead size the kitty window to the
+# whole screen in pixels (borderless at 0,0 == effectively fullscreen). Set
+# PLEB_WM=openbox (or any EWMH WM) to get native fullscreen + F11 instead.
+set -u
+
+# Optional persistent env overrides so knobs (PLEB_RESPAWN, PLEB_WM, PLEB_BG, …)
+# survive across logins without editing this launcher. System first, then user;
+# real environment (set by lightdm) still wins via the ${VAR:-default} reads below.
+for _pleb_cfg in /etc/pleb/session.env "${XDG_CONFIG_HOME:-$HOME/.config}/pleb/session.env"; do
+    # shellcheck source=/dev/null
+    [ -r "$_pleb_cfg" ] && . "$_pleb_cfg"
+done
+unset _pleb_cfg
+
+KILIX="${KILIX:-$HOME/kilix/kilix}"
+PLEB_KILIX_ARGS="${PLEB_KILIX_ARGS:---start-as=fullscreen}"
+PLEB_BG="${PLEB_BG:-#101010}"
+PLEB_LOG="${PLEB_LOG:-$HOME/.local/share/pleb/session.log}"
+PLEB_RESPAWN="${PLEB_RESPAWN:-0}"
+
+# --- logging -----------------------------------------------------------------
+mkdir -p "$(dirname "$PLEB_LOG")" 2>/dev/null || true
+# keep the log from growing without bound across relogins
+if [ -f "$PLEB_LOG" ] && [ "$(wc -c <"$PLEB_LOG" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+    tail -c 262144 "$PLEB_LOG" >"$PLEB_LOG.tmp" 2>/dev/null && mv "$PLEB_LOG.tmp" "$PLEB_LOG"
+fi
+exec >>"$PLEB_LOG" 2>&1
+echo "=== pleb-session start $(date) DISPLAY=${DISPLAY:-?} user=$(id -un) ==="
+
+export XDG_CURRENT_DESKTOP=Pleb
+export XDG_SESSION_DESKTOP=pleb
+
+# --- kiosk display setup -----------------------------------------------------
+# no screen blanking, no DPMS power-off, solid background.
+xset s off        2>/dev/null || true
+xset s noblank    2>/dev/null || true
+xset -dpms        2>/dev/null || true
+xsetroot -solid "$PLEB_BG" 2>/dev/null || true
+
+# --- locate a runnable kilix -------------------------------------------------
+if [ ! -x "$KILIX" ]; then
+    echo "FATAL: kilix not found/executable at: $KILIX" >&2
+    # don't strand the user on a black screen — drop to a terminal if we can
+    if command -v xterm >/dev/null 2>&1; then
+        exec xterm -geometry 100x30 -e sh -c \
+            "echo 'pleb: kilix missing at $KILIX'; echo; exec \${SHELL:-/bin/sh}"
+    fi
+    exit 1
+fi
+
+# --- optional window manager -------------------------------------------------
+# If asked for a WM, start it in the background before kilix so kitty's native
+# fullscreen (and F11) work. Give it a moment to own the display.
+if [ -n "${PLEB_WM:-}" ]; then
+    if command -v "${PLEB_WM%% *}" >/dev/null 2>&1; then
+        echo "--- starting WM: $PLEB_WM ---"
+        $PLEB_WM &
+        sleep 0.5
+    else
+        echo "WARN: PLEB_WM='$PLEB_WM' not found; continuing without it" >&2
+    fi
+fi
+
+# --- fullscreen strategy -----------------------------------------------------
+# A WM is present if the root window advertises _NET_SUPPORTING_WM_CHECK.
+_have_wm() { xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q '0x'; }
+
+# Screen size in "WxH" (xdpyinfo first, xrandr fallback), else empty.
+_screen_wh() {
+    xdpyinfo 2>/dev/null | awk '/dimensions:/ {print $2; exit}' \
+      || xrandr --current 2>/dev/null | awk '/\*/ {print $1; exit}'
+}
+
+FILL_ARGS=""
+if [ "${PLEB_NO_FILL:-0}" != 1 ] && ! _have_wm; then
+    wh="$(_screen_wh)"
+    w="${wh%x*}"; h="${wh#*x}"
+    if [ -n "$wh" ] && [ "$w" -gt 0 ] 2>/dev/null && [ "$h" -gt 0 ] 2>/dev/null; then
+        echo "--- no WM: sizing kitty to ${w}x${h} (screen-fill) ---"
+        FILL_ARGS="-o initial_window_width=${w} -o initial_window_height=${h} -o remember_window_size=no -o hide_window_decorations=yes -o window_margin_width=0 -o placement_strategy=top-left"
+    else
+        echo "WARN: could not detect screen size; relying on --start-as only" >&2
+    fi
+fi
+
+# --- hand off to kilix -------------------------------------------------------
+# shellcheck disable=SC2086  # arg strings are intentionally word-split
+if [ "$PLEB_RESPAWN" = 1 ]; then
+    # kiosk: keep a kilix alive for the life of the X session
+    while :; do
+        echo "--- launching kilix $PLEB_KILIX_ARGS $FILL_ARGS ($(date)) ---"
+        "$KILIX" $PLEB_KILIX_ARGS $FILL_ARGS || echo "kilix exited rc=$? — respawning"
+        sleep 1
+    done
+else
+    echo "--- exec kilix $PLEB_KILIX_ARGS $FILL_ARGS ---"
+    exec "$KILIX" $PLEB_KILIX_ARGS $FILL_ARGS
+fi
