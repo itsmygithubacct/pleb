@@ -37,6 +37,10 @@ there** and fetches a prebuilt kitty so it runs immediately. The clickable-butto
 **fork** (`src/kitty/launcher/kitty`) is built on demand later with `pleb update`
 or `~/kilix/kilix --build` (needs Go ≥ 1.26).
 
+`pleb install` also symlinks `kilix` onto your `PATH` (`/usr/local/bin/kilix`, or
+`$KILIX_LINK`), so `kilix desktop`, `kilix serve`, and friends work from anywhere
+out of the box.
+
 ## Requirements
 
 - A **LightDM**-based Linux desktop with **Xorg** (`startx`/`xinit`).
@@ -65,7 +69,7 @@ log in. To go back, log out and pick your usual session again.
 |---|---|
 | `pleb doctor` | Check the engine, X tools, and greeter are ready. |
 | `pleb test [opts]` | Launch the session in a **throwaway** X server (see below). |
-| `pleb install` | Clone kilix (if missing) + set up its engine, then add "Pleb" to the LightDM session menu. *(sudo)* |
+| `pleb install` | Clone kilix (if missing) + engine, put `kilix` on `PATH`, add "Pleb" to the LightDM session menu. *(sudo)* |
 | `pleb uninstall` | Remove both, and any autologin config. *(sudo)* |
 | `pleb autologin on [user]` | Boot straight into Pleb — no greeter (kiosk). *(sudo)* |
 | `pleb autologin off` | Revert to the normal greeter. *(sudo)* |

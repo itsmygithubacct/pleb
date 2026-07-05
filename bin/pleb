@@ -39,6 +39,8 @@ cmd_status() {
     else info "session  : not installed  (run: pleb install)"; fi
     if [ -x "$SESSION_BIN_DST" ]; then info "launcher : $SESSION_BIN_DST"
     else info "launcher : not installed"; fi
+    if [ -L "$KILIX_LINK" ]; then info "kilix cmd: $KILIX_LINK -> $(readlink "$KILIX_LINK")"
+    else info "kilix cmd: not linked (run: pleb install)"; fi
     if [ -f "$AUTOLOGIN_CONF" ]; then
         info "autologin: ON  -> $(grep -sE '^autologin-user=' "$AUTOLOGIN_CONF" | cut -d= -f2)"
     else

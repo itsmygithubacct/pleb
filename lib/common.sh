@@ -14,6 +14,9 @@ PLEB_DESKTOP_IN="$PLEB_ROOT/share/pleb.desktop.in"
 SESSION_BIN_DST="${SESSION_BIN_DST:-/usr/local/bin/pleb-session}"
 XSESSION_DST="${XSESSION_DST:-/usr/share/xsessions/pleb.desktop}"
 AUTOLOGIN_CONF="${AUTOLOGIN_CONF:-/etc/lightdm/lightdm.conf.d/50-pleb-autologin.conf}"
+# `kilix` command on PATH (so `kilix desktop`, `kilix serve`, … work out of the
+# box). /usr/local/bin is on PATH and FHS-correct for local installs.
+KILIX_LINK="${KILIX_LINK:-/usr/local/bin/kilix}"
 
 # kilix engine: where it lives, how to fetch it, and the launcher path.
 KILIX_DIR="${KILIX_DIR:-$HOME/kilix}"
