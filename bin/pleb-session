@@ -21,6 +21,8 @@
 #   PLEB_BG           root window solid colour     (default: #101010)
 #   PLEB_LOG          session log file             (default: ~/.local/share/pleb/session.log)
 #   PLEB_RESPAWN      if =1, relaunch kilix if it exits (kiosk mode); default off
+#   PLEB_DESKTOP      if =1, boot straight into the kilix "95" desktop
+#                     (`kilix desktop`) instead of a bare shell; default off
 #
 # Fullscreen note: kitty's --start-as=fullscreen uses _NET_WM_STATE_FULLSCREEN,
 # which only works when a window manager is running. This kiosk runs no WM by
@@ -43,6 +45,7 @@ PLEB_KILIX_ARGS="${PLEB_KILIX_ARGS:---start-as=fullscreen}"
 PLEB_BG="${PLEB_BG:-#101010}"
 PLEB_LOG="${PLEB_LOG:-$HOME/.local/share/pleb/session.log}"
 PLEB_RESPAWN="${PLEB_RESPAWN:-0}"
+PLEB_DESKTOP="${PLEB_DESKTOP:-0}"
 
 # --- logging -----------------------------------------------------------------
 mkdir -p "$(dirname "$PLEB_LOG")" 2>/dev/null || true
@@ -109,16 +112,30 @@ if [ "${PLEB_NO_FILL:-0}" != 1 ] && ! _have_wm; then
     fi
 fi
 
+# --- optional: boot straight into the kilix "95" desktop ---------------------
+# The desktop isn't a standalone X client — it renders inside a kilix/kitty
+# window via the graphics protocol. So we run the fullscreen kilix window as
+# usual but hand it `kilix desktop` as its startup PROGRAM (KILIX_IN_OVERLAY=1
+# renders it directly in this one window instead of spawning a tab). It must
+# come AFTER the kitty options above (FILL_ARGS), so append it last. Shells the
+# desktop later opens (its Terminal icon, panes) still use the normal shell —
+# only window 1's program is replaced.
+DESKTOP_CMD=""
+if [ "$PLEB_DESKTOP" = 1 ]; then
+    echo "--- PLEB_DESKTOP=1: session program is 'kilix desktop' ---"
+    DESKTOP_CMD="env KILIX_IN_OVERLAY=1 $KILIX desktop"
+fi
+
 # --- hand off to kilix -------------------------------------------------------
 # shellcheck disable=SC2086  # arg strings are intentionally word-split
 if [ "$PLEB_RESPAWN" = 1 ]; then
     # kiosk: keep a kilix alive for the life of the X session
     while :; do
-        echo "--- launching kilix $PLEB_KILIX_ARGS $FILL_ARGS ($(date)) ---"
-        "$KILIX" $PLEB_KILIX_ARGS $FILL_ARGS || echo "kilix exited rc=$? — respawning"
+        echo "--- launching kilix $PLEB_KILIX_ARGS $FILL_ARGS $DESKTOP_CMD ($(date)) ---"
+        "$KILIX" $PLEB_KILIX_ARGS $FILL_ARGS $DESKTOP_CMD || echo "kilix exited rc=$? — respawning"
         sleep 1
     done
 else
-    echo "--- exec kilix $PLEB_KILIX_ARGS $FILL_ARGS ---"
-    exec "$KILIX" $PLEB_KILIX_ARGS $FILL_ARGS
+    echo "--- exec kilix $PLEB_KILIX_ARGS $FILL_ARGS $DESKTOP_CMD ---"
+    exec "$KILIX" $PLEB_KILIX_ARGS $FILL_ARGS $DESKTOP_CMD
 fi
