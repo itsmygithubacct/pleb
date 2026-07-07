@@ -14,7 +14,8 @@
 # (hard-kiosk) mode keeps it alive — see PLEB_RESPAWN below.
 #
 # Environment knobs:
-#   KILIX             path to the kilix launcher   (default: $HOME/kilix/kilix)
+#   KILIX_DIR         kilix engine checkout        (default: $HOME/kilix)
+#   KILIX             path to the kilix launcher   (default: $KILIX_DIR/kilix)
 #   PLEB_KILIX_ARGS   extra args passed to kilix   (default: --start-as=fullscreen)
 #   PLEB_WM           window manager to run first  (default: none; e.g. "openbox")
 #   PLEB_NO_FILL      if =1, skip the no-WM screen-fill sizing (default: off)
@@ -23,6 +24,10 @@
 #   PLEB_RESPAWN      if =1, relaunch kilix if it exits (kiosk mode); default off
 #   PLEB_DESKTOP      if =1, boot straight into the kilix "95" desktop
 #                     (`kilix desktop`) instead of a bare shell; default off
+#   KILIX95_DIR       external Kilix 95 checkout path (default: $HOME/kilix-95)
+#   KILIX95_REPO      external Kilix 95 repo URL
+#   KILIX95_BRANCH    optional Kilix 95 branch
+#   KILIX95_REF       optional exact Kilix 95 commit/tag
 #
 # Fullscreen note: kitty's --start-as=fullscreen uses _NET_WM_STATE_FULLSCREEN,
 # which only works when a window manager is running. This kiosk runs no WM by
@@ -40,12 +45,17 @@ for _pleb_cfg in /etc/pleb/session.env "${XDG_CONFIG_HOME:-$HOME/.config}/pleb/s
 done
 unset _pleb_cfg
 
-KILIX="${KILIX:-$HOME/kilix/kilix}"
+KILIX_DIR="${KILIX_DIR:-$HOME/kilix}"
+KILIX="${KILIX:-$KILIX_DIR/kilix}"
 PLEB_KILIX_ARGS="${PLEB_KILIX_ARGS:---start-as=fullscreen}"
 PLEB_BG="${PLEB_BG:-#101010}"
 PLEB_LOG="${PLEB_LOG:-$HOME/.local/share/pleb/session.log}"
 PLEB_RESPAWN="${PLEB_RESPAWN:-0}"
 PLEB_DESKTOP="${PLEB_DESKTOP:-0}"
+KILIX95_DIR="${KILIX95_DIR:-$HOME/kilix-95}"
+KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
+KILIX95_BRANCH="${KILIX95_BRANCH:-}"
+KILIX95_REF="${KILIX95_REF:-}"
 
 # --- logging -----------------------------------------------------------------
 mkdir -p "$(dirname "$PLEB_LOG")" 2>/dev/null || true
@@ -140,7 +150,10 @@ fi
 DESKTOP_CMD=""
 if [ "$PLEB_DESKTOP" = 1 ]; then
     echo "--- PLEB_DESKTOP=1: session program is 'kilix desktop' ---"
-    DESKTOP_CMD="env KILIX_IN_OVERLAY=1 $KILIX desktop"
+    DESKTOP_CMD="env KILIX_IN_OVERLAY=1 KILIX_DESKTOP_PROVIDER=${KILIX_DESKTOP_PROVIDER:-external} KILIX95_AUTO_INSTALL=${KILIX95_AUTO_INSTALL:-1} KILIX95_DIR=$KILIX95_DIR KILIX95_REPO=$KILIX95_REPO"
+    [ -n "$KILIX95_BRANCH" ] && DESKTOP_CMD="$DESKTOP_CMD KILIX95_BRANCH=$KILIX95_BRANCH"
+    [ -n "$KILIX95_REF" ] && DESKTOP_CMD="$DESKTOP_CMD KILIX95_REF=$KILIX95_REF"
+    DESKTOP_CMD="$DESKTOP_CMD $KILIX desktop"
 fi
 
 # --- hand off to kilix -------------------------------------------------------

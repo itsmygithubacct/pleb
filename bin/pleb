@@ -44,6 +44,11 @@ cmd_status() {
     else info "launcher : not installed"; fi
     if [ -L "$KILIX_LINK" ]; then info "kilix cmd: $KILIX_LINK -> $(readlink "$KILIX_LINK")"
     else info "kilix cmd: not linked (run: pleb install)"; fi
+    if [ -d "$KILIX95_DIR/.git" ] && [ -f "$KILIX95_DIR/main.py" ]; then
+        info "kilix 95 : installed at $KILIX95_DIR"
+    else
+        info "kilix 95 : optional desktop not installed"
+    fi
     if [ -f "$AUTOLOGIN_CONF" ]; then
         info "autologin: ON  -> $(grep -sE '^autologin-user=' "$AUTOLOGIN_CONF" | cut -d= -f2)"
     else
@@ -61,7 +66,7 @@ cmd_doctor() {
     if [ -x "$KILIX_DEFAULT" ] && "$KILIX_DEFAULT" --which >/dev/null 2>&1; then
         info "[ok]  kilix engine: $("$KILIX_DEFAULT" --which 2>/dev/null | tail -1)"
     else
-        info "[!!]  kilix engine not runnable at $KILIX_DEFAULT — run: ~/kilix/bootstrap.sh"; ok=0
+        info "[!!]  kilix engine not runnable at $KILIX_DEFAULT — run: $KILIX_DIR/bootstrap.sh"; ok=0
     fi
     for t in Xorg startx xset xsetroot; do
         if command -v "$t" >/dev/null 2>&1; then info "[ok]  $t"; else info "[!!]  missing: $t"; ok=0; fi

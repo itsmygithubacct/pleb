@@ -26,6 +26,13 @@ KILIX_DEFAULT="${KILIX:-$KILIX_DIR/kilix}"
 KILIX_REPO="${KILIX_REPO:-https://github.com/itsmygithubacct/kilix.git}"
 KILIX_BRANCH="${KILIX_BRANCH:-}"   # empty = the repo's default branch
 
+# Optional Kilix 95 desktop checkout. Plain Pleb shell sessions do not require
+# it; install/update touch it when PLEB_DESKTOP=1 or PLEB_INSTALL_KILIX95=1.
+KILIX95_DIR="${KILIX95_DIR:-$HOME/kilix-95}"
+KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
+KILIX95_BRANCH="${KILIX95_BRANCH:-}"   # empty = the repo's default branch
+KILIX95_REF="${KILIX95_REF:-}"         # optional exact commit/tag
+
 # --- pretty output -----------------------------------------------------------
 if [ -t 1 ]; then
     _c_g=$'\033[1;32m'; _c_r=$'\033[1;31m'; _c_y=$'\033[1;33m'; _c_b=$'\033[1;34m'; _c_0=$'\033[0m'

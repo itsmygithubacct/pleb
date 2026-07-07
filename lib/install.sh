@@ -20,6 +20,33 @@ ensure_kilix() {
     ensure_engine
 }
 
+# ensure_kilix95 — make sure the optional Kilix 95 desktop checkout exists
+# when this Pleb install is configured to boot directly into the desktop.
+ensure_kilix95() {
+    if [ "${PLEB_DESKTOP:-0}" != 1 ] && [ "${PLEB_INSTALL_KILIX95:-0}" != 1 ]; then
+        return 0
+    fi
+
+    if [ -d "$KILIX95_DIR/.git" ] && [ -f "$KILIX95_DIR/main.py" ]; then
+        log "kilix 95 present at $KILIX95_DIR (use 'pleb update' to update it)"
+    else
+        [ -e "$KILIX95_DIR" ] && [ ! -d "$KILIX95_DIR/.git" ] \
+            && die "$KILIX95_DIR exists but isn't a kilix 95 checkout — move it aside first"
+        command -v git >/dev/null 2>&1 || die "git is required to clone kilix 95"
+        log "cloning kilix 95 -> $KILIX95_DIR"
+        # shellcheck disable=SC2086  # optional --branch is intentionally unquoted-split
+        git clone ${KILIX95_BRANCH:+--branch "$KILIX95_BRANCH"} "$KILIX95_REPO" "$KILIX95_DIR" \
+            || die "git clone failed ($KILIX95_REPO)"
+    fi
+
+    if [ -n "$KILIX95_REF" ]; then
+        log "checking out kilix 95 ref $KILIX95_REF"
+        git -C "$KILIX95_DIR" fetch --tags origin >/dev/null 2>&1 || true
+        git -C "$KILIX95_DIR" checkout --detach "$KILIX95_REF" \
+            || die "could not check out KILIX95_REF=$KILIX95_REF"
+    fi
+}
+
 # ensure_engine — make sure kilix has a runnable kitty; if not, fetch the
 # prebuilt one (needs only git/curl/tar). The fork (buttons) needs Go >= 1.26.
 ensure_engine() {
@@ -40,6 +67,7 @@ do_install() {
     [ -f "$PLEB_DESKTOP_IN" ] || die "missing $PLEB_DESKTOP_IN"
 
     ensure_kilix   # fresh-clone kilix + set up an engine if not already present
+    ensure_kilix95 # optional: external Kilix 95 desktop when PLEB_DESKTOP=1
 
     log "installing session launcher -> $SESSION_BIN_DST"
     run_root install -D -m 0755 "$PLEB_BIN_SRC" "$SESSION_BIN_DST"

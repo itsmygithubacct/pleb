@@ -165,22 +165,29 @@ pleb update         # fetch latest kilix, ff-only, rebuild the fork, offer resta
 pleb update -y      # ...and restart the kiosk without asking
 ```
 
-`pleb update` fast-forwards `~/kilix` to the latest `stream-multiplexing`,
-updates the submodule, rebuilds the fork if a Go toolchain is present (else keeps
-the current engine), and — if the kiosk is installed — offers to restart LightDM
-so the running kiosk picks up the new version. It never force-updates: if the
-branch can't fast-forward (local commits), it stops and tells you.
+`pleb update` fast-forwards `~/kilix`, updates the optional `~/kilix-95`
+desktop checkout when present, rebuilds the fork if a Go toolchain is present
+(else keeps the current engine), and — if the kiosk is installed — offers to
+restart LightDM so the running kiosk picks up the new version. It never
+force-updates: if a branch can't fast-forward (local commits), it stops and
+tells you.
 
 ## Environment knobs (`pleb-session`)
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KILIX` | `$HOME/kilix/kilix` | Path to the kilix launcher. |
+| `KILIX_DIR` | `$HOME/kilix` | Kilix engine checkout. |
+| `KILIX` | `$KILIX_DIR/kilix` | Path to the kilix launcher. |
 | `PLEB_KILIX_ARGS` | `--start-as=fullscreen` | Args passed to kilix. |
 | `PLEB_WM` | *(none)* | Window manager to run before kilix (enables native fullscreen). |
 | `PLEB_NO_FILL` | `0` | Skip the no-WM screen-fill sizing. |
 | `PLEB_BG` | `#101010` | Root-window solid colour. |
 | `PLEB_RESPAWN` | `0` | If `1`, relaunch kilix when it exits (hard kiosk). |
+| `PLEB_DESKTOP` | `0` | If `1`, boot directly into Kilix 95 via `kilix desktop`. |
+| `KILIX95_DIR` | `$HOME/kilix-95` | External Kilix 95 checkout used for desktop sessions. |
+| `KILIX95_REPO` | `https://github.com/itsmygithubacct/kilix-95.git` | Repo cloned when Kilix 95 is needed. |
+| `KILIX95_BRANCH` | *(repo default)* | Optional Kilix 95 branch. |
+| `KILIX95_REF` | *(none)* | Optional exact Kilix 95 commit/tag. |
 | `PLEB_LOG` | `~/.local/share/pleb/session.log` | Session log. |
 
 ## Uninstall / reverse everything

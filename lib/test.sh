@@ -37,7 +37,10 @@ _test_xephyr() {
     if [ "$_T_CHECK" = 1 ]; then
         # PLEB_RESPAWN=0 forces pleb-session to exec kilix, so $! becomes the
         # kitty PID we can kill *surgically* — never the live kiosk's kilix.
-        DISPLAY="$nd" KILIX="$KILIX_DEFAULT" PLEB_RESPAWN=0 "$_T_ENTRY" &
+        DISPLAY="$nd" KILIX_DIR="$KILIX_DIR" KILIX="$KILIX_DEFAULT" \
+            KILIX95_DIR="$KILIX95_DIR" KILIX95_REPO="$KILIX95_REPO" \
+            KILIX95_BRANCH="$KILIX95_BRANCH" KILIX95_REF="$KILIX95_REF" \
+            PLEB_RESPAWN=0 "$_T_ENTRY" &
         local sp=$!
         sleep "$_T_SECS"
         local alive=0; kill -0 "$sp" 2>/dev/null && alive=1
@@ -46,7 +49,10 @@ _test_xephyr() {
         _test_report "$alive"; [ "$alive" = 1 ]
     else
         log "launching pleb-session in $nd (Ctrl+C here to stop)"
-        DISPLAY="$nd" KILIX="$KILIX_DEFAULT" PLEB_RESPAWN=0 "$_T_ENTRY"
+        DISPLAY="$nd" KILIX_DIR="$KILIX_DIR" KILIX="$KILIX_DEFAULT" \
+            KILIX95_DIR="$KILIX95_DIR" KILIX95_REPO="$KILIX95_REPO" \
+            KILIX95_BRANCH="$KILIX95_BRANCH" KILIX95_REF="$KILIX95_REF" \
+            PLEB_RESPAWN=0 "$_T_ENTRY"
         kill "$xpid" 2>/dev/null || true
     fi
 }
@@ -55,7 +61,10 @@ _test_vt() {
     command -v startx >/dev/null 2>&1 || die "startx missing (apt install xinit)"
     local nd; nd="$(_free_display 3)"
     log "nested X on vt$_T_VT ($nd) — view with Ctrl+Alt+F$_T_VT"
-    KILIX="$KILIX_DEFAULT" PLEB_RESPAWN=0 startx "$_T_ENTRY" -- "$nd" "vt$_T_VT" >"$_T_TESTLOG" 2>&1 &
+    KILIX_DIR="$KILIX_DIR" KILIX="$KILIX_DEFAULT" \
+        KILIX95_DIR="$KILIX95_DIR" KILIX95_REPO="$KILIX95_REPO" \
+        KILIX95_BRANCH="$KILIX95_BRANCH" KILIX95_REF="$KILIX95_REF" \
+        PLEB_RESPAWN=0 startx "$_T_ENTRY" -- "$nd" "vt$_T_VT" >"$_T_TESTLOG" 2>&1 &
     local sxpid=$!
     sleep "$([ "$_T_CHECK" = 1 ] && echo "$_T_SECS" || echo 3)"
     if [ "$_T_CHECK" = 1 ]; then
