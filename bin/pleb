@@ -15,7 +15,10 @@
 # at the login screen. Uninstall reverses everything.
 set -euo pipefail
 
-PLEB_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolve symlinks so `ln -s .../bin/pleb /usr/local/bin/pleb` still finds the
+# checkout (pleb install links it onto PATH exactly that way).
+_self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+PLEB_ROOT="$(cd "$(dirname "$_self")/.." && pwd)"
 # shellcheck source=/dev/null
 . "$PLEB_ROOT/lib/common.sh"
 . "$PLEB_ROOT/lib/install.sh"

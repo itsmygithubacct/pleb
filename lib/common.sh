@@ -17,6 +17,8 @@ AUTOLOGIN_CONF="${AUTOLOGIN_CONF:-/etc/lightdm/lightdm.conf.d/50-pleb-autologin.
 # `kilix` command on PATH (so `kilix desktop`, `kilix serve`, … work out of the
 # box). /usr/local/bin is on PATH and FHS-correct for local installs.
 KILIX_LINK="${KILIX_LINK:-/usr/local/bin/kilix}"
+# `pleb` command itself on PATH, so `pleb update`/`pleb status`/… work anywhere.
+PLEB_LINK="${PLEB_LINK:-/usr/local/bin/pleb}"
 
 # kilix engine: where it lives, how to fetch it, and the launcher path.
 KILIX_DIR="${KILIX_DIR:-$HOME/kilix}"

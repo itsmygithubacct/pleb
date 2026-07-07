@@ -51,6 +51,11 @@ do_install() {
     log "linking kilix command -> $KILIX_LINK"
     run_root ln -sfn "$KILIX_DIR/kilix" "$KILIX_LINK"
 
+    # and `pleb` itself, so `pleb update` / `pleb status` etc. work anywhere
+    # (bin/pleb resolves its checkout through the symlink via readlink -f)
+    log "linking pleb command -> $PLEB_LINK"
+    run_root ln -sfn "$PLEB_ROOT/bin/pleb" "$PLEB_LINK"
+
     log "done. Log out, then at the LightDM greeter pick the session"
     info "menu (gear/badge near the login box) -> \"Pleb\" -> log in."
     warn "verify the engine first:  pleb doctor"
@@ -70,6 +75,12 @@ do_uninstall() {
     if [ -L "$KILIX_LINK" ] && [ "$(readlink "$KILIX_LINK")" = "$KILIX_DIR/kilix" ]; then
         log "removing kilix command symlink $KILIX_LINK"
         run_root rm -f "$KILIX_LINK"
+        removed=1
+    fi
+    # likewise the pleb command symlink, only if it points at our checkout
+    if [ -L "$PLEB_LINK" ] && [ "$(readlink "$PLEB_LINK")" = "$PLEB_ROOT/bin/pleb" ]; then
+        log "removing pleb command symlink $PLEB_LINK"
+        run_root rm -f "$PLEB_LINK"
         removed=1
     fi
     # also drop autologin if it points at pleb
