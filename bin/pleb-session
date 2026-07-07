@@ -59,6 +59,23 @@ echo "=== pleb-session start $(date) DISPLAY=${DISPLAY:-?} user=$(id -un) ==="
 export XDG_CURRENT_DESKTOP=Pleb
 export XDG_SESSION_DESKTOP=pleb
 
+# --- desktop notifications: a D-Bus session bus ------------------------------
+# Pleb runs no desktop environment, so notify-send / libnotify and kitty's
+# OSC 9/99 notifications need a freedesktop notification daemon (Plebian-OS
+# ships xfce4-notifyd) — which is D-Bus-activated and so needs a *session* bus.
+# LightDM + systemd (dbus-user-session) normally hand us one; if not (e.g.
+# `pleb test` on a spare VT) start a private one that dies with the session.
+# Best-effort: a no-op when a bus is already present or dbus-launch is absent.
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && command -v dbus-launch >/dev/null 2>&1; then
+    echo "--- no session bus inherited: starting one (dbus-launch) ---"
+    eval "$(dbus-launch --sh-syntax --exit-with-session 2>/dev/null)" || true
+fi
+# and make DISPLAY/XAUTHORITY visible on the bus, so the notification daemon —
+# started on demand when the first notification arrives — can reach our X server.
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+    dbus-update-activation-environment --systemd DISPLAY XAUTHORITY 2>/dev/null || true
+fi
+
 # --- kiosk display setup -----------------------------------------------------
 # no screen blanking, no DPMS power-off, solid background.
 xset s off        2>/dev/null || true
