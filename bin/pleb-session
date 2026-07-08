@@ -123,6 +123,7 @@ fi
 xset s off        2>/dev/null || true
 xset s noblank    2>/dev/null || true
 xset -dpms        2>/dev/null || true
+xset b off        2>/dev/null || xset -b 2>/dev/null || true
 xsetroot -solid "$PLEB_BG" 2>/dev/null || true
 
 # --- locate a runnable kilix -------------------------------------------------

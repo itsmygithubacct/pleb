@@ -76,6 +76,11 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("PLEB_SKIP_DEPS", readme)
         self.assertIn("pleb screen-size larger", readme)
 
+    def test_session_disables_x_keyboard_bell(self):
+        text = (ROOT / "bin" / "pleb-session").read_text()
+        self.assertIn("xset b off", text)
+        self.assertIn("xset -b", text)
+
 
 if __name__ == "__main__":
     unittest.main()
