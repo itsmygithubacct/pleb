@@ -22,6 +22,7 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("KILIX_DESKTOP_NAME=$KILIX_DESKTOP_NAME", text)
         self.assertIn("KILIX_REF=$KILIX_REF", text)
         self.assertNotIn("DESKTOP_CMD=", text)
+        self.assertIn("none|off|disabled) return 1", text)
 
     def test_kilix95_requirement_follows_provider(self):
         checks = [
@@ -39,6 +40,41 @@ class PlebPlumbingTests(unittest.TestCase):
                     f"{predicate}"
                 )
                 subprocess.run(["bash", "-c", cmd], cwd=ROOT, check=True)
+
+    def test_provider_none_disables_desktop_even_when_desktop_requested(self):
+        cmd = (
+            ". lib/common.sh; "
+            "PLEB_DESKTOP=1; "
+            "KILIX_DESKTOP_PROVIDER=none; "
+            "! desktop_enabled"
+        )
+        subprocess.run(["bash", "-c", cmd], cwd=ROOT, check=True)
+
+    def test_install_clone_branches_use_arrays(self):
+        text = (ROOT / "lib" / "install.sh").read_text()
+        self.assertIn("local -a clone_args=()", text)
+        self.assertIn('git clone "${clone_args[@]}" "$KILIX_REPO"', text)
+        self.assertIn('git clone "${clone_args[@]}" "$KILIX95_REPO"', text)
+        self.assertNotIn("${KILIX_BRANCH:+", text)
+        self.assertNotIn("${KILIX95_BRANCH:+", text)
+
+    def test_update_explicit_branches_are_checked_out_before_merge(self):
+        text = (ROOT / "lib" / "update.sh").read_text()
+        self.assertIn('checkout "$KILIX_BRANCH"', text)
+        self.assertIn('checkout --track -b "$KILIX_BRANCH"', text)
+        self.assertIn('checkout "$KILIX95_BRANCH"', text)
+        self.assertIn('checkout --track -b "$KILIX95_BRANCH"', text)
+
+    def test_screen_size_passthrough_and_new_env_knobs_are_documented(self):
+        cli = (ROOT / "bin" / "pleb").read_text()
+        common = (ROOT / "lib" / "common.sh").read_text()
+        readme = (ROOT / "README.md").read_text()
+        self.assertIn("screen-size|font-size)", cli)
+        self.assertIn('"$KILIX_DEFAULT" screen-size "$@"', cli)
+        self.assertIn("KILIX_PREBUILT_VERSION", common)
+        self.assertIn("KILIX_PREBUILT_SHA256", common)
+        self.assertIn("PLEB_SKIP_DEPS", readme)
+        self.assertIn("pleb screen-size larger", readme)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,8 @@ KILIX_DEFAULT="${KILIX:-$KILIX_DIR/kilix}"
 KILIX_REPO="${KILIX_REPO:-https://github.com/itsmygithubacct/kilix.git}"
 KILIX_BRANCH="${KILIX_BRANCH:-}"   # empty = the repo's default branch
 KILIX_REF="${KILIX_REF:-}"         # optional exact commit/tag
+KILIX_PREBUILT_VERSION="${KILIX_PREBUILT_VERSION:-}" # empty = latest fallback
+KILIX_PREBUILT_SHA256="${KILIX_PREBUILT_SHA256:-}"   # optional pinned checksum
 
 # Desktop provider passed through to `kilix desktop`. Pleb defaults to the
 # external Kilix 95 provider for desktop sessions, but callers can select
@@ -84,6 +86,9 @@ write_root() {
 target_user() { echo "${SUDO_USER:-$(id -un)}"; }
 
 desktop_enabled() {
+    case "${KILIX_DESKTOP_PROVIDER:-external}" in
+        none|off|disabled) return 1 ;;
+    esac
     case "${PLEB_DESKTOP:-0}" in
         1|yes|true|on|desktop|kilix95|kilix-95|command|custom) return 0 ;;
         *) return 1 ;;

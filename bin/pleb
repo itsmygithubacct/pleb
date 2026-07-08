@@ -10,6 +10,7 @@
 #                           pull latest kilix, rebuild, optionally restart kiosk
 #   pleb status             show install + engine state
 #   pleb doctor             check prerequisites
+#   pleb screen-size ...    show/increase/decrease/reset Kilix terminal scale
 #   pleb session            exec the session now (for the current $DISPLAY)
 #
 # Non-destructive: your current desktop session is untouched; "Pleb" is another choice
@@ -88,6 +89,11 @@ cmd_doctor() {
     [ "$ok" = 1 ]
 }
 
+cmd_screen_size() {
+    [ -x "$KILIX_DEFAULT" ] || die "kilix not runnable at $KILIX_DEFAULT"
+    "$KILIX_DEFAULT" screen-size "$@"
+}
+
 main() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
@@ -110,6 +116,8 @@ main() {
         update)     do_update "$@" ;;
         status)     cmd_status ;;
         doctor)     cmd_doctor ;;
+        screen-size|font-size)
+                    cmd_screen_size "$@" ;;
         session)    exec "$PLEB_BIN_SRC" ;;
         help|-h|--help) usage ;;
         *)          err "unknown command: $cmd"; usage; exit 1 ;;

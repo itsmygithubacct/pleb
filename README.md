@@ -46,6 +46,9 @@ out of the box.
 - A **LightDM**-based Linux desktop with **Xorg** (`startx`/`xinit`).
 - **git**, **curl**, **tar** (to clone kilix and fetch its prebuilt engine).
 - `sudo` for `install` / `autologin` (system files only).
+- On Debian/Ubuntu, `pleb install` installs the needed runtime/build packages
+  with apt, including the FluidSynth/SoundFont packages used by kilix-amp MIDI
+  playback. Set `PLEB_SKIP_DEPS=1` to skip package-manager changes.
 - Optional: `xserver-xephyr` for nested `pleb test`; Go ≥ 1.26 for the fork.
 
 ## Quick start
@@ -76,6 +79,7 @@ log in. To go back, log out and pick your usual session again.
 | `pleb kiosk on` / `off` | Hard kiosk: respawn kilix if it exits (or don't). *(no sudo)* |
 | `pleb update [-y] [--no-restart]` | Pull latest kilix, rebuild the fork, offer to restart the kiosk when Pleb is active. |
 | `pleb status` | Show engine / install / autologin / kiosk state. |
+| `pleb screen-size ...` | Show, increase, decrease, reset, or set Kilix terminal scale. |
 | `pleb session` | Exec the session now, against the current `$DISPLAY`. |
 
 `install`, `uninstall`, and `autologin` need root; the CLI calls `sudo` only for
@@ -109,6 +113,16 @@ works when a **window manager** is running. Pleb runs **no WM** by default, so
 the whole screen in pixels — a borderless window at `0,0`
 that fills the display. Verified: on a 1280×800 screen the window comes up
 `1280x800+0+0`.
+
+To make the fullscreen terminal feel larger or fit more rows/columns, adjust
+Kilix's `font_size`:
+
+```sh
+pleb screen-size larger       # bigger text, fewer rows/columns
+pleb screen-size smaller      # smaller text, more rows/columns
+pleb screen-size reset
+pleb screen-size set 13
+```
 
 If you'd rather have a real WM (native fullscreen, `F11`, multi-monitor):
 
@@ -178,7 +192,11 @@ branch can't fast-forward (local commits), it stops and tells you.
 |---|---|---|
 | `KILIX_DIR` | `$HOME/kilix` | Kilix engine checkout. |
 | `KILIX` | `$KILIX_DIR/kilix` | Path to the kilix launcher. |
+| `KILIX_BRANCH` | *(repo default)* | Optional Kilix branch for install/update. |
 | `KILIX_REF` | *(none)* | Optional exact Kilix commit/tag for install/update. |
+| `KILIX_PREBUILT_VERSION` | *(latest)* | Optional exact fallback kitty version for Kilix bootstrap. |
+| `KILIX_PREBUILT_SHA256` | *(none)* | Optional checksum for the pinned fallback kitty bundle. |
+| `PLEB_SKIP_DEPS` | `0` | If `1`, skip apt dependency installation during `pleb install`. |
 | `PLEB_KILIX_ARGS` | `--start-as=fullscreen` | Args passed to kilix. |
 | `PLEB_WM` | *(none)* | Window manager to run before kilix (enables native fullscreen). |
 | `PLEB_NO_FILL` | `0` | Skip the no-WM screen-fill sizing. |
@@ -195,8 +213,8 @@ branch can't fast-forward (local commits), it stops and tells you.
 | `KILIX95_REF` | *(none)* | Optional exact Kilix 95 commit/tag. |
 | `PLEB_LOG` | `~/.local/share/pleb/session.log` | Session log. |
 
-Use `PLEB_DESKTOP=0` for no desktop at all. To supply a different desktop
-through the same Kilix facade:
+Use `PLEB_DESKTOP=0` or `KILIX_DESKTOP_PROVIDER=none` for no desktop at all. To
+supply a different desktop through the same Kilix facade:
 
 ```sh
 PLEB_DESKTOP=1 \

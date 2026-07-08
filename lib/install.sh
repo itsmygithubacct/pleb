@@ -1,6 +1,33 @@
 #!/usr/bin/env bash
 # lib/install.sh — install/uninstall the Pleb LightDM session. Sourced by `pleb`.
 
+# ensure_system_deps — install the OS packages Pleb/Kilix commonly needs.
+# Plebian-OS calls its own more complete dependency manifest before `pleb
+# install`; this keeps standalone `pleb install` usable on fresh Debian/Ubuntu
+# desktops too. Set PLEB_SKIP_DEPS=1 to skip package-manager changes.
+ensure_system_deps() {
+    if [ "${PLEB_SKIP_DEPS:-0}" = 1 ]; then
+        warn "skipping dependency install because PLEB_SKIP_DEPS=1"
+        return 0
+    fi
+    if ! command -v apt-get >/dev/null 2>&1; then
+        warn "automatic dependency install only supports apt-get; continuing"
+        return 0
+    fi
+
+    log "installing Pleb/Kilix dependencies via apt-get"
+    run_root env DEBIAN_FRONTEND=noninteractive apt-get update
+    run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        git curl tar sudo \
+        lightdm xinit x11-xserver-utils x11-utils xterm \
+        libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1 \
+        fontconfig fonts-dejavu-core \
+        python3-pil python3-xlib python3-websockets \
+        pulseaudio pulseaudio-utils alsa-utils ffmpeg xauth zenity \
+        build-essential pkg-config zlib1g-dev libsdl2-dev libsdl2-image-dev \
+        libsndfile1-dev libfluidsynth-dev fluidsynth fluid-soundfont-gm
+}
+
 # ensure_kilix — make sure a kilix checkout with a runnable engine exists,
 # cloning it fresh from upstream if it isn't there yet. A plain (non-recursive)
 # clone + prebuilt kitty is enough to run; the clickable-button fork is built
@@ -14,8 +41,9 @@ ensure_kilix() {
             && die "$KILIX_DIR exists but isn't a kilix checkout — move it aside first"
         command -v git >/dev/null 2>&1 || die "git is required to clone kilix"
         log "cloning kilix -> $KILIX_DIR"
-        # shellcheck disable=SC2086  # optional --branch is intentionally unquoted-split
-        git clone ${KILIX_BRANCH:+--branch "$KILIX_BRANCH"} "$KILIX_REPO" "$KILIX_DIR" \
+        local -a clone_args=()
+        [ -n "$KILIX_BRANCH" ] && clone_args=(--branch "$KILIX_BRANCH")
+        git clone "${clone_args[@]}" "$KILIX_REPO" "$KILIX_DIR" \
             || die "git clone failed ($KILIX_REPO)"
     fi
     if [ -n "$KILIX_REF" ]; then
@@ -44,8 +72,9 @@ ensure_kilix95() {
             && die "$KILIX95_DIR exists but isn't a kilix 95 checkout — move it aside first"
         command -v git >/dev/null 2>&1 || die "git is required to clone kilix 95"
         log "cloning kilix 95 -> $KILIX95_DIR"
-        # shellcheck disable=SC2086  # optional --branch is intentionally unquoted-split
-        git clone ${KILIX95_BRANCH:+--branch "$KILIX95_BRANCH"} "$KILIX95_REPO" "$KILIX95_DIR" \
+        local -a clone_args=()
+        [ -n "$KILIX95_BRANCH" ] && clone_args=(--branch "$KILIX95_BRANCH")
+        git clone "${clone_args[@]}" "$KILIX95_REPO" "$KILIX95_DIR" \
             || die "git clone failed ($KILIX95_REPO)"
     fi
 
@@ -94,6 +123,7 @@ do_install() {
     [ -f "$PLEB_BIN_SRC" ]    || die "missing $PLEB_BIN_SRC"
     [ -f "$PLEB_DESKTOP_IN" ] || die "missing $PLEB_DESKTOP_IN"
 
+    ensure_system_deps
     ensure_kilix   # fresh-clone kilix + set up an engine if not already present
     ensure_kilix95 # optional: external Kilix 95 when the selected provider needs it
 

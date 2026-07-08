@@ -183,6 +183,9 @@ fi
 # desktop later opens (its Terminal icon, panes) still use the normal shell —
 # only window 1's program is replaced.
 _pleb_desktop_enabled() {
+    case "${KILIX_DESKTOP_PROVIDER:-external}" in
+        none|off|disabled) return 1 ;;
+    esac
     case "${PLEB_DESKTOP:-0}" in
         1|yes|true|on|desktop|kilix95|kilix-95|command|custom) return 0 ;;
         *) return 1 ;;
