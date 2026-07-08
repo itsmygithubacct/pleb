@@ -38,6 +38,8 @@ _test_xephyr() {
         # PLEB_RESPAWN=0 forces pleb-session to exec kilix, so $! becomes the
         # kitty PID we can kill *surgically* — never the live kiosk's kilix.
         DISPLAY="$nd" KILIX_DIR="$KILIX_DIR" KILIX="$KILIX_DEFAULT" \
+            KILIX_REF="$KILIX_REF" KILIX_DESKTOP_PROVIDER="$KILIX_DESKTOP_PROVIDER" \
+            KILIX_DESKTOP_COMMAND="$KILIX_DESKTOP_COMMAND" KILIX_DESKTOP_NAME="$KILIX_DESKTOP_NAME" \
             KILIX95_DIR="$KILIX95_DIR" KILIX95_REPO="$KILIX95_REPO" \
             KILIX95_BRANCH="$KILIX95_BRANCH" KILIX95_REF="$KILIX95_REF" \
             PLEB_RESPAWN=0 "$_T_ENTRY" &
@@ -50,6 +52,8 @@ _test_xephyr() {
     else
         log "launching pleb-session in $nd (Ctrl+C here to stop)"
         DISPLAY="$nd" KILIX_DIR="$KILIX_DIR" KILIX="$KILIX_DEFAULT" \
+            KILIX_REF="$KILIX_REF" KILIX_DESKTOP_PROVIDER="$KILIX_DESKTOP_PROVIDER" \
+            KILIX_DESKTOP_COMMAND="$KILIX_DESKTOP_COMMAND" KILIX_DESKTOP_NAME="$KILIX_DESKTOP_NAME" \
             KILIX95_DIR="$KILIX95_DIR" KILIX95_REPO="$KILIX95_REPO" \
             KILIX95_BRANCH="$KILIX95_BRANCH" KILIX95_REF="$KILIX95_REF" \
             PLEB_RESPAWN=0 "$_T_ENTRY"
@@ -62,6 +66,8 @@ _test_vt() {
     local nd; nd="$(_free_display 3)"
     log "nested X on vt$_T_VT ($nd) — view with Ctrl+Alt+F$_T_VT"
     KILIX_DIR="$KILIX_DIR" KILIX="$KILIX_DEFAULT" \
+        KILIX_REF="$KILIX_REF" KILIX_DESKTOP_PROVIDER="$KILIX_DESKTOP_PROVIDER" \
+        KILIX_DESKTOP_COMMAND="$KILIX_DESKTOP_COMMAND" KILIX_DESKTOP_NAME="$KILIX_DESKTOP_NAME" \
         KILIX95_DIR="$KILIX95_DIR" KILIX95_REPO="$KILIX95_REPO" \
         KILIX95_BRANCH="$KILIX95_BRANCH" KILIX95_REF="$KILIX95_REF" \
         PLEB_RESPAWN=0 startx "$_T_ENTRY" -- "$nd" "vt$_T_VT" >"$_T_TESTLOG" 2>&1 &

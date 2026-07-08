@@ -6,7 +6,8 @@
 #   pleb test [opts]        try it in a throwaway X server (see: pleb test --help)
 #   pleb autologin on|off   boot straight into Pleb (kiosk) / back to greeter
 #   pleb kiosk on|off       hard kiosk: respawn kilix if it exits / don't
-#   pleb update [-y]        pull latest kilix, rebuild, offer to restart the kiosk
+#   pleb update [-y] [--no-restart]
+#                           pull latest kilix, rebuild, optionally restart kiosk
 #   pleb status             show install + engine state
 #   pleb doctor             check prerequisites
 #   pleb session            exec the session now (for the current $DISPLAY)
@@ -44,6 +45,11 @@ cmd_status() {
     else info "launcher : not installed"; fi
     if [ -L "$KILIX_LINK" ]; then info "kilix cmd: $KILIX_LINK -> $(readlink "$KILIX_LINK")"
     else info "kilix cmd: not linked (run: pleb install)"; fi
+    if desktop_enabled; then
+        info "desktop  : enabled via ${KILIX_DESKTOP_PROVIDER:-external}${KILIX_DESKTOP_NAME:+ ($KILIX_DESKTOP_NAME)}"
+    else
+        info "desktop  : plain kilix shell"
+    fi
     if [ -d "$KILIX95_DIR/.git" ] && [ -f "$KILIX95_DIR/main.py" ]; then
         info "kilix 95 : installed at $KILIX95_DIR"
     else

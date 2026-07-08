@@ -74,7 +74,7 @@ log in. To go back, log out and pick your usual session again.
 | `pleb autologin on [user]` | Boot straight into Pleb — no greeter (kiosk). *(sudo)* |
 | `pleb autologin off` | Revert to the normal greeter. *(sudo)* |
 | `pleb kiosk on` / `off` | Hard kiosk: respawn kilix if it exits (or don't). *(no sudo)* |
-| `pleb update [-y]` | Pull latest kilix, rebuild the fork, offer to restart the kiosk. |
+| `pleb update [-y] [--no-restart]` | Pull latest kilix, rebuild the fork, offer to restart the kiosk when Pleb is active. |
 | `pleb status` | Show engine / install / autologin / kiosk state. |
 | `pleb session` | Exec the session now, against the current `$DISPLAY`. |
 
@@ -161,16 +161,16 @@ system-wide `/etc/pleb/session.env`).
 ## Updating kilix
 
 ```sh
-pleb update         # fetch latest kilix, ff-only, rebuild the fork, offer restart
-pleb update -y      # ...and restart the kiosk without asking
+pleb update              # fetch latest kilix, ff-only, rebuild the fork, offer restart
+pleb update -y           # ...and restart an active Pleb kiosk without asking
+pleb update --no-restart # update only; leave LightDM alone
 ```
 
-`pleb update` fast-forwards `~/kilix`, updates the optional `~/kilix-95`
-desktop checkout when present, rebuilds the fork if a Go toolchain is present
-(else keeps the current engine), and — if the kiosk is installed — offers to
-restart LightDM so the running kiosk picks up the new version. It never
-force-updates: if a branch can't fast-forward (local commits), it stops and
-tells you.
+`pleb update` fast-forwards or pins `~/kilix`, updates the optional `~/kilix-95`
+desktop checkout when the selected provider needs it, rebuilds the fork if a Go toolchain is present
+(else keeps the current engine), and only offers to restart LightDM when Pleb is
+configured as the active kiosk/autologin session. It never force-updates: if a
+branch can't fast-forward (local commits), it stops and tells you.
 
 ## Environment knobs (`pleb-session`)
 
@@ -178,17 +178,31 @@ tells you.
 |---|---|---|
 | `KILIX_DIR` | `$HOME/kilix` | Kilix engine checkout. |
 | `KILIX` | `$KILIX_DIR/kilix` | Path to the kilix launcher. |
+| `KILIX_REF` | *(none)* | Optional exact Kilix commit/tag for install/update. |
 | `PLEB_KILIX_ARGS` | `--start-as=fullscreen` | Args passed to kilix. |
 | `PLEB_WM` | *(none)* | Window manager to run before kilix (enables native fullscreen). |
 | `PLEB_NO_FILL` | `0` | Skip the no-WM screen-fill sizing. |
 | `PLEB_BG` | `#101010` | Root-window solid colour. |
 | `PLEB_RESPAWN` | `0` | If `1`, relaunch kilix when it exits (hard kiosk). |
-| `PLEB_DESKTOP` | `0` | If `1`, boot directly into Kilix 95 via `kilix desktop`. |
+| `PLEB_DESKTOP` | `0` | If truthy, boot directly into `kilix desktop`; `0` gives a plain shell. |
+| `KILIX_DESKTOP_PROVIDER` | `external` | `auto`, `builtin`, `external`, `command`, or `none`. |
+| `KILIX_DESKTOP_COMMAND` | *(none)* | Shell command run by `kilix desktop` when provider is `command`. |
+| `KILIX_DESKTOP_NAME` | `desktop` | Label/tab title for custom desktop providers. |
+| `KILIX95_AUTO_INSTALL` | `1` | Lets `kilix desktop` clone external Kilix 95 when needed. |
 | `KILIX95_DIR` | `$HOME/kilix-95` | External Kilix 95 checkout used for desktop sessions. |
 | `KILIX95_REPO` | `https://github.com/itsmygithubacct/kilix-95.git` | Repo cloned when Kilix 95 is needed. |
 | `KILIX95_BRANCH` | *(repo default)* | Optional Kilix 95 branch. |
 | `KILIX95_REF` | *(none)* | Optional exact Kilix 95 commit/tag. |
 | `PLEB_LOG` | `~/.local/share/pleb/session.log` | Session log. |
+
+Use `PLEB_DESKTOP=0` for no desktop at all. To supply a different desktop
+through the same Kilix facade:
+
+```sh
+PLEB_DESKTOP=1 \
+KILIX_DESKTOP_PROVIDER=command \
+KILIX_DESKTOP_COMMAND='exec /path/to/desktop'
+```
 
 ## Uninstall / reverse everything
 

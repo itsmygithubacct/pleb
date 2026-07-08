@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # pleb-session — the "Pleb" desktop: kilix fullscreen as the only X client.
 #
 # This is the X session entrypoint. It is run by:
@@ -22,8 +22,13 @@
 #   PLEB_BG           root window solid colour     (default: #101010)
 #   PLEB_LOG          session log file             (default: ~/.local/share/pleb/session.log)
 #   PLEB_RESPAWN      if =1, relaunch kilix if it exits (kiosk mode); default off
-#   PLEB_DESKTOP      if =1, boot straight into the kilix "95" desktop
-#                     (`kilix desktop`) instead of a bare shell; default off
+#   PLEB_DESKTOP      if truthy, boot straight into `kilix desktop` instead of
+#                     a bare shell; default off
+#   KILIX_REF         optional exact Kilix commit/tag for update/install flows
+#   KILIX_DESKTOP_PROVIDER auto | builtin | external | command | none
+#   KILIX_DESKTOP_COMMAND  shell command used when provider=command
+#   KILIX_DESKTOP_NAME     label/title for a custom desktop provider
+#   KILIX95_AUTO_INSTALL   allow `kilix desktop` to clone external Kilix 95
 #   KILIX95_DIR       external Kilix 95 checkout path (default: $HOME/kilix-95)
 #   KILIX95_REPO      external Kilix 95 repo URL
 #   KILIX95_BRANCH    optional Kilix 95 branch
@@ -36,33 +41,60 @@
 # PLEB_WM=openbox (or any EWMH WM) to get native fullscreen + F11 instead.
 set -u
 
-# Optional persistent env overrides so knobs (PLEB_RESPAWN, PLEB_WM, PLEB_BG, …)
-# survive across logins without editing this launcher. System first, then user;
-# real environment (set by lightdm) still wins via the ${VAR:-default} reads below.
+# Optional persistent env defaults so knobs survive across logins without editing
+# this launcher. System first, then user. Values already present in the real
+# environment are restored after sourcing, so `PLEB_DESKTOP=0 pleb session` wins
+# over `/etc/pleb/session.env`.
+_pleb_vars="KILIX_DIR KILIX KILIX_REF PLEB_KILIX_ARGS PLEB_WM PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF"
+declare -A _pleb_had _pleb_saved
+for _pleb_v in $_pleb_vars; do
+    if [[ ${!_pleb_v+x} ]]; then
+        _pleb_had[$_pleb_v]=1
+        _pleb_saved[$_pleb_v]=${!_pleb_v}
+    else
+        _pleb_had[$_pleb_v]=0
+    fi
+done
 for _pleb_cfg in /etc/pleb/session.env "${XDG_CONFIG_HOME:-$HOME/.config}/pleb/session.env"; do
     # shellcheck source=/dev/null
     [ -r "$_pleb_cfg" ] && . "$_pleb_cfg"
 done
-unset _pleb_cfg
+for _pleb_v in $_pleb_vars; do
+    if [[ ${_pleb_had[$_pleb_v]} = 1 ]]; then
+        printf -v "$_pleb_v" '%s' "${_pleb_saved[$_pleb_v]}"
+    fi
+done
+unset _pleb_cfg _pleb_v _pleb_vars _pleb_had _pleb_saved
 
 KILIX_DIR="${KILIX_DIR:-$HOME/kilix}"
 KILIX="${KILIX:-$KILIX_DIR/kilix}"
+KILIX_REF="${KILIX_REF:-}"
 PLEB_KILIX_ARGS="${PLEB_KILIX_ARGS:---start-as=fullscreen}"
 PLEB_BG="${PLEB_BG:-#101010}"
 PLEB_LOG="${PLEB_LOG:-$HOME/.local/share/pleb/session.log}"
 PLEB_RESPAWN="${PLEB_RESPAWN:-0}"
 PLEB_DESKTOP="${PLEB_DESKTOP:-0}"
+KILIX_DESKTOP_PROVIDER="${KILIX_DESKTOP_PROVIDER:-external}"
+KILIX_DESKTOP_COMMAND="${KILIX_DESKTOP_COMMAND:-}"
+KILIX_DESKTOP_NAME="${KILIX_DESKTOP_NAME:-desktop}"
+KILIX95_AUTO_INSTALL="${KILIX95_AUTO_INSTALL:-1}"
 KILIX95_DIR="${KILIX95_DIR:-$HOME/kilix-95}"
 KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
 KILIX95_BRANCH="${KILIX95_BRANCH:-}"
 KILIX95_REF="${KILIX95_REF:-}"
+read -r -a KILIX_ARGV <<< "$PLEB_KILIX_ARGS"
 
 # --- logging -----------------------------------------------------------------
 mkdir -p "$(dirname "$PLEB_LOG")" 2>/dev/null || true
 # keep the log from growing without bound across relogins
-if [ -f "$PLEB_LOG" ] && [ "$(wc -c <"$PLEB_LOG" 2>/dev/null || echo 0)" -gt 1048576 ]; then
-    tail -c 262144 "$PLEB_LOG" >"$PLEB_LOG.tmp" 2>/dev/null && mv "$PLEB_LOG.tmp" "$PLEB_LOG"
-fi
+_trim_log() {
+    if [ -f "$PLEB_LOG" ] && [ "$(wc -c <"$PLEB_LOG" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+        tail -c 262144 "$PLEB_LOG" >"$PLEB_LOG.tmp" 2>/dev/null \
+            && cat "$PLEB_LOG.tmp" >"$PLEB_LOG" 2>/dev/null
+        rm -f "$PLEB_LOG.tmp"
+    fi
+}
+_trim_log
 exec >>"$PLEB_LOG" 2>&1
 echo "=== pleb-session start $(date) DISPLAY=${DISPLAY:-?} user=$(id -un) ==="
 
@@ -99,7 +131,7 @@ if [ ! -x "$KILIX" ]; then
     # don't strand the user on a black screen — drop to a terminal if we can
     if command -v xterm >/dev/null 2>&1; then
         exec xterm -geometry 100x30 -e sh -c \
-            "echo 'pleb: kilix missing at $KILIX'; echo; exec \${SHELL:-/bin/sh}"
+            'printf "%s\n\n" "pleb: kilix missing at: $1"; exec "${SHELL:-/bin/sh}"' sh "$KILIX"
     fi
     exit 1
 fi
@@ -108,9 +140,10 @@ fi
 # If asked for a WM, start it in the background before kilix so kitty's native
 # fullscreen (and F11) work. Give it a moment to own the display.
 if [ -n "${PLEB_WM:-}" ]; then
-    if command -v "${PLEB_WM%% *}" >/dev/null 2>&1; then
+    read -r -a PLEB_WM_ARGV <<< "$PLEB_WM"
+    if command -v "${PLEB_WM_ARGV[0]}" >/dev/null 2>&1; then
         echo "--- starting WM: $PLEB_WM ---"
-        $PLEB_WM &
+        "${PLEB_WM_ARGV[@]}" &
         sleep 0.5
     else
         echo "WARN: PLEB_WM='$PLEB_WM' not found; continuing without it" >&2
@@ -127,19 +160,21 @@ _screen_wh() {
       || xrandr --current 2>/dev/null | awk '/\*/ {print $1; exit}'
 }
 
-FILL_ARGS=""
+FILL_ARGS=()
 if [ "${PLEB_NO_FILL:-0}" != 1 ] && ! _have_wm; then
     wh="$(_screen_wh)"
     w="${wh%x*}"; h="${wh#*x}"
     if [ -n "$wh" ] && [ "$w" -gt 0 ] 2>/dev/null && [ "$h" -gt 0 ] 2>/dev/null; then
         echo "--- no WM: sizing kitty to ${w}x${h} (screen-fill) ---"
-        FILL_ARGS="-o initial_window_width=${w} -o initial_window_height=${h} -o remember_window_size=no -o hide_window_decorations=yes -o window_margin_width=0 -o placement_strategy=top-left"
+        FILL_ARGS=(-o "initial_window_width=${w}" -o "initial_window_height=${h}"
+                   -o remember_window_size=no -o hide_window_decorations=yes
+                   -o window_margin_width=0 -o placement_strategy=top-left)
     else
         echo "WARN: could not detect screen size; relying on --start-as only" >&2
     fi
 fi
 
-# --- optional: boot straight into the kilix "95" desktop ---------------------
+# --- optional: boot straight into the configured kilix desktop ----------------
 # The desktop isn't a standalone X client — it renders inside a kilix/kitty
 # window via the graphics protocol. So we run the fullscreen kilix window as
 # usual but hand it `kilix desktop` as its startup PROGRAM (KILIX_IN_OVERLAY=1
@@ -147,25 +182,65 @@ fi
 # come AFTER the kitty options above (FILL_ARGS), so append it last. Shells the
 # desktop later opens (its Terminal icon, panes) still use the normal shell —
 # only window 1's program is replaced.
-DESKTOP_CMD=""
-if [ "$PLEB_DESKTOP" = 1 ]; then
-    echo "--- PLEB_DESKTOP=1: session program is 'kilix desktop' ---"
-    DESKTOP_CMD="env KILIX_IN_OVERLAY=1 KILIX_DESKTOP_PROVIDER=${KILIX_DESKTOP_PROVIDER:-external} KILIX95_AUTO_INSTALL=${KILIX95_AUTO_INSTALL:-1} KILIX95_DIR=$KILIX95_DIR KILIX95_REPO=$KILIX95_REPO"
-    [ -n "$KILIX95_BRANCH" ] && DESKTOP_CMD="$DESKTOP_CMD KILIX95_BRANCH=$KILIX95_BRANCH"
-    [ -n "$KILIX95_REF" ] && DESKTOP_CMD="$DESKTOP_CMD KILIX95_REF=$KILIX95_REF"
-    DESKTOP_CMD="$DESKTOP_CMD $KILIX desktop"
+_pleb_desktop_enabled() {
+    case "${PLEB_DESKTOP:-0}" in
+        1|yes|true|on|desktop|kilix95|kilix-95|command|custom) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+DESKTOP_ARGS=()
+if _pleb_desktop_enabled; then
+    echo "--- PLEB_DESKTOP=$PLEB_DESKTOP: session program is 'kilix desktop' ($KILIX_DESKTOP_PROVIDER) ---"
+    DESKTOP_ARGS=(env KILIX_IN_OVERLAY=1
+                  "KILIX_REF=$KILIX_REF"
+                  "KILIX_DESKTOP_PROVIDER=$KILIX_DESKTOP_PROVIDER"
+                  "KILIX_DESKTOP_COMMAND=$KILIX_DESKTOP_COMMAND"
+                  "KILIX_DESKTOP_NAME=$KILIX_DESKTOP_NAME"
+                  "KILIX95_AUTO_INSTALL=$KILIX95_AUTO_INSTALL"
+                  "KILIX95_DIR=$KILIX95_DIR"
+                  "KILIX95_REPO=$KILIX95_REPO"
+                  "KILIX95_BRANCH=$KILIX95_BRANCH"
+                  "KILIX95_REF=$KILIX95_REF"
+                  "$KILIX" desktop)
 fi
 
 # --- hand off to kilix -------------------------------------------------------
-# shellcheck disable=SC2086  # arg strings are intentionally word-split
 if [ "$PLEB_RESPAWN" = 1 ]; then
     # kiosk: keep a kilix alive for the life of the X session
+    crashes=0
+    delay=1
     while :; do
-        echo "--- launching kilix $PLEB_KILIX_ARGS $FILL_ARGS $DESKTOP_CMD ($(date)) ---"
-        "$KILIX" $PLEB_KILIX_ARGS $FILL_ARGS $DESKTOP_CMD || echo "kilix exited rc=$? — respawning"
-        sleep 1
+        _trim_log
+        start=$(date +%s)
+        printf -- '--- launching'
+        printf ' %q' "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
+        printf ' (%s) ---\n' "$(date)"
+        "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
+        rc=$?
+        runtime=$(($(date +%s) - start))
+        echo "kilix exited rc=$rc after ${runtime}s"
+        if [ "$runtime" -lt 10 ]; then
+            crashes=$((crashes + 1))
+            [ "$delay" -lt 30 ] && delay=$((delay * 2))
+        else
+            crashes=0
+            delay=1
+        fi
+        if [ "$crashes" -ge 5 ]; then
+            echo "FATAL: kilix crashed too quickly five times; stopping respawn" >&2
+            if command -v xterm >/dev/null 2>&1; then
+                exec xterm -geometry 100x30 -e sh -c \
+                    'printf "%s\n\n" "pleb: kilix is crash-looping; see $1"; exec "${SHELL:-/bin/sh}"' sh "$PLEB_LOG"
+            fi
+            exit "$rc"
+        fi
+        echo "--- respawning in ${delay}s ---"
+        sleep "$delay"
     done
 else
-    echo "--- exec kilix $PLEB_KILIX_ARGS $FILL_ARGS $DESKTOP_CMD ---"
-    exec "$KILIX" $PLEB_KILIX_ARGS $FILL_ARGS $DESKTOP_CMD
+    printf -- '--- exec'
+    printf ' %q' "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
+    printf ' ---\n'
+    exec "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
 fi

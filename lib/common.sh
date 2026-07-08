@@ -25,9 +25,18 @@ KILIX_DIR="${KILIX_DIR:-$HOME/kilix}"
 KILIX_DEFAULT="${KILIX:-$KILIX_DIR/kilix}"
 KILIX_REPO="${KILIX_REPO:-https://github.com/itsmygithubacct/kilix.git}"
 KILIX_BRANCH="${KILIX_BRANCH:-}"   # empty = the repo's default branch
+KILIX_REF="${KILIX_REF:-}"         # optional exact commit/tag
 
-# Optional Kilix 95 desktop checkout. Plain Pleb shell sessions do not require
-# it; install/update touch it when PLEB_DESKTOP=1 or PLEB_INSTALL_KILIX95=1.
+# Desktop provider passed through to `kilix desktop`. Pleb defaults to the
+# external Kilix 95 provider for desktop sessions, but callers can select
+# builtin, auto, command, or none.
+KILIX_DESKTOP_PROVIDER="${KILIX_DESKTOP_PROVIDER:-external}"
+KILIX_DESKTOP_COMMAND="${KILIX_DESKTOP_COMMAND:-}"
+KILIX_DESKTOP_NAME="${KILIX_DESKTOP_NAME:-desktop}"
+
+# Optional Kilix 95 desktop checkout. Plain Pleb shell sessions and custom
+# desktop commands do not require it; install/update touch it only when the
+# selected provider needs it or PLEB_INSTALL_KILIX95=1.
 KILIX95_DIR="${KILIX95_DIR:-$HOME/kilix-95}"
 KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
 KILIX95_BRANCH="${KILIX95_BRANCH:-}"   # empty = the repo's default branch
@@ -73,3 +82,30 @@ write_root() {
 # the user the pleb session/autologin should belong to (the invoking user, even
 # under sudo).
 target_user() { echo "${SUDO_USER:-$(id -un)}"; }
+
+desktop_enabled() {
+    case "${PLEB_DESKTOP:-0}" in
+        1|yes|true|on|desktop|kilix95|kilix-95|command|custom) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+kilix95_required() {
+    [ "${PLEB_INSTALL_KILIX95:-0}" = 1 ] && return 0
+    desktop_enabled || return 1
+    case "${KILIX_DESKTOP_PROVIDER:-external}" in
+        external) return 0 ;;
+        auto) [ ! -f "$KILIX_DIR/desktop/main.py" ] ;;
+        *) return 1 ;;
+    esac
+}
+
+validate_checkout_origin() {
+    local dir="$1" repo="$2" label="$3" remote
+    [ -d "$dir/.git" ] || return 0
+    remote="$(git -C "$dir" config --get remote.origin.url 2>/dev/null || true)"
+    if [ -n "$remote" ] && [ "$remote" != "$repo" ] \
+        && [ "${PLEB_TRUST_EXISTING_CHECKOUT:-${PLEBIAN_OS_TRUST_EXISTING_CHECKOUT:-0}}" != 1 ]; then
+        die "$label checkout at $dir has origin '$remote', expected '$repo' (set PLEB_TRUST_EXISTING_CHECKOUT=1 to override)"
+    fi
+}
