@@ -174,7 +174,7 @@ _rebuild_kilix_fork() {
         warn "PLEBIAN_OS_BUILD_KILIX_FORK=${PLEBIAN_OS_BUILD_KILIX_FORK:-0}; not rebuilding the fork"
         return 0
     }
-    ensure_system_deps
+    ensure_kilix_build_deps
     _ensure_go_for_kilix_build
     log "rebuilding kilix fork (go $(go version 2>/dev/null | awk '{print $3}')) ..."
     "$KILIX_DIR/kilix" --build || die "kilix fork build failed"

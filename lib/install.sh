@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # lib/install.sh — install/uninstall the Pleb LightDM session. Sourced by `pleb`.
 
-# ensure_system_deps — install the OS packages Pleb/Kilix commonly needs.
-# Plebian-OS calls its own more complete dependency manifest before `pleb
-# install`; this keeps standalone `pleb install` usable on fresh Debian/Ubuntu
-# desktops too. Set PLEB_SKIP_DEPS=1 to skip package-manager changes.
-ensure_system_deps() {
+_install_missing_apt_packages() {
+    local label="$1"
+    shift
+
     if [ "${PLEB_SKIP_DEPS:-0}" = 1 ]; then
         warn "skipping dependency install because PLEB_SKIP_DEPS=1"
         return 0
@@ -16,6 +15,33 @@ ensure_system_deps() {
     fi
 
     local -a deps missing
+    deps=("$@")
+    missing=()
+    if command -v dpkg-query >/dev/null 2>&1; then
+        local pkg status
+        for pkg in "${deps[@]}"; do
+            status="$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null || true)"
+            [ "$status" = "install ok installed" ] || missing+=("$pkg")
+        done
+        if [ "${#missing[@]}" -eq 0 ]; then
+            log "$label already installed"
+            return 0
+        fi
+    else
+        missing=("${deps[@]}")
+    fi
+
+    log "installing missing $label via apt-get: ${missing[*]}"
+    run_root env DEBIAN_FRONTEND=noninteractive apt-get update
+    run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+}
+
+# ensure_system_deps — install the OS packages Pleb/Kilix commonly needs.
+# Plebian-OS calls its own more complete dependency manifest before `pleb
+# install`; this keeps standalone `pleb install` usable on fresh Debian/Ubuntu
+# desktops too. Set PLEB_SKIP_DEPS=1 to skip package-manager changes.
+ensure_system_deps() {
+    local -a deps
     deps=(
         git curl tar sudo
         lightdm xinit x11-xserver-utils x11-utils xterm
@@ -26,28 +52,22 @@ ensure_system_deps() {
         dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
         build-essential pkg-config python3-dev zlib1g-dev
         libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
-        libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libdbus-1-dev
+        libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libxcb-xkb-dev libdbus-1-dev
         libgl1-mesa-dev libfontconfig-dev libsdl2-dev libsdl2-image-dev
         libsndfile1-dev libfluidsynth-dev fluidsynth fluid-soundfont-gm
     )
-    missing=()
-    if command -v dpkg-query >/dev/null 2>&1; then
-        local pkg status
-        for pkg in "${deps[@]}"; do
-            status="$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null || true)"
-            [ "$status" = "install ok installed" ] || missing+=("$pkg")
-        done
-        if [ "${#missing[@]}" -eq 0 ]; then
-            log "Pleb/Kilix dependencies already installed"
-            return 0
-        fi
-    else
-        missing=("${deps[@]}")
-    fi
+    _install_missing_apt_packages "Pleb/Kilix dependencies" "${deps[@]}"
+}
 
-    log "installing missing Pleb/Kilix dependencies via apt-get: ${missing[*]}"
-    run_root env DEBIAN_FRONTEND=noninteractive apt-get update
-    run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+ensure_kilix_build_deps() {
+    local -a deps
+    deps=(
+        build-essential pkg-config python3-dev zlib1g-dev
+        libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+        libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libxcb-xkb-dev
+        libdbus-1-dev libgl1-mesa-dev libfontconfig-dev
+    )
+    _install_missing_apt_packages "Kilix build dependencies" "${deps[@]}"
 }
 
 # ensure_kilix — make sure a kilix checkout with a runnable engine exists,

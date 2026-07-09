@@ -70,7 +70,7 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("PLEBIAN_OS_BUILD_KILIX_FORK", text)
         self.assertIn("PLEBIAN_OS_KILIX_GO_MIN_VERSION", text)
         self.assertIn("scripts/install-go.sh", text)
-        self.assertIn("ensure_system_deps", text)
+        self.assertIn("ensure_kilix_build_deps", text)
         self.assertIn(".kilix-fork-built-ref", text)
         self.assertIn('"$KILIX_DIR/kilix" --build || die "kilix fork build failed"', text)
         self.assertNotIn("fork build failed — keeping the previous engine binary", text)
@@ -83,6 +83,7 @@ class PlebPlumbingTests(unittest.TestCase):
         for pkg in (
             "libxkbcommon-x11-dev",
             "libxkbcommon-dev",
+            "libxcb-xkb-dev",
             "libx11-dev",
             "libxrandr-dev",
             "libxinerama-dev",
