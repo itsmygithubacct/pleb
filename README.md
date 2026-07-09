@@ -197,7 +197,7 @@ branch can't fast-forward (local commits), it stops and tells you.
 | `KILIX_PREBUILT_VERSION` | *(latest)* | Optional exact fallback kitty version for Kilix bootstrap. |
 | `KILIX_PREBUILT_SHA256` | *(none)* | Optional checksum for the pinned fallback kitty bundle. |
 | `PLEB_SKIP_DEPS` | `0` | If `1`, skip apt dependency installation during `pleb install`. |
-| `PLEB_KILIX_ARGS` | `--start-as=fullscreen` | Args passed to kilix. |
+| `PLEB_KILIX_ARGS` | auto | Args passed to kilix; unset means native fullscreen with a WM, screen-fill sizing without one. |
 | `PLEB_WM` | *(none)* | Window manager to run before kilix (enables native fullscreen). |
 | `PLEB_NO_FILL` | `0` | Skip the no-WM screen-fill sizing. |
 | `PLEB_BG` | `#101010` | Root-window solid colour. |

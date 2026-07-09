@@ -65,6 +65,15 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn('checkout "$KILIX95_BRANCH"', text)
         self.assertIn('checkout --track -b "$KILIX95_BRANCH"', text)
 
+    def test_update_rebuilds_or_fails_stale_fork(self):
+        text = (ROOT / "lib" / "update.sh").read_text()
+        self.assertIn("PLEBIAN_OS_BUILD_KILIX_FORK", text)
+        self.assertIn("PLEBIAN_OS_KILIX_GO_MIN_VERSION", text)
+        self.assertIn("scripts/install-go.sh", text)
+        self.assertIn(".kilix-fork-built-ref", text)
+        self.assertIn('"$KILIX_DIR/kilix" --build || die "kilix fork build failed"', text)
+        self.assertNotIn("fork build failed — keeping the previous engine binary", text)
+
     def test_screen_size_passthrough_and_new_env_knobs_are_documented(self):
         cli = (ROOT / "bin" / "pleb").read_text()
         common = (ROOT / "lib" / "common.sh").read_text()
@@ -80,6 +89,13 @@ class PlebPlumbingTests(unittest.TestCase):
         text = (ROOT / "bin" / "pleb-session").read_text()
         self.assertIn("xset b off", text)
         self.assertIn("xset -b", text)
+
+    def test_session_only_uses_native_fullscreen_with_wm_by_default(self):
+        text = (ROOT / "bin" / "pleb-session").read_text()
+        self.assertIn("_PLEB_KILIX_ARGS_DEFAULT", text)
+        self.assertIn("HAVE_WM=0", text)
+        self.assertIn('[ "$HAVE_WM" = 1 ] && KILIX_ARGV=(--start-as=fullscreen)', text)
+        self.assertNotIn('PLEB_KILIX_ARGS="${PLEB_KILIX_ARGS:---start-as=fullscreen}"', text)
 
 
 if __name__ == "__main__":

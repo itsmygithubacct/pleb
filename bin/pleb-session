@@ -16,7 +16,8 @@
 # Environment knobs:
 #   KILIX_DIR         kilix engine checkout        (default: $HOME/kilix)
 #   KILIX             path to the kilix launcher   (default: $KILIX_DIR/kilix)
-#   PLEB_KILIX_ARGS   extra args passed to kilix   (default: --start-as=fullscreen)
+#   PLEB_KILIX_ARGS   extra args passed to kilix   (default: native fullscreen
+#                     when a WM is present; no-WM sessions use screen-fill)
 #   PLEB_WM           window manager to run first  (default: none; e.g. "openbox")
 #   PLEB_NO_FILL      if =1, skip the no-WM screen-fill sizing (default: off)
 #   PLEB_BG           root window solid colour     (default: #101010)
@@ -69,7 +70,12 @@ unset _pleb_cfg _pleb_v _pleb_vars _pleb_had _pleb_saved
 KILIX_DIR="${KILIX_DIR:-$HOME/kilix}"
 KILIX="${KILIX:-$KILIX_DIR/kilix}"
 KILIX_REF="${KILIX_REF:-}"
-PLEB_KILIX_ARGS="${PLEB_KILIX_ARGS:---start-as=fullscreen}"
+if [[ ${PLEB_KILIX_ARGS+x} ]]; then
+    _PLEB_KILIX_ARGS_DEFAULT=0
+else
+    PLEB_KILIX_ARGS=""
+    _PLEB_KILIX_ARGS_DEFAULT=1
+fi
 PLEB_BG="${PLEB_BG:-#101010}"
 PLEB_LOG="${PLEB_LOG:-$HOME/.local/share/pleb/session.log}"
 PLEB_RESPAWN="${PLEB_RESPAWN:-0}"
@@ -82,7 +88,6 @@ KILIX95_DIR="${KILIX95_DIR:-$HOME/kilix-95}"
 KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
 KILIX95_BRANCH="${KILIX95_BRANCH:-}"
 KILIX95_REF="${KILIX95_REF:-}"
-read -r -a KILIX_ARGV <<< "$PLEB_KILIX_ARGS"
 
 # --- logging -----------------------------------------------------------------
 mkdir -p "$(dirname "$PLEB_LOG")" 2>/dev/null || true
@@ -162,7 +167,9 @@ _screen_wh() {
 }
 
 FILL_ARGS=()
-if [ "${PLEB_NO_FILL:-0}" != 1 ] && ! _have_wm; then
+HAVE_WM=0
+_have_wm && HAVE_WM=1
+if [ "${PLEB_NO_FILL:-0}" != 1 ] && [ "$HAVE_WM" != 1 ]; then
     wh="$(_screen_wh)"
     w="${wh%x*}"; h="${wh#*x}"
     if [ -n "$wh" ] && [ "$w" -gt 0 ] 2>/dev/null && [ "$h" -gt 0 ] 2>/dev/null; then
@@ -173,6 +180,13 @@ if [ "${PLEB_NO_FILL:-0}" != 1 ] && ! _have_wm; then
     else
         echo "WARN: could not detect screen size; relying on --start-as only" >&2
     fi
+fi
+
+KILIX_ARGV=()
+if [ "$_PLEB_KILIX_ARGS_DEFAULT" = 1 ]; then
+    [ "$HAVE_WM" = 1 ] && KILIX_ARGV=(--start-as=fullscreen)
+else
+    read -r -a KILIX_ARGV <<< "$PLEB_KILIX_ARGS"
 fi
 
 # --- optional: boot straight into the configured kilix desktop ----------------

@@ -95,6 +95,98 @@ _update_kilix95() {
     fi
 }
 
+_kilix_go_ok_script() {
+    cat <<'EOF'
+command -v go >/dev/null 2>&1 || exit 1
+min="${PLEBIAN_OS_KILIX_GO_MIN_VERSION:-1.26}"
+ver="$(go version 2>/dev/null | awk '{print $3}' | sed 's/^go//')"
+[ -n "$ver" ] || exit 1
+awk -v have="$ver" -v min="$min" '
+function splitver(v, out) {
+    gsub(/[^0-9.].*$/, "", v)
+    n = split(v, parts, ".")
+    out[1] = (n >= 1 && parts[1] != "") ? parts[1] + 0 : 0
+    out[2] = (n >= 2 && parts[2] != "") ? parts[2] + 0 : 0
+    out[3] = (n >= 3 && parts[3] != "") ? parts[3] + 0 : 0
+}
+BEGIN {
+    splitver(have, h)
+    splitver(min, m)
+    for (i = 1; i <= 3; i++) {
+        if (h[i] > m[i]) exit 0
+        if (h[i] < m[i]) exit 1
+    }
+    exit 0
+}'
+EOF
+}
+
+_ensure_go_for_kilix_build() {
+    local min="${PLEBIAN_OS_KILIX_GO_MIN_VERSION:-1.26}"
+    if env "PLEBIAN_OS_KILIX_GO_MIN_VERSION=$min" bash -lc "$(_kilix_go_ok_script)"; then
+        log "Go is ready: $(go version 2>/dev/null || true)"
+        return 0
+    fi
+    [ -x "$PLEB_ROOT/scripts/install-go.sh" ] \
+        || die "Go >= $min is required to rebuild the kilix fork, and $PLEB_ROOT/scripts/install-go.sh is missing"
+    log "installing/upgrading Go for kilix fork build (>= $min)"
+    "$PLEB_ROOT/scripts/install-go.sh" all \
+        || die "Go toolchain install failed"
+    env "PLEBIAN_OS_KILIX_GO_MIN_VERSION=$min" bash -lc "$(_kilix_go_ok_script)" \
+        || die "Go toolchain is still below $min after install"
+    log "Go is ready: $(go version 2>/dev/null || true)"
+}
+
+_kilix_fork_enabled() {
+    case "${PLEBIAN_OS_BUILD_KILIX_FORK:-1}" in
+        1|yes|true|on) return 0 ;;
+        0|no|false|off) return 1 ;;
+        *) die "invalid PLEBIAN_OS_BUILD_KILIX_FORK=${PLEBIAN_OS_BUILD_KILIX_FORK:-} (expected 0/1)" ;;
+    esac
+}
+
+_kilix_fork_head() {
+    git -C "$KILIX_DIR/src" rev-parse HEAD 2>/dev/null || true
+}
+
+_kilix_fork_stamp() {
+    printf '%s\n' "$KILIX_DIR/.kilix-fork-built-ref"
+}
+
+_kilix_fork_needs_rebuild() {
+    _kilix_fork_enabled || return 1
+    local fork kitten head stamped engine
+    fork="$KILIX_DIR/src/kitty/launcher/kitty"
+    kitten="$KILIX_DIR/src/kitty/launcher/kitten"
+    [ -x "$fork" ] && [ -x "$kitten" ] || return 0
+    head="$(_kilix_fork_head)"
+    [ -n "$head" ] || return 0
+    stamped="$(cat "$(_kilix_fork_stamp)" 2>/dev/null || true)"
+    [ "$stamped" = "$head" ] || return 0
+    engine="$("$KILIX_DIR/kilix" --which 2>/dev/null | head -1 || true)"
+    [ "$engine" = "$fork" ] || return 0
+    return 1
+}
+
+_rebuild_kilix_fork() {
+    local fork engine head
+    _kilix_fork_enabled || {
+        warn "PLEBIAN_OS_BUILD_KILIX_FORK=${PLEBIAN_OS_BUILD_KILIX_FORK:-0}; not rebuilding the fork"
+        return 0
+    }
+    _ensure_go_for_kilix_build
+    log "rebuilding kilix fork (go $(go version 2>/dev/null | awk '{print $3}')) ..."
+    "$KILIX_DIR/kilix" --build || die "kilix fork build failed"
+    fork="$KILIX_DIR/src/kitty/launcher/kitty"
+    [ -x "$fork" ] || die "kilix fork build did not produce $fork"
+    engine="$("$KILIX_DIR/kilix" --which 2>/dev/null | head -1 || true)"
+    [ "$engine" = "$fork" ] \
+        || die "kilix is not using the fork engine after build (got: ${engine:-<empty>})"
+    head="$(_kilix_fork_head)"
+    [ -n "$head" ] && printf '%s\n' "$head" > "$(_kilix_fork_stamp)"
+    log "fork rebuilt."
+}
+
 do_update() {
     _UPDATE_YES=0
     _UPDATE_RESTART=ask
@@ -153,16 +245,15 @@ do_update() {
         log "kilix already up to date at ${after:0:12}."
     else
         log "kilix updated: ${before:0:12}/${src_before:0:12} -> ${after:0:12}/${src_after:0:12}"
-
-        # rebuild the fork if we can; otherwise kilix falls back to prebuilt kitty
-        if command -v go >/dev/null 2>&1; then
-            log "rebuilding kilix fork (go $(go version 2>/dev/null | awk '{print $3}')) ..."
-            if "$KILIX_DIR/kilix" --build; then log "fork rebuilt."
-            else warn "fork build failed — keeping the previous engine binary"; fi
+    fi
+    if _kilix_fork_enabled; then
+        if _kilix_fork_needs_rebuild; then
+            _rebuild_kilix_fork
         else
-            warn "no go toolchain found — not rebuilding the fork"
-            info "install one with: ~/pleb/scripts/install-go.sh"
+            log "kilix fork already built for ${src_after:0:12}."
         fi
+    else
+        warn "PLEBIAN_OS_BUILD_KILIX_FORK=${PLEBIAN_OS_BUILD_KILIX_FORK:-0}; not rebuilding the fork"
     fi
     log "engine now: $("$KILIX_DIR/kilix" --which 2>/dev/null | tail -1)"
 

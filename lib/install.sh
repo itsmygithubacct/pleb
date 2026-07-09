@@ -24,6 +24,7 @@ ensure_system_deps() {
         fontconfig fonts-dejavu-core \
         python3-pil python3-xlib python3-websockets \
         pulseaudio pulseaudio-utils alsa-utils ffmpeg xauth zenity \
+        dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk \
         build-essential pkg-config zlib1g-dev libsdl2-dev libsdl2-image-dev \
         libsndfile1-dev libfluidsynth-dev fluidsynth fluid-soundfont-gm
 }
