@@ -240,7 +240,9 @@ gone.
   [`scripts/install-go.sh`](scripts/install-go.sh). If no fork binary is present,
   kilix falls back to a prebuilt kitty (a working terminal, no buttons); `pleb
   install` sets that up automatically, and `~/kilix/kilix --build` (or `pleb
-  update`) produces the fork once Go is new enough.
+  update`) produces the fork once Go is new enough. `pleb update` also re-runs
+  the dependency installer before building so older installs pick up newly added
+  build packages such as `libxkbcommon-x11-dev`.
 - **Upgrading Go later:** `~/pleb/scripts/install-go.sh` (default: latest stable
   from go.dev; or pass a version, e.g. `install-go.sh go1.27.0`). `fetch` is
   unprivileged; `install` needs sudo only to extract into `/usr/local`.

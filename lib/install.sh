@@ -25,7 +25,10 @@ ensure_system_deps() {
         python3-pil python3-xlib python3-websockets \
         pulseaudio pulseaudio-utils alsa-utils ffmpeg xauth zenity \
         dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk \
-        build-essential pkg-config zlib1g-dev libsdl2-dev libsdl2-image-dev \
+        build-essential pkg-config python3-dev zlib1g-dev \
+        libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+        libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libdbus-1-dev \
+        libgl1-mesa-dev libfontconfig-dev libsdl2-dev libsdl2-image-dev \
         libsndfile1-dev libfluidsynth-dev fluidsynth fluid-soundfont-gm
 }
 

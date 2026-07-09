@@ -70,9 +70,28 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("PLEBIAN_OS_BUILD_KILIX_FORK", text)
         self.assertIn("PLEBIAN_OS_KILIX_GO_MIN_VERSION", text)
         self.assertIn("scripts/install-go.sh", text)
+        self.assertIn("ensure_system_deps", text)
         self.assertIn(".kilix-fork-built-ref", text)
         self.assertIn('"$KILIX_DIR/kilix" --build || die "kilix fork build failed"', text)
         self.assertNotIn("fork build failed — keeping the previous engine binary", text)
+
+    def test_install_includes_kilix_fork_build_deps(self):
+        text = (ROOT / "lib" / "install.sh").read_text()
+        for pkg in (
+            "libxkbcommon-x11-dev",
+            "libxkbcommon-dev",
+            "libx11-dev",
+            "libxrandr-dev",
+            "libxinerama-dev",
+            "libxcursor-dev",
+            "libxi-dev",
+            "libx11-xcb-dev",
+            "libdbus-1-dev",
+            "libgl1-mesa-dev",
+            "libfontconfig-dev",
+            "python3-dev",
+        ):
+            self.assertIn(pkg, text)
 
     def test_screen_size_passthrough_and_new_env_knobs_are_documented(self):
         cli = (ROOT / "bin" / "pleb").read_text()
