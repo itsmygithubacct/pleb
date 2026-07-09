@@ -20,8 +20,10 @@ _install_missing_apt_packages() {
     if command -v dpkg-query >/dev/null 2>&1; then
         local pkg status
         for pkg in "${deps[@]}"; do
-            status="$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null || true)"
-            [ "$status" = "install ok installed" ] || missing+=("$pkg")
+            status="$(dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null || true)"
+            if ! printf '%s\n' "$status" | grep -qx 'install ok installed'; then
+                missing+=("$pkg")
+            fi
         done
         if [ "${#missing[@]}" -eq 0 ]; then
             log "$label already installed"
