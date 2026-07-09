@@ -15,21 +15,39 @@ ensure_system_deps() {
         return 0
     fi
 
-    log "installing Pleb/Kilix dependencies via apt-get"
-    run_root env DEBIAN_FRONTEND=noninteractive apt-get update
-    run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        git curl tar sudo \
-        lightdm xinit x11-xserver-utils x11-utils xterm \
-        libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1 \
-        fontconfig fonts-dejavu-core \
-        python3-pil python3-xlib python3-websockets \
-        pulseaudio pulseaudio-utils alsa-utils ffmpeg xauth zenity \
-        dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk \
-        build-essential pkg-config python3-dev zlib1g-dev \
-        libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
-        libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libdbus-1-dev \
-        libgl1-mesa-dev libfontconfig-dev libsdl2-dev libsdl2-image-dev \
+    local -a deps missing
+    deps=(
+        git curl tar sudo
+        lightdm xinit x11-xserver-utils x11-utils xterm
+        libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
+        fontconfig fonts-dejavu-core
+        python3-pil python3-xlib python3-websockets
+        pulseaudio pulseaudio-utils alsa-utils ffmpeg xauth zenity
+        dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
+        build-essential pkg-config python3-dev zlib1g-dev
+        libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+        libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libdbus-1-dev
+        libgl1-mesa-dev libfontconfig-dev libsdl2-dev libsdl2-image-dev
         libsndfile1-dev libfluidsynth-dev fluidsynth fluid-soundfont-gm
+    )
+    missing=()
+    if command -v dpkg-query >/dev/null 2>&1; then
+        local pkg status
+        for pkg in "${deps[@]}"; do
+            status="$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null || true)"
+            [ "$status" = "install ok installed" ] || missing+=("$pkg")
+        done
+        if [ "${#missing[@]}" -eq 0 ]; then
+            log "Pleb/Kilix dependencies already installed"
+            return 0
+        fi
+    else
+        missing=("${deps[@]}")
+    fi
+
+    log "installing missing Pleb/Kilix dependencies via apt-get: ${missing[*]}"
+    run_root env DEBIAN_FRONTEND=noninteractive apt-get update
+    run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
 }
 
 # ensure_kilix — make sure a kilix checkout with a runnable engine exists,

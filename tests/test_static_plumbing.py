@@ -77,6 +77,9 @@ class PlebPlumbingTests(unittest.TestCase):
 
     def test_install_includes_kilix_fork_build_deps(self):
         text = (ROOT / "lib" / "install.sh").read_text()
+        self.assertIn("dpkg-query", text)
+        self.assertIn('if [ "${#missing[@]}" -eq 0 ]; then', text)
+        self.assertIn('"${missing[@]}"', text)
         for pkg in (
             "libxkbcommon-x11-dev",
             "libxkbcommon-dev",
