@@ -5,7 +5,21 @@
 
 _do_restart() {
     log "restarting lightdm to relaunch the kiosk on the new kilix ..."
-    run_root systemctl restart lightdm
+    if command -v systemd-run >/dev/null 2>&1; then
+        run_root systemd-run --unit="pleb-restart-lightdm-$$" --collect \
+            --description="Restart LightDM for Pleb update" \
+            /bin/sh -c '
+svc=lightdm
+systemctl stop "$svc" --no-block >/dev/null 2>&1 || true
+sleep 2
+systemctl kill -s KILL "$svc" >/dev/null 2>&1 || true
+systemctl reset-failed "$svc" >/dev/null 2>&1 || true
+systemctl start "$svc"
+'
+    else
+        warn "systemd-run not found; falling back to blocking LightDM restart"
+        run_root systemctl restart lightdm
+    fi
 }
 
 _pleb_autologin_enabled() {

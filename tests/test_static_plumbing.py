@@ -20,6 +20,7 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("DESKTOP_ARGS=(", text)
         self.assertIn("KILIX_DESKTOP_COMMAND=$KILIX_DESKTOP_COMMAND", text)
         self.assertIn("KILIX_DESKTOP_NAME=$KILIX_DESKTOP_NAME", text)
+        self.assertIn("KILIX_DESKTOP_FLAVOR=$KILIX_DESKTOP_FLAVOR", text)
         self.assertIn("KILIX_REF=$KILIX_REF", text)
         self.assertNotIn("DESKTOP_CMD=", text)
         self.assertIn("none|off|disabled) return 1", text)
@@ -74,6 +75,14 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn(".kilix-fork-built-ref", text)
         self.assertIn('"$KILIX_DIR/kilix" --build || die "kilix fork build failed"', text)
         self.assertNotIn("fork build failed — keeping the previous engine binary", text)
+
+    def test_update_restart_uses_transient_systemd_unit(self):
+        text = (ROOT / "lib" / "update.sh").read_text()
+        self.assertIn("systemd-run", text)
+        self.assertIn("pleb-restart-lightdm-$$", text)
+        self.assertIn("systemctl stop \"$svc\" --no-block", text)
+        self.assertIn("systemctl kill -s KILL \"$svc\"", text)
+        self.assertIn("systemctl start \"$svc\"", text)
 
     def test_install_includes_kilix_fork_build_deps(self):
         text = (ROOT / "lib" / "install.sh").read_text()

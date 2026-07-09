@@ -29,6 +29,7 @@
 #   KILIX_DESKTOP_PROVIDER auto | builtin | external | command | none
 #   KILIX_DESKTOP_COMMAND  shell command used when provider=command
 #   KILIX_DESKTOP_NAME     label/title for a custom desktop provider
+#   KILIX_DESKTOP_FLAVOR   first-launch desktop flavor (95 or xp)
 #   KILIX95_AUTO_INSTALL   allow `kilix desktop` to clone external Kilix 95
 #   KILIX95_DIR       external Kilix 95 checkout path (default: $HOME/kilix-95)
 #   KILIX95_REPO      external Kilix 95 repo URL
@@ -46,7 +47,7 @@ set -u
 # this launcher. System first, then user. Values already present in the real
 # environment are restored after sourcing, so `PLEB_DESKTOP=0 pleb session` wins
 # over `/etc/pleb/session.env`.
-_pleb_vars="KILIX_DIR KILIX KILIX_REF PLEB_KILIX_ARGS PLEB_WM PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF"
+_pleb_vars="KILIX_DIR KILIX KILIX_REF PLEB_KILIX_ARGS PLEB_WM PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF"
 declare -A _pleb_had _pleb_saved
 for _pleb_v in $_pleb_vars; do
     if [[ ${!_pleb_v+x} ]]; then
@@ -83,6 +84,7 @@ PLEB_DESKTOP="${PLEB_DESKTOP:-0}"
 KILIX_DESKTOP_PROVIDER="${KILIX_DESKTOP_PROVIDER:-external}"
 KILIX_DESKTOP_COMMAND="${KILIX_DESKTOP_COMMAND:-}"
 KILIX_DESKTOP_NAME="${KILIX_DESKTOP_NAME:-desktop}"
+KILIX_DESKTOP_FLAVOR="${KILIX_DESKTOP_FLAVOR:-}"
 KILIX95_AUTO_INSTALL="${KILIX95_AUTO_INSTALL:-1}"
 KILIX95_DIR="${KILIX95_DIR:-$HOME/kilix-95}"
 KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
@@ -215,6 +217,7 @@ if _pleb_desktop_enabled; then
                   "KILIX_DESKTOP_PROVIDER=$KILIX_DESKTOP_PROVIDER"
                   "KILIX_DESKTOP_COMMAND=$KILIX_DESKTOP_COMMAND"
                   "KILIX_DESKTOP_NAME=$KILIX_DESKTOP_NAME"
+                  "KILIX_DESKTOP_FLAVOR=$KILIX_DESKTOP_FLAVOR"
                   "KILIX95_AUTO_INSTALL=$KILIX95_AUTO_INSTALL"
                   "KILIX95_DIR=$KILIX95_DIR"
                   "KILIX95_REPO=$KILIX95_REPO"
