@@ -9,6 +9,7 @@
 #   pleb update [-y] [--no-restart]
 #                           pull latest kilix, rebuild, optionally restart kiosk
 #   pleb status             show install + engine state
+#   pleb version            print the Plebian-OS release version
 #   pleb doctor             check prerequisites
 #   pleb screen-size ...    show/increase/decrease/reset Kilix terminal scale
 #   pleb session            exec the session now (for the current $DISPLAY)
@@ -119,6 +120,8 @@ main() {
         screen-size|font-size)
                     cmd_screen_size "$@" ;;
         session)    exec "$PLEB_BIN_SRC" ;;
+        version|--version|-V)
+                    echo "pleb $(cat "$PLEB_ROOT/VERSION" 2>/dev/null || echo unknown)" ;;
         help|-h|--help) usage ;;
         *)          err "unknown command: $cmd"; usage; exit 1 ;;
     esac
