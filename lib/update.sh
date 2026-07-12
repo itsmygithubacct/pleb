@@ -3,6 +3,37 @@
 # the fork if it changed, and restart only when an active kiosk opts in.
 # Sourced by `pleb`. KILIX_DIR/KILIX_BRANCH come from common.sh.
 
+_UPDATE_LOCK_FD=""
+_UPDATE_LOCK_DIR=""
+
+_release_update_lock() {
+    if [ -n "${_UPDATE_LOCK_FD:-}" ]; then
+        flock -u "$_UPDATE_LOCK_FD" 2>/dev/null || true
+        exec {_UPDATE_LOCK_FD}>&-
+        _UPDATE_LOCK_FD=""
+    fi
+    if [ -n "${_UPDATE_LOCK_DIR:-}" ]; then
+        rmdir "$_UPDATE_LOCK_DIR" 2>/dev/null || true
+        _UPDATE_LOCK_DIR=""
+    fi
+}
+
+_acquire_update_lock() {
+    mkdir -p "$PLEB_STATE_HOME"
+    if command -v flock >/dev/null 2>&1; then
+        exec {_UPDATE_LOCK_FD}>>"$PLEB_STATE_HOME/update.lock"
+        flock -n "$_UPDATE_LOCK_FD" \
+            || die "another 'pleb update' is already running (lock: $PLEB_STATE_HOME/update.lock)"
+    else
+        _UPDATE_LOCK_DIR="$PLEB_STATE_HOME/update.lock.d"
+        mkdir "$_UPDATE_LOCK_DIR" 2>/dev/null \
+            || die "another 'pleb update' is already running (lock: $_UPDATE_LOCK_DIR)"
+    fi
+    trap _release_update_lock EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+}
+
 _do_restart() {
     log "restarting lightdm to relaunch the kiosk on the new kilix ..."
     if command -v systemd-run >/dev/null 2>&1; then
@@ -41,7 +72,10 @@ _offer_restart() {
         log "not restarting (--no-restart). Apply later with: sudo systemctl restart lightdm"
         return 0
     fi
-    if [ "${_UPDATE_YES:-0}" = 1 ]; then _do_restart; return; fi
+    if [ "${_UPDATE_RESTART:-ask}" = "yes" ] || [ "${_UPDATE_YES:-0}" = 1 ]; then
+        _do_restart
+        return
+    fi
     if [ ! -t 0 ]; then
         warn "non-interactive; not restarting. Apply with: sudo systemctl restart lightdm"
         return 0
@@ -66,17 +100,17 @@ _update_kilix95() {
 
     local before after branch current
     if ! git -C "$KILIX95_DIR" config --get remote.origin.url >/dev/null; then
-        warn "kilix 95 checkout at $KILIX95_DIR has no origin remote; skipping update"
+        if kilix95_required; then
+            die "required kilix 95 checkout at $KILIX95_DIR has no origin remote"
+        fi
+        warn "optional kilix 95 checkout at $KILIX95_DIR has no origin; skipping it"
         return 0
     fi
     validate_checkout_origin "$KILIX95_DIR" "$KILIX95_REPO" "kilix 95"
     before="$(git -C "$KILIX95_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
 
     if [ -n "$KILIX95_REF" ]; then
-        log "fetching kilix 95 tags/refs from origin"
-        git -C "$KILIX95_DIR" fetch --tags origin || die "kilix 95 fetch failed"
-        git -C "$KILIX95_DIR" checkout --detach "$KILIX95_REF" \
-            || die "could not check out KILIX95_REF=$KILIX95_REF"
+        checkout_fetched_ref "$KILIX95_DIR" "$KILIX95_REF" "kilix 95"
     else
         branch="${KILIX95_BRANCH:-$(git -C "$KILIX95_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)}"
         { [ -n "$branch" ] && [ "$branch" != HEAD ]; } || branch=main
@@ -113,8 +147,13 @@ _kilix_go_ok_script() {
     cat <<'EOF'
 command -v go >/dev/null 2>&1 || exit 1
 min="${PLEBIAN_OS_KILIX_GO_MIN_VERSION:-1.26}"
+exact="${PLEBIAN_OS_KILIX_GO_VERSION:-}"
 ver="$(go version 2>/dev/null | awk '{print $3}' | sed 's/^go//')"
 [ -n "$ver" ] || exit 1
+if [ -n "$exact" ]; then
+    case "$exact" in go*) ;; *) exact="go$exact" ;; esac
+    [ "go$ver" = "$exact" ] || exit 1
+fi
 awk -v have="$ver" -v min="$min" '
 function splitver(v, out) {
     gsub(/[^0-9.].*$/, "", v)
@@ -137,16 +176,41 @@ EOF
 
 _ensure_go_for_kilix_build() {
     local min="${PLEBIAN_OS_KILIX_GO_MIN_VERSION:-1.26}"
-    if env "PLEBIAN_OS_KILIX_GO_MIN_VERSION=$min" bash -lc "$(_kilix_go_ok_script)"; then
+    local version="${PLEBIAN_OS_KILIX_GO_VERSION:-}" arch sha=""
+    if env "PLEBIAN_OS_KILIX_GO_MIN_VERSION=$min" \
+        "PLEBIAN_OS_KILIX_GO_VERSION=$version" bash -lc "$(_kilix_go_ok_script)"; then
         log "Go is ready: $(go version 2>/dev/null || true)"
         return 0
     fi
     [ -x "$PLEB_ROOT/scripts/install-go.sh" ] \
         || die "Go >= $min is required to rebuild the kilix fork, and $PLEB_ROOT/scripts/install-go.sh is missing"
-    log "installing/upgrading Go for kilix fork build (>= $min)"
-    "$PLEB_ROOT/scripts/install-go.sh" all \
+    case "$(uname -m)" in
+        x86_64|amd64)
+            arch=amd64
+            sha="${PLEBIAN_OS_KILIX_GO_SHA256_AMD64:-}"
+            ;;
+        aarch64|arm64)
+            arch=arm64
+            sha="${PLEBIAN_OS_KILIX_GO_SHA256_ARM64:-}"
+            ;;
+        *) die "unsupported architecture for Go toolchain: $(uname -m)" ;;
+    esac
+    if [ -n "$version" ] && [ -z "$sha" ]; then
+        die "PLEBIAN_OS_KILIX_GO_VERSION=$version requires PLEBIAN_OS_KILIX_GO_SHA256_${arch^^}"
+    fi
+    if [ -z "$version" ] && [ -n "$sha" ]; then
+        die "a pinned Go checksum requires PLEBIAN_OS_KILIX_GO_VERSION"
+    fi
+    if [ -n "$version" ]; then
+        log "installing pinned Go $version ($arch) for kilix fork build"
+    else
+        log "installing/upgrading Go for kilix fork build (>= $min; latest stable)"
+    fi
+    GO_VERSION="$version" GO_SHA256="$sha" "$PLEB_ROOT/scripts/install-go.sh" all \
         || die "Go toolchain install failed"
-    env "PLEBIAN_OS_KILIX_GO_MIN_VERSION=$min" bash -lc "$(_kilix_go_ok_script)" \
+    hash -r 2>/dev/null || true
+    env "PLEBIAN_OS_KILIX_GO_MIN_VERSION=$min" \
+        "PLEBIAN_OS_KILIX_GO_VERSION=$version" bash -lc "$(_kilix_go_ok_script)" \
         || die "Go toolchain is still below $min after install"
     log "Go is ready: $(go version 2>/dev/null || true)"
 }
@@ -164,7 +228,7 @@ _kilix_fork_head() {
 }
 
 _kilix_fork_stamp() {
-    printf '%s\n' "$KILIX_DIR/.kilix-fork-built-ref"
+    printf '%s\n' "$PLEB_STATE_HOME/kilix-fork-built-ref"
 }
 
 _kilix_fork_needs_rebuild() {
@@ -176,14 +240,14 @@ _kilix_fork_needs_rebuild() {
     head="$(_kilix_fork_head)"
     [ -n "$head" ] || return 0
     stamped="$(cat "$(_kilix_fork_stamp)" 2>/dev/null || true)"
-    [ "$stamped" = "$head" ] || return 0
+    [ "$stamped" = "$KILIX_DIR"$'\t'"$head" ] || return 0
     engine="$("$KILIX_DIR/kilix" --which 2>/dev/null | head -1 || true)"
     [ "$engine" = "$fork" ] || return 0
     return 1
 }
 
 _rebuild_kilix_fork() {
-    local fork engine head
+    local fork engine head stamp stamp_tmp
     _kilix_fork_enabled || {
         warn "PLEBIAN_OS_BUILD_KILIX_FORK=${PLEBIAN_OS_BUILD_KILIX_FORK:-0}; not rebuilding the fork"
         return 0
@@ -198,7 +262,13 @@ _rebuild_kilix_fork() {
     [ "$engine" = "$fork" ] \
         || die "kilix is not using the fork engine after build (got: ${engine:-<empty>})"
     head="$(_kilix_fork_head)"
-    [ -n "$head" ] && printf '%s\n' "$head" > "$(_kilix_fork_stamp)"
+    if [ -n "$head" ]; then
+        stamp="$(_kilix_fork_stamp)"
+        mkdir -p "$(dirname "$stamp")"
+        stamp_tmp="$(mktemp "${stamp}.tmp.XXXXXX")" || die "could not create fork-build stamp"
+        printf '%s\t%s\n' "$KILIX_DIR" "$head" >"$stamp_tmp"
+        mv "$stamp_tmp" "$stamp"
+    fi
     log "fork rebuilt."
 }
 
@@ -215,8 +285,22 @@ do_update() {
         esac
     done
 
+    _acquire_update_lock
     [ -d "$KILIX_DIR/.git" ] || die "no kilix git checkout at $KILIX_DIR — run 'pleb install' first"
+    require_immutable_ref "$KILIX_REF" "$KILIX_ALLOW_MUTABLE_REF" \
+        KILIX_REF KILIX_ALLOW_MUTABLE_REF
+    require_immutable_ref "$KILIX95_REF" "$KILIX95_ALLOW_MUTABLE_REF" \
+        KILIX95_REF KILIX95_ALLOW_MUTABLE_REF
+    if [ ! -d "$KILIX95_DIR/.git" ] && kilix95_required \
+        && [ -z "$KILIX95_REF" ] && [ "$KILIX95_ALLOW_UNPINNED_INSTALL" != 1 ]; then
+        die "automatic Kilix 95 install requires an immutable KILIX95_REF commit SHA (set KILIX95_ALLOW_UNPINNED_INSTALL=1 only to allow an unpinned clone)"
+    fi
     validate_checkout_origin "$KILIX_DIR" "$KILIX_REPO" "kilix"
+    require_clean_checkout "$KILIX_DIR" "kilix"
+    if [ -d "$KILIX95_DIR/.git" ]; then
+        validate_checkout_origin "$KILIX95_DIR" "$KILIX95_REPO" "kilix 95"
+        require_clean_checkout "$KILIX95_DIR" "kilix 95"
+    fi
     local before after branch current src_before src_after
     # track the checked-out branch (or KILIX_BRANCH if set); fall back to main
     branch="${KILIX_BRANCH:-$(git -C "$KILIX_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)}"
@@ -225,10 +309,7 @@ do_update() {
     src_before="$(git -C "$KILIX_DIR/src" rev-parse HEAD 2>/dev/null || echo none)"
 
     if [ -n "$KILIX_REF" ]; then
-        log "checking out kilix ref $KILIX_REF"
-        git -C "$KILIX_DIR" fetch --tags origin || die "git fetch failed"
-        git -C "$KILIX_DIR" checkout --detach "$KILIX_REF" \
-            || die "could not check out KILIX_REF=$KILIX_REF"
+        checkout_fetched_ref "$KILIX_DIR" "$KILIX_REF" "kilix"
     else
         log "fetching latest kilix ($branch) from origin"
         git -C "$KILIX_DIR" fetch --prune origin "$branch" || die "git fetch failed"
@@ -248,8 +329,7 @@ do_update() {
         # fast-forward only — never silently clobber local work
         if ! git -C "$KILIX_DIR" merge --ff-only "origin/$branch"; then
             warn "cannot fast-forward $branch (local commits/changes in $KILIX_DIR?)."
-            warn "resolve there and re-run 'pleb update'."
-            return 1
+            die "resolve there and re-run 'pleb update'."
         fi
     fi
     git -C "$KILIX_DIR" submodule update --init --recursive || die "submodule update failed"
@@ -272,7 +352,9 @@ do_update() {
     fi
     log "engine now: $("$KILIX_DIR/kilix" --which 2>/dev/null | tail -1)"
 
-    _update_kilix95
+    _update_kilix95 || die "kilix 95 update failed"
 
     _offer_restart
+    _release_update_lock
+    trap - EXIT INT TERM
 }

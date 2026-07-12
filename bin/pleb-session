@@ -25,7 +25,8 @@
 #   PLEB_RESPAWN      if =1, relaunch kilix if it exits (kiosk mode); default off
 #   PLEB_DESKTOP      if truthy, boot straight into `kilix desktop` instead of
 #                     a bare shell; default off
-#   KILIX_REF         optional exact Kilix commit/tag for update/install flows
+#   KILIX_REF         optional full Kilix commit SHA for update/install flows
+#   KILIX_ALLOW_MUTABLE_REF allow a tag/branch KILIX_REF only when explicitly 1
 #   KILIX_DESKTOP_PROVIDER auto | builtin | external | command | none
 #   KILIX_DESKTOP_COMMAND  shell command used when provider=command
 #   KILIX_DESKTOP_NAME     label/title for a custom desktop provider
@@ -34,7 +35,9 @@
 #   KILIX95_DIR       external Kilix 95 checkout path (default: $HOME/kilix-95)
 #   KILIX95_REPO      external Kilix 95 repo URL
 #   KILIX95_BRANCH    optional Kilix 95 branch
-#   KILIX95_REF       optional exact Kilix 95 commit/tag
+#   KILIX95_REF       optional full Kilix 95 commit SHA
+#   KILIX95_ALLOW_MUTABLE_REF allow a tag/branch KILIX95_REF only when 1
+#   KILIX95_ALLOW_UNPINNED_INSTALL allow an automatic clone without a ref
 #
 # Fullscreen note: kitty's --start-as=fullscreen uses _NET_WM_STATE_FULLSCREEN,
 # which only works when a window manager is running. This kiosk runs no WM by
@@ -42,12 +45,13 @@
 # whole screen in pixels (borderless at 0,0 == effectively fullscreen). Set
 # PLEB_WM=openbox (or any EWMH WM) to get native fullscreen + F11 instead.
 set -u
+[ "$(id -u)" != 0 ] || { echo "pleb-session refuses to run as root" >&2; exit 1; }
 
 # Optional persistent env defaults so knobs survive across logins without editing
 # this launcher. System first, then user. Values already present in the real
 # environment are restored after sourcing, so `PLEB_DESKTOP=0 pleb session` wins
 # over `/etc/pleb/session.env`.
-_pleb_vars="KILIX_DIR KILIX KILIX_REF PLEB_KILIX_ARGS PLEB_WM PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF"
+_pleb_vars="KILIX_DIR KILIX KILIX_REF KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
 declare -A _pleb_had _pleb_saved
 for _pleb_v in $_pleb_vars; do
     if [[ ${!_pleb_v+x} ]]; then
@@ -71,6 +75,7 @@ unset _pleb_cfg _pleb_v _pleb_vars _pleb_had _pleb_saved
 KILIX_DIR="${KILIX_DIR:-$HOME/kilix}"
 KILIX="${KILIX:-$KILIX_DIR/kilix}"
 KILIX_REF="${KILIX_REF:-}"
+KILIX_ALLOW_MUTABLE_REF="${KILIX_ALLOW_MUTABLE_REF:-0}"
 if [[ ${PLEB_KILIX_ARGS+x} ]]; then
     _PLEB_KILIX_ARGS_DEFAULT=0
 else
@@ -81,7 +86,7 @@ PLEB_BG="${PLEB_BG:-#101010}"
 PLEB_LOG="${PLEB_LOG:-$HOME/.local/share/pleb/session.log}"
 PLEB_RESPAWN="${PLEB_RESPAWN:-0}"
 PLEB_DESKTOP="${PLEB_DESKTOP:-0}"
-KILIX_DESKTOP_PROVIDER="${KILIX_DESKTOP_PROVIDER:-external}"
+KILIX_DESKTOP_PROVIDER="${KILIX_DESKTOP_PROVIDER:-auto}"
 KILIX_DESKTOP_COMMAND="${KILIX_DESKTOP_COMMAND:-}"
 KILIX_DESKTOP_NAME="${KILIX_DESKTOP_NAME:-desktop}"
 KILIX_DESKTOP_FLAVOR="${KILIX_DESKTOP_FLAVOR:-}"
@@ -90,6 +95,8 @@ KILIX95_DIR="${KILIX95_DIR:-$HOME/kilix-95}"
 KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
 KILIX95_BRANCH="${KILIX95_BRANCH:-}"
 KILIX95_REF="${KILIX95_REF:-}"
+KILIX95_ALLOW_MUTABLE_REF="${KILIX95_ALLOW_MUTABLE_REF:-0}"
+KILIX95_ALLOW_UNPINNED_INSTALL="${KILIX95_ALLOW_UNPINNED_INSTALL:-0}"
 
 # --- logging -----------------------------------------------------------------
 mkdir -p "$(dirname "$PLEB_LOG")" 2>/dev/null || true
@@ -200,7 +207,7 @@ fi
 # desktop later opens (its Terminal icon, panes) still use the normal shell —
 # only window 1's program is replaced.
 _pleb_desktop_enabled() {
-    case "${KILIX_DESKTOP_PROVIDER:-external}" in
+    case "${KILIX_DESKTOP_PROVIDER:-auto}" in
         none|off|disabled) return 1 ;;
     esac
     case "${PLEB_DESKTOP:-0}" in
@@ -214,6 +221,7 @@ if _pleb_desktop_enabled; then
     echo "--- PLEB_DESKTOP=$PLEB_DESKTOP: session program is 'kilix desktop' ($KILIX_DESKTOP_PROVIDER) ---"
     DESKTOP_ARGS=(env KILIX_IN_OVERLAY=1
                   "KILIX_REF=$KILIX_REF"
+                  "KILIX_ALLOW_MUTABLE_REF=$KILIX_ALLOW_MUTABLE_REF"
                   "KILIX_DESKTOP_PROVIDER=$KILIX_DESKTOP_PROVIDER"
                   "KILIX_DESKTOP_COMMAND=$KILIX_DESKTOP_COMMAND"
                   "KILIX_DESKTOP_NAME=$KILIX_DESKTOP_NAME"
@@ -223,6 +231,8 @@ if _pleb_desktop_enabled; then
                   "KILIX95_REPO=$KILIX95_REPO"
                   "KILIX95_BRANCH=$KILIX95_BRANCH"
                   "KILIX95_REF=$KILIX95_REF"
+                  "KILIX95_ALLOW_MUTABLE_REF=$KILIX95_ALLOW_MUTABLE_REF"
+                  "KILIX95_ALLOW_UNPINNED_INSTALL=$KILIX95_ALLOW_UNPINNED_INSTALL"
                   "$KILIX" desktop)
 fi
 

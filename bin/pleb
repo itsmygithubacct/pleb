@@ -6,7 +6,7 @@
 #   pleb test [opts]        try it in a throwaway X server (see: pleb test --help)
 #   pleb autologin on|off   boot straight into Pleb (kiosk) / back to greeter
 #   pleb kiosk on|off       hard kiosk: respawn kilix if it exits / don't
-#   pleb update [-y] [--no-restart]
+#   pleb update [-y] [--no-restart|--restart]
 #                           pull latest kilix, rebuild, optionally restart kiosk
 #   pleb status             show install + engine state
 #   pleb version            print the Plebian-OS release version
@@ -15,7 +15,8 @@
 #   pleb session            exec the session now (for the current $DISPLAY)
 #
 # Non-destructive: your current desktop session is untouched; "Pleb" is another choice
-# at the login screen. Uninstall reverses everything.
+# at the login screen. Uninstall removes the session integration while keeping
+# downloaded checkouts and any packages installed as dependencies.
 set -euo pipefail
 
 # Resolve symlinks so `ln -s .../bin/pleb /usr/local/bin/pleb` still finds the
@@ -48,7 +49,7 @@ cmd_status() {
     if [ -L "$KILIX_LINK" ]; then info "kilix cmd: $KILIX_LINK -> $(readlink "$KILIX_LINK")"
     else info "kilix cmd: not linked (run: pleb install)"; fi
     if desktop_enabled; then
-        info "desktop  : enabled via ${KILIX_DESKTOP_PROVIDER:-external}${KILIX_DESKTOP_NAME:+ ($KILIX_DESKTOP_NAME)}"
+        info "desktop  : enabled via ${KILIX_DESKTOP_PROVIDER:-auto}${KILIX_DESKTOP_NAME:+ ($KILIX_DESKTOP_NAME)}"
     else
         info "desktop  : plain kilix shell"
     fi

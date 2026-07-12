@@ -11,6 +11,7 @@ class PlebPlumbingTests(unittest.TestCase):
             "bin/pleb",
             "bin/pleb-session",
             *(str(p.relative_to(ROOT)) for p in sorted((ROOT / "lib").glob("*.sh"))),
+            *(str(p.relative_to(ROOT)) for p in sorted((ROOT / "scripts").glob("*.sh"))),
         ]
         subprocess.run(["bash", "-n", *scripts], cwd=ROOT, check=True)
 
@@ -22,6 +23,10 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("KILIX_DESKTOP_NAME=$KILIX_DESKTOP_NAME", text)
         self.assertIn("KILIX_DESKTOP_FLAVOR=$KILIX_DESKTOP_FLAVOR", text)
         self.assertIn("KILIX_REF=$KILIX_REF", text)
+        self.assertIn("KILIX_ALLOW_MUTABLE_REF=$KILIX_ALLOW_MUTABLE_REF", text)
+        self.assertIn("KILIX95_REF=$KILIX95_REF", text)
+        self.assertIn("KILIX95_ALLOW_MUTABLE_REF=$KILIX95_ALLOW_MUTABLE_REF", text)
+        self.assertIn("KILIX95_ALLOW_UNPINNED_INSTALL=$KILIX95_ALLOW_UNPINNED_INSTALL", text)
         self.assertNotIn("DESKTOP_CMD=", text)
         self.assertIn("none|off|disabled) return 1", text)
 
@@ -70,9 +75,13 @@ class PlebPlumbingTests(unittest.TestCase):
         text = (ROOT / "lib" / "update.sh").read_text()
         self.assertIn("PLEBIAN_OS_BUILD_KILIX_FORK", text)
         self.assertIn("PLEBIAN_OS_KILIX_GO_MIN_VERSION", text)
+        self.assertIn("PLEBIAN_OS_KILIX_GO_VERSION", text)
+        self.assertIn("PLEBIAN_OS_KILIX_GO_SHA256_AMD64", text)
+        self.assertIn("PLEBIAN_OS_KILIX_GO_SHA256_ARM64", text)
         self.assertIn("scripts/install-go.sh", text)
         self.assertIn("ensure_kilix_build_deps", text)
-        self.assertIn(".kilix-fork-built-ref", text)
+        self.assertIn("$PLEB_STATE_HOME/kilix-fork-built-ref", text)
+        self.assertNotIn("$KILIX_DIR/.kilix-fork-built-ref", text)
         self.assertIn('"$KILIX_DIR/kilix" --build || die "kilix fork build failed"', text)
         self.assertNotIn("fork build failed — keeping the previous engine binary", text)
 

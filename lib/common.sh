@@ -7,8 +7,71 @@
 # --- paths -------------------------------------------------------------------
 # PLEB_ROOT is the checkout dir (~/pleb). Resolve relative to this file.
 PLEB_ROOT="${PLEB_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
+# Load the same persistent session defaults as bin/pleb-session before deriving
+# any paths below.  Explicit values in the caller's environment win, matching
+# the session launcher's behaviour.  These files have always been shell env
+# files (and are sourced by pleb-session); the CLI deliberately uses that same
+# established contract rather than implementing a subtly different parser.
+PLEB_ENV_SYSTEM="${PLEB_ENV_SYSTEM:-/etc/pleb/session.env}"
+PLEB_ENV_USER="${PLEB_ENV_USER:-${XDG_CONFIG_HOME:-$HOME/.config}/pleb/session.env}"
+
+_pleb_config_safe_to_source() {
+    local cfg="$1" owner mode dir
+    [ "$(id -u)" = 0 ] || return 0
+    # A root CLI must not source through a symlink or a user-replaceable parent:
+    # checking only the final target leaves a stat/source race in a user-owned
+    # config directory. Root-managed /etc configuration passes this walk; a
+    # per-user file is deliberately ignored when the CLI itself runs as root.
+    case "$cfg" in /*) ;; *) return 1 ;; esac
+    [ -f "$cfg" ] && [ ! -L "$cfg" ] || return 1
+    owner="$(stat -c '%u' "$cfg" 2>/dev/null)" || return 1
+    mode="$(stat -c '%a' "$cfg" 2>/dev/null)" || return 1
+    if [ "$owner" != 0 ] || (( (8#$mode & 8#22) != 0 )); then
+        printf '[pleb] refusing to source unsafe config as root: %s\n' "$cfg" >&2
+        return 1
+    fi
+    dir="$(dirname "$cfg")"
+    while [ "$dir" != / ]; do
+        owner="$(stat -c '%u' "$dir" 2>/dev/null)" || return 1
+        mode="$(stat -c '%a' "$dir" 2>/dev/null)" || return 1
+        if [ "$owner" != 0 ] || (( (8#$mode & 8#22) != 0 )); then
+            printf '[pleb] refusing config below an unsafe directory as root: %s\n' "$cfg" >&2
+            return 1
+        fi
+        dir="$(dirname "$dir")"
+    done
+}
+
+load_pleb_session_env() {
+    local vars var cfg
+    vars="KILIX_DIR KILIX KILIX_REPO KILIX_BRANCH KILIX_REF KILIX_ALLOW_MUTABLE_REF KILIX_PREBUILT_VERSION KILIX_PREBUILT_SHA256 PLEB_KILIX_ARGS PLEB_WM PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL PLEB_INSTALL_KILIX95 PLEB_SKIP_DEPS PLEBIAN_OS_BUILD_KILIX_FORK PLEBIAN_OS_KILIX_GO_MIN_VERSION PLEBIAN_OS_KILIX_GO_VERSION PLEBIAN_OS_KILIX_GO_SHA256_AMD64 PLEBIAN_OS_KILIX_GO_SHA256_ARM64"
+    declare -A had saved
+    for var in $vars; do
+        if [[ ${!var+x} ]]; then
+            had[$var]=1
+            saved[$var]="${!var}"
+        else
+            had[$var]=0
+        fi
+    done
+    for cfg in "$PLEB_ENV_SYSTEM" "$PLEB_ENV_USER"; do
+        # shellcheck source=/dev/null
+        if [ -r "$cfg" ] && _pleb_config_safe_to_source "$cfg"; then
+            . "$cfg"
+        fi
+    done
+    for var in $vars; do
+        if [ "${had[$var]}" = 1 ]; then
+            printf -v "$var" '%s' "${saved[$var]}"
+        fi
+    done
+}
+load_pleb_session_env
+
 PLEB_BIN_SRC="$PLEB_ROOT/bin/pleb-session"
 PLEB_DESKTOP_IN="$PLEB_ROOT/share/pleb.desktop.in"
+PLEB_STATE_HOME="${PLEB_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/pleb}"
 
 # install destinations (system-wide, so LightDM/other users can see them)
 SESSION_BIN_DST="${SESSION_BIN_DST:-/usr/local/bin/pleb-session}"
@@ -25,14 +88,15 @@ KILIX_DIR="${KILIX_DIR:-$HOME/kilix}"
 KILIX_DEFAULT="${KILIX:-$KILIX_DIR/kilix}"
 KILIX_REPO="${KILIX_REPO:-https://github.com/itsmygithubacct/kilix.git}"
 KILIX_BRANCH="${KILIX_BRANCH:-}"   # empty = the repo's default branch
-KILIX_REF="${KILIX_REF:-}"         # optional exact commit/tag
+KILIX_REF="${KILIX_REF:-}"         # optional full commit SHA
+KILIX_ALLOW_MUTABLE_REF="${KILIX_ALLOW_MUTABLE_REF:-0}"
 KILIX_PREBUILT_VERSION="${KILIX_PREBUILT_VERSION:-}" # empty = latest fallback
 KILIX_PREBUILT_SHA256="${KILIX_PREBUILT_SHA256:-}"   # optional pinned checksum
 
 # Desktop provider passed through to `kilix desktop`. Pleb defaults to the
-# external Kilix 95 provider for desktop sessions, but callers can select
-# builtin, auto, command, or none.
-KILIX_DESKTOP_PROVIDER="${KILIX_DESKTOP_PROVIDER:-external}"
+# `auto` prefers an installed external Kilix 95 provider and otherwise uses the
+# bundled compatible provider. Release manifests select/pin `external` exactly.
+KILIX_DESKTOP_PROVIDER="${KILIX_DESKTOP_PROVIDER:-auto}"
 KILIX_DESKTOP_COMMAND="${KILIX_DESKTOP_COMMAND:-}"
 KILIX_DESKTOP_NAME="${KILIX_DESKTOP_NAME:-desktop}"
 
@@ -42,7 +106,9 @@ KILIX_DESKTOP_NAME="${KILIX_DESKTOP_NAME:-desktop}"
 KILIX95_DIR="${KILIX95_DIR:-$HOME/kilix-95}"
 KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
 KILIX95_BRANCH="${KILIX95_BRANCH:-}"   # empty = the repo's default branch
-KILIX95_REF="${KILIX95_REF:-}"         # optional exact commit/tag
+KILIX95_REF="${KILIX95_REF:-}"         # optional full commit SHA
+KILIX95_ALLOW_MUTABLE_REF="${KILIX95_ALLOW_MUTABLE_REF:-0}"
+KILIX95_ALLOW_UNPINNED_INSTALL="${KILIX95_ALLOW_UNPINNED_INSTALL:-0}"
 
 # --- pretty output -----------------------------------------------------------
 if [ -t 1 ]; then
@@ -86,7 +152,7 @@ write_root() {
 target_user() { echo "${SUDO_USER:-$(id -un)}"; }
 
 desktop_enabled() {
-    case "${KILIX_DESKTOP_PROVIDER:-external}" in
+    case "${KILIX_DESKTOP_PROVIDER:-auto}" in
         none|off|disabled) return 1 ;;
     esac
     case "${PLEB_DESKTOP:-0}" in
@@ -98,7 +164,7 @@ desktop_enabled() {
 kilix95_required() {
     [ "${PLEB_INSTALL_KILIX95:-0}" = 1 ] && return 0
     desktop_enabled || return 1
-    case "${KILIX_DESKTOP_PROVIDER:-external}" in
+    case "${KILIX_DESKTOP_PROVIDER:-auto}" in
         external) return 0 ;;
         auto) [ ! -f "$KILIX_DIR/desktop/main.py" ] ;;
         *) return 1 ;;
@@ -113,4 +179,40 @@ validate_checkout_origin() {
         && [ "${PLEB_TRUST_EXISTING_CHECKOUT:-${PLEBIAN_OS_TRUST_EXISTING_CHECKOUT:-0}}" != 1 ]; then
         die "$label checkout at $dir has origin '$remote', expected '$repo' (set PLEB_TRUST_EXISTING_CHECKOUT=1 to override)"
     fi
+}
+
+require_clean_checkout() {
+    local dir="$1" label="$2" status
+    [ -d "$dir/.git" ] || return 0
+    status="$(git -C "$dir" status --porcelain --untracked-files=normal 2>/dev/null)" \
+        || die "could not inspect $label checkout at $dir"
+    if [ -n "$status" ]; then
+        err "$label checkout at $dir has local changes; refusing to update it:"
+        printf '%s\n' "$status" >&2
+        die "commit, stash, or remove those changes, then re-run 'pleb update'"
+    fi
+}
+
+require_immutable_ref() {
+    local ref="$1" allow_mutable="$2" ref_name="$3" override_name="$4"
+    [ -n "$ref" ] || return 0
+    if ! [[ "$ref" =~ ^[0-9a-fA-F]{40}$ ]] && [ "$allow_mutable" != 1 ]; then
+        die "$ref_name must be a full 40-character commit SHA (set $override_name=1 only to trust a mutable tag/branch)"
+    fi
+}
+
+checkout_fetched_ref() {
+    local dir="$1" ref="$2" label="$3" resolved actual
+    log "fetching exact $label ref $ref from origin"
+    git -C "$dir" fetch --no-tags origin "$ref" \
+        || die "$label fetch failed for ref $ref"
+    resolved="$(git -C "$dir" rev-parse --verify 'FETCH_HEAD^{commit}' 2>/dev/null)" \
+        || die "fetched $label ref $ref did not resolve to a commit"
+    git -C "$dir" checkout --detach "$resolved" \
+        || die "could not check out fetched $label ref $ref ($resolved)"
+    actual="$(git -C "$dir" rev-parse --verify HEAD 2>/dev/null)" \
+        || die "could not verify $label HEAD after checkout"
+    [ "$actual" = "$resolved" ] \
+        || die "$label checkout verification failed (expected $resolved, got $actual)"
+    log "$label pinned at $resolved"
 }

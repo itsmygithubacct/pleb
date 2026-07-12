@@ -1,0 +1,22 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install shell linter
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Parse and lint scripts
+        run: |
+          bash -n bin/pleb bin/pleb-session lib/*.sh scripts/*.sh
+          shellcheck -S warning bin/pleb bin/pleb-session lib/*.sh scripts/*.sh

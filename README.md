@@ -5,8 +5,9 @@
 you log in and get a single fullscreen kilix as the entire "desktop" — no panel,
 no window manager, just the terminal. Rather than building a whole custom OS to
 do that, Pleb adds **"Pleb" as one more choosable session** at your existing
-LightDM login screen, so your normal desktop session is left completely
-untouched and everything here is reversible.
+LightDM login screen, so your normal desktop session is left untouched. The
+session integration is removable; cloned checkouts and packages installed as
+dependencies are intentionally retained for explicit cleanup.
 
 ```
 log out ──▶ LightDM greeter ──▶ pick "Pleb" ──▶ fullscreen kilix
@@ -23,6 +24,8 @@ log out ──▶ LightDM greeter ──▶ pick "Pleb" ──▶ fullscreen kil
 │   ├── common.sh       # shared helpers (paths, sudo, logging)
 │   ├── install.sh      # install/uninstall the LightDM session
 │   ├── autologin.sh    # kiosk autologin on/off
+│   ├── kiosk.sh        # hard-kiosk session setting
+│   ├── update.sh       # locked, fast-forward-only component updates
 │   └── test.sh         # safe nested/spare-VT testing
 ├── share/
 │   └── pleb.desktop.in # xsession entry template (installed to /usr/share/xsessions)
@@ -36,6 +39,11 @@ yourself — **`pleb install` clones kilix from upstream if it isn't already
 there** and fetches a prebuilt kitty so it runs immediately. The clickable-button
 **fork** (`src/kitty/launcher/kitty`) is built on demand later with `pleb update`
 or `~/kilix/kilix --build` (needs Go ≥ 1.26).
+
+A standalone unpinned install asks for explicit consent before accepting a
+prebuilt engine asset without a checksum. For automation, set
+`KILIX_PREBUILT_VERSION` and `KILIX_PREBUILT_SHA256` together; Plebian-OS
+manifests always supply a verified pair.
 
 `pleb install` also symlinks `kilix` onto your `PATH` (`/usr/local/bin/kilix`, or
 `$KILIX_LINK`), so `kilix desktop`, `kilix serve`, and friends work from anywhere
@@ -77,8 +85,8 @@ log in. To go back, log out and pick your usual session again.
 | `pleb autologin on [user]` | Boot straight into Pleb — no greeter (kiosk). *(sudo)* |
 | `pleb autologin off` | Revert to the normal greeter. *(sudo)* |
 | `pleb kiosk on` / `off` | Hard kiosk: respawn kilix if it exits (or don't). *(no sudo)* |
-| `pleb update [-y] [--no-restart]` | Pull latest kilix, rebuild the fork, offer to restart the kiosk when Pleb is active. |
-| `pleb status` | Show engine / install / autologin / kiosk state. |
+| `pleb update [-y] [--no-restart\|--restart]` | Update clean checkouts, rebuild the fork, and optionally restart an active kiosk. |
+| `pleb status` | Show the effective persisted engine / desktop / install / autologin / kiosk state. |
 | `pleb screen-size ...` | Show, increase, decrease, reset, or set Kilix terminal scale. |
 | `pleb session` | Exec the session now, against the current `$DISPLAY`. |
 
@@ -165,37 +173,60 @@ pleb kiosk off      # back to: kilix exit ends the session
 sudo systemctl restart lightdm   # apply now (or it takes effect next login)
 ```
 
-`pleb kiosk on` (no sudo) writes `: "${PLEB_RESPAWN:=1}"` to
-`~/.config/pleb/session.env`, which `pleb-session` sources at startup. Because it
-uses a default-only assignment, an explicit `PLEB_RESPAWN` in the environment
-still wins (this is what keeps `pleb test` — which passes `PLEB_RESPAWN=0` —
-deterministic). You can put any knob from the table below in that file (or in a
-system-wide `/etc/pleb/session.env`).
+`pleb kiosk on` (no sudo) writes `PLEB_RESPAWN=1` to
+`~/.config/pleb/session.env`, which `pleb-session` sources at startup. `off`
+writes an explicit `0`, so it can override a system-wide default. Values passed
+in the real process environment still win (this keeps `pleb test`, which passes
+`PLEB_RESPAWN=0`, deterministic). You can put any knob from the table below in
+that file or in `/etc/pleb/session.env`; the CLI and session use the same system
+then user precedence.
+
+These are shell environment files, so only place trusted content in them. If
+the CLI itself is invoked as root, it refuses to source a file that is not
+root-owned or is writable by group/other users.
 
 ## Updating kilix
 
 ```sh
 pleb update              # fetch latest kilix, ff-only, rebuild the fork, offer restart
 pleb update -y           # ...and restart an active Pleb kiosk without asking
+pleb update --restart    # explicitly restart an active kiosk; never prompts
 pleb update --no-restart # update only; leave LightDM alone
 ```
 
 `pleb update` fast-forwards or pins `~/kilix`, updates the optional `~/kilix-95`
-desktop checkout when the selected provider needs it, rebuilds the fork if a Go toolchain is present
-(else keeps the current engine), and only offers to restart LightDM when Pleb is
-configured as the active kiosk/autologin session. It never force-updates: if a
-branch can't fast-forward (local commits), it stops and tells you.
+desktop checkout when the selected provider needs it, installs the configured Go
+toolchain when necessary, and rebuilds the fork. It only offers to restart
+LightDM when Pleb is configured as the active kiosk/autologin session. Updates
+are serialized with an XDG-state lock and refuse any checkout with tracked or
+untracked local changes. They never force-update: if a branch cannot
+fast-forward, the command stops and tells you. A configured `KILIX_REF` or
+`KILIX95_REF` must be a full 40-character commit SHA, is fetched from `origin`,
+resolved through `FETCH_HEAD`, checked out detached, and verified; local tags
+are never trusted as the source of a release pin. Mutable refs require the
+corresponding explicit `*_ALLOW_MUTABLE_REF=1` trust override.
 
-## Environment knobs (`pleb-session`)
+The fork-build stamp is stored under
+`${XDG_STATE_HOME:-~/.local/state}/pleb/`, not inside the Kilix checkout.
+
+## Environment and persisted configuration knobs
+
+The session consumes the display/desktop values; `pleb install`, `update`, and
+`status` also read their relevant values from the same persisted files.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `KILIX_DIR` | `$HOME/kilix` | Kilix engine checkout. |
 | `KILIX` | `$KILIX_DIR/kilix` | Path to the kilix launcher. |
 | `KILIX_BRANCH` | *(repo default)* | Optional Kilix branch for install/update. |
-| `KILIX_REF` | *(none)* | Optional exact Kilix commit/tag for install/update. |
+| `KILIX_REF` | *(none)* | Optional full 40-character Kilix commit SHA for install/update. |
+| `KILIX_ALLOW_MUTABLE_REF` | `0` | Explicitly trust a mutable tag/branch in `KILIX_REF`. |
 | `KILIX_PREBUILT_VERSION` | *(latest)* | Optional exact fallback kitty version for Kilix bootstrap. |
 | `KILIX_PREBUILT_SHA256` | *(none)* | Optional checksum for the pinned fallback kitty bundle. |
+| `PLEBIAN_OS_KILIX_GO_MIN_VERSION` | `1.26` | Minimum Go version accepted for a Kilix fork build. |
+| `PLEBIAN_OS_KILIX_GO_VERSION` | *(none)* | Exact Go release, such as `go1.26.4`; requires the matching architecture hash. |
+| `PLEBIAN_OS_KILIX_GO_SHA256_AMD64` | *(none)* | Trusted SHA-256 for the pinned Linux amd64 Go archive. |
+| `PLEBIAN_OS_KILIX_GO_SHA256_ARM64` | *(none)* | Trusted SHA-256 for the pinned Linux arm64 Go archive. |
 | `PLEB_SKIP_DEPS` | `0` | If `1`, skip apt dependency installation during `pleb install`. |
 | `PLEB_KILIX_ARGS` | auto | Args passed to kilix; unset means native fullscreen with a WM, screen-fill sizing without one. |
 | `PLEB_WM` | *(none)* | Window manager to run before kilix (enables native fullscreen). |
@@ -203,7 +234,7 @@ branch can't fast-forward (local commits), it stops and tells you.
 | `PLEB_BG` | `#101010` | Root-window solid colour. |
 | `PLEB_RESPAWN` | `0` | If `1`, relaunch kilix when it exits (hard kiosk). |
 | `PLEB_DESKTOP` | `0` | If truthy, boot directly into `kilix desktop`; `0` gives a plain shell. |
-| `KILIX_DESKTOP_PROVIDER` | `external` | `auto`, `builtin`, `external`, `command`, or `none`. |
+| `KILIX_DESKTOP_PROVIDER` | `auto` | Prefer a compatible installed external provider, else bundled; or force `builtin`, `external`, `command`, or `none`. |
 | `KILIX_DESKTOP_COMMAND` | *(none)* | Shell command run by `kilix desktop` when provider is `command`. |
 | `KILIX_DESKTOP_NAME` | `desktop` | Label/tab title for custom desktop providers. |
 | `KILIX95_AUTO_INSTALL` | `1` | Lets `kilix desktop` clone external Kilix 95 when needed. |
@@ -211,6 +242,8 @@ branch can't fast-forward (local commits), it stops and tells you.
 | `KILIX95_REPO` | `https://github.com/itsmygithubacct/kilix-95.git` | Repo cloned when Kilix 95 is needed. |
 | `KILIX95_BRANCH` | *(repo default)* | Optional Kilix 95 branch. |
 | `KILIX95_REF` | *(none)* | Optional exact Kilix 95 commit/tag. |
+| `KILIX95_ALLOW_MUTABLE_REF` | `0` | Explicitly trust a mutable tag/branch in `KILIX95_REF`. |
+| `KILIX95_ALLOW_UNPINNED_INSTALL` | `0` | Explicitly allow an automatic external-provider clone without `KILIX95_REF`. |
 | `PLEB_LOG` | `~/.local/share/pleb/session.log` | Session log. |
 
 Use `PLEB_DESKTOP=0` or `KILIX_DESKTOP_PROVIDER=none` for no desktop at all. To
@@ -222,15 +255,16 @@ KILIX_DESKTOP_PROVIDER=command \
 KILIX_DESKTOP_COMMAND='exec /path/to/desktop'
 ```
 
-## Uninstall / reverse everything
+## Uninstall the session integration
 
 ```sh
 pleb autologin off      # if you enabled it
 pleb uninstall          # removes /usr/local/bin/pleb-session + the xsession entry
 ```
 
-`~/pleb` and `~/kilix` are left in place; delete them by hand if you want them
-gone.
+`~/pleb`, `~/kilix`, optional `~/kilix-95`, XDG state/cache, and packages
+installed as dependencies are left in place; remove them explicitly if you want
+them gone.
 
 ## Notes & limitations
 
@@ -243,9 +277,14 @@ gone.
   update`) produces the fork once Go is new enough. `pleb update` also re-runs
   the dependency installer before building so older installs pick up newly added
   build packages such as `libxkbcommon-x11-dev`.
-- **Upgrading Go later:** `~/pleb/scripts/install-go.sh` (default: latest stable
-  from go.dev; or pass a version, e.g. `install-go.sh go1.27.0`). `fetch` is
-  unprivileged; `install` needs sudo only to extract into `/usr/local`.
+- **Upgrading Go later:** `~/pleb/scripts/install-go.sh` defaults to the latest
+  stable release from go.dev, or accepts an exact version such as
+  `install-go.sh go1.26.4`. For a reproducible install, set both `GO_VERSION`
+  and `GO_SHA256`; a supplied hash is used directly without querying live
+  checksum metadata. `fetch` is unprivileged. `install` copies the archive into
+  a root-owned staging directory, re-verifies and validates it, then swaps it
+  into `/usr/local/go`; a failed swap restores the previous tree and command
+  links.
 - Single-monitor sizing is captured at launch; if you hot-plug a monitor or
   change resolution, restart the session (or use `PLEB_WM` for dynamic sizing).
 

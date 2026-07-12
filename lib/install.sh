@@ -77,6 +77,8 @@ ensure_kilix_build_deps() {
 # clone + prebuilt kitty is enough to run; the clickable-button fork is built
 # later on demand (`kilix --build` / `pleb update`, which init the submodule).
 ensure_kilix() {
+    require_immutable_ref "$KILIX_REF" "$KILIX_ALLOW_MUTABLE_REF" \
+        KILIX_REF KILIX_ALLOW_MUTABLE_REF
     if [ -d "$KILIX_DIR/.git" ] && [ -x "$KILIX_DIR/kilix" ]; then
         validate_checkout_origin "$KILIX_DIR" "$KILIX_REPO" "kilix"
         log "kilix present at $KILIX_DIR (use 'pleb update' to update it)"
@@ -91,10 +93,8 @@ ensure_kilix() {
             || die "git clone failed ($KILIX_REPO)"
     fi
     if [ -n "$KILIX_REF" ]; then
-        log "checking out kilix ref $KILIX_REF"
-        git -C "$KILIX_DIR" fetch --tags origin >/dev/null 2>&1 || true
-        git -C "$KILIX_DIR" checkout --detach "$KILIX_REF" \
-            || die "could not check out KILIX_REF=$KILIX_REF"
+        require_clean_checkout "$KILIX_DIR" "kilix"
+        checkout_fetched_ref "$KILIX_DIR" "$KILIX_REF" "kilix"
         git -C "$KILIX_DIR" submodule update --init --recursive \
             || die "kilix submodule update failed"
     fi
@@ -107,11 +107,16 @@ ensure_kilix95() {
     if ! kilix95_required; then
         return 0
     fi
+    require_immutable_ref "$KILIX95_REF" "$KILIX95_ALLOW_MUTABLE_REF" \
+        KILIX95_REF KILIX95_ALLOW_MUTABLE_REF
 
     if [ -d "$KILIX95_DIR/.git" ] && [ -f "$KILIX95_DIR/main.py" ]; then
         validate_checkout_origin "$KILIX95_DIR" "$KILIX95_REPO" "kilix 95"
         log "kilix 95 present at $KILIX95_DIR (use 'pleb update' to update it)"
     else
+        if [ -z "$KILIX95_REF" ] && [ "$KILIX95_ALLOW_UNPINNED_INSTALL" != 1 ]; then
+            die "automatic Kilix 95 install requires an immutable KILIX95_REF commit SHA (set KILIX95_ALLOW_UNPINNED_INSTALL=1 only to allow an unpinned clone)"
+        fi
         [ -e "$KILIX95_DIR" ] && [ ! -d "$KILIX95_DIR/.git" ] \
             && die "$KILIX95_DIR exists but isn't a kilix 95 checkout — move it aside first"
         command -v git >/dev/null 2>&1 || die "git is required to clone kilix 95"
@@ -123,23 +128,40 @@ ensure_kilix95() {
     fi
 
     if [ -n "$KILIX95_REF" ]; then
-        log "checking out kilix 95 ref $KILIX95_REF"
-        git -C "$KILIX95_DIR" fetch --tags origin >/dev/null 2>&1 || true
-        git -C "$KILIX95_DIR" checkout --detach "$KILIX95_REF" \
-            || die "could not check out KILIX95_REF=$KILIX95_REF"
+        require_clean_checkout "$KILIX95_DIR" "kilix 95"
+        checkout_fetched_ref "$KILIX95_DIR" "$KILIX95_REF" "kilix 95"
     fi
 }
 
 # ensure_engine — make sure kilix has a runnable kitty; if not, fetch the
 # prebuilt one (needs only git/curl/tar). The fork (buttons) needs Go >= 1.26.
 ensure_engine() {
+    local answer
+    local -a bootstrap_args=()
     if "$KILIX_DIR/kilix" --which >/dev/null 2>&1; then
         log "engine: $("$KILIX_DIR/kilix" --which 2>/dev/null | tail -1)"
         return 0
     fi
     [ -x "$KILIX_DIR/bootstrap.sh" ] || die "no engine and no bootstrap.sh in $KILIX_DIR"
+    if { [ -n "$KILIX_PREBUILT_VERSION" ] && [ -z "$KILIX_PREBUILT_SHA256" ]; } \
+        || { [ -z "$KILIX_PREBUILT_VERSION" ] && [ -n "$KILIX_PREBUILT_SHA256" ]; }; then
+        die "KILIX_PREBUILT_VERSION and KILIX_PREBUILT_SHA256 must be set together"
+    fi
+    if [ -z "$KILIX_PREBUILT_VERSION" ]; then
+        [ -t 0 ] || die "non-interactive engine install requires pinned KILIX_PREBUILT_VERSION and KILIX_PREBUILT_SHA256"
+        warn "no kitty bundle checksum is pinned; Plebian-OS release installs always pin one"
+        ask "Explicitly allow bootstrap.sh to download the displayed unverified asset? [y/N]"
+        read -r answer
+        case "$answer" in
+            y|Y|yes|YES) bootstrap_args=(--allow-unverified) ;;
+            *) die "engine install cancelled; set the prebuilt version and checksum, then retry" ;;
+        esac
+    fi
     log "fetching the prebuilt kilix engine ..."
-    "$KILIX_DIR/bootstrap.sh" || die "kilix engine bootstrap failed"
+    env "KILIX_PREBUILT_VERSION=$KILIX_PREBUILT_VERSION" \
+        "KILIX_PREBUILT_SHA256=$KILIX_PREBUILT_SHA256" \
+        "$KILIX_DIR/bootstrap.sh" "${bootstrap_args[@]}" \
+        || die "kilix engine bootstrap failed"
     log "engine ready: $("$KILIX_DIR/kilix" --which 2>/dev/null | tail -1)"
 }
 
@@ -191,7 +213,8 @@ do_install() {
     warn "verify the engine first:  pleb doctor"
 }
 
-# do_uninstall — remove everything do_install created. Leaves ~/kilix and ~/pleb.
+# do_uninstall — remove the system session files and command links. Checkouts,
+# caches/state, and packages installed as dependencies are intentionally kept.
 do_uninstall() {
     local removed=0
     for f in "$XSESSION_DST" "$SESSION_BIN_DST"; do
