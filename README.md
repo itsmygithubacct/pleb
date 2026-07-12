@@ -40,8 +40,9 @@ there** and fetches a prebuilt kitty so it runs immediately. The clickable-butto
 **fork** (`src/kitty/launcher/kitty`) is built on demand later with `pleb update`
 or `~/kilix/kilix --build` (needs Go ≥ 1.26).
 
-A standalone unpinned install asks for explicit consent before accepting a
-prebuilt engine asset without a checksum. For automation, set
+A standalone unpinned install prints the exact asset URL and asks for explicit
+consent before accepting it without a checksum. Configured prebuilt pins are
+revalidated even when an engine is already runnable. For automation, set
 `KILIX_PREBUILT_VERSION` and `KILIX_PREBUILT_SHA256` together; Plebian-OS
 manifests always supply a verified pair.
 
@@ -199,12 +200,19 @@ desktop checkout when the selected provider needs it, installs the configured Go
 toolchain when necessary, and rebuilds the fork. It only offers to restart
 LightDM when Pleb is configured as the active kiosk/autologin session. Updates
 are serialized with an XDG-state lock and refuse any checkout with tracked or
-untracked local changes. They never force-update: if a branch cannot
+untracked local changes. Before changing either checkout, Pleb snapshots both
+component positions, the fork engine, and its build stamp. Any component or
+build failure restores that coherent pre-update state. Updates never
+force-update: if a branch cannot
 fast-forward, the command stops and tells you. A configured `KILIX_REF` or
 `KILIX95_REF` must be a full 40-character commit SHA, is fetched from `origin`,
 resolved through `FETCH_HEAD`, checked out detached, and verified; local tags
 are never trusted as the source of a release pin. Mutable refs require the
 corresponding explicit `*_ALLOW_MUTABLE_REF=1` trust override.
+
+The Plebian-OS updater passes its already-held copy of this same lock through an
+inherited file descriptor. Pleb validates and borrows that lock without
+releasing the parent updater's ownership.
 
 The fork-build stamp is stored under
 `${XDG_STATE_HOME:-~/.local/state}/pleb/`, not inside the Kilix checkout.
@@ -284,7 +292,9 @@ them gone.
   checksum metadata. `fetch` is unprivileged. `install` copies the archive into
   a root-owned staging directory, re-verifies and validates it, then swaps it
   into `/usr/local/go`; a failed swap restores the previous tree and command
-  links.
+  links. The installed tree contains a root-owned `.pleb-source` provenance
+  stamp; pinned Pleb updates reinstall Go if that exact version/architecture/hash
+  record is absent or mismatched.
 - Single-monitor sizing is captured at launch; if you hot-plug a monitor or
   change resolution, restart the session (or use `PLEB_WM` for dynamic sizing).
 

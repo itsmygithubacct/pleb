@@ -255,6 +255,11 @@ do_install() {
         "go version $ver $OS/$ARCH"*) ;;
         *) die "staged toolchain identity mismatch: $staged_version" ;;
     esac
+    # This root-owned stamp lets Pleb distinguish the exact verified official
+    # archive from an unrelated binary that merely prints the requested version.
+    printf '%s\n%s\n%s\n' "$ver" "$ARCH" "$want" \
+        | run_root tee "$_INSTALL_STAGE/extract/go/.pleb-source" >/dev/null
+    run_root chmod 0444 "$_INSTALL_STAGE/extract/go/.pleb-source"
 
     if [ -e "$GO_BIN_DIR/go" ] || [ -L "$GO_BIN_DIR/go" ]; then
         run_root mv "$GO_BIN_DIR/go" "$_INSTALL_STAGE/previous-go-link"

@@ -19,6 +19,7 @@ def clean_env(home: Path) -> dict[str, str]:
         if key.startswith(("KILIX", "PLEB")):
             env.pop(key)
     env["HOME"] = str(home)
+    env["GOTELEMETRY"] = "off"
     env["PLEB_ENV_SYSTEM"] = str(home / "missing-system.env")
     env["PLEB_ENV_USER"] = str(home / "missing-user.env")
     return env
@@ -140,6 +141,47 @@ class PlebBehaviorTests(unittest.TestCase):
             self.assertIn("desktop  : plain kilix shell", overridden.stdout)
             self.assertIn("kiosk    : soft", overridden.stdout)
 
+    def test_session_truthy_respawn_values_match_kiosk_status_semantics(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            kilix = tmp / "kilix"
+            count = tmp / "launch-count"
+            write_executable(
+                kilix,
+                f"#!/bin/sh\nprintf 'launch\\n' >>{count!s}\nexit 1\n",
+            )
+            env = clean_env(tmp)
+            env.update(
+                {
+                    "DISPLAY": ":999",
+                    "KILIX": str(kilix),
+                    "PLEB_LOG": str(tmp / "session.log"),
+                    "PLEB_NO_FILL": "1",
+                    "PLEB_RESPAWN": "true",
+                }
+            )
+            result = subprocess.run(
+                ["timeout", "2.5", str(ROOT / "bin/pleb-session")],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 124)
+            self.assertGreaterEqual(count.read_text().count("launch"), 2)
+
+            count.unlink()
+            env["PLEB_RESPAWN"] = "off"
+            result = subprocess.run(
+                [str(ROOT / "bin/pleb-session")],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(count.read_text().count("launch"), 1)
+
     def test_root_context_does_not_source_user_owned_config(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
@@ -225,6 +267,234 @@ class PlebBehaviorTests(unittest.TestCase):
                 )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("already running", result.stderr)
+
+    def test_inherited_update_lock_is_validated_borrowed_and_left_open(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            state = tmp / "state"
+            state.mkdir()
+            user_env = tmp / "session.env"
+            user_env.write_text("PLEB_UPDATE_LOCK_FD=9999\n")
+            lock_fd = os.open(state / "update.lock", os.O_RDWR | os.O_CREAT, 0o600)
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                script = textwrap.dedent(
+                    f"""
+                    set -euo pipefail
+                    PLEB_ROOT={ROOT!s}
+                    PLEB_STATE_HOME={state!s}
+                    . "$PLEB_ROOT/lib/common.sh"
+                    . "$PLEB_ROOT/lib/update.sh"
+                    _acquire_update_lock
+                    [ "$_UPDATE_LOCK_BORROWED" = 1 ]
+                    _release_update_lock
+                    [ -e /proc/$$/fd/{lock_fd} ]
+                    flock -n -x {lock_fd}
+                    printf '%s\n' BORROWED_LOCK_OK
+                    """
+                )
+                env = clean_env(tmp)
+                env["PLEB_UPDATE_LOCK_FD"] = str(lock_fd)
+                env["PLEB_ENV_USER"] = str(user_env)
+                result = subprocess.run(
+                    ["bash", "-c", script],
+                    env=env,
+                    pass_fds=(lock_fd,),
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                )
+                self.assertIn("BORROWED_LOCK_OK", result.stdout)
+
+                competitor = os.open(state / "update.lock", os.O_RDWR)
+                try:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(competitor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                finally:
+                    os.close(competitor)
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+
+    def test_inherited_update_lock_rejects_invalid_closed_and_busy_fds(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            state = tmp / "state"
+            state.mkdir()
+
+            def attempt(value: str, pass_fds: tuple[int, ...] = ()) -> subprocess.CompletedProcess[str]:
+                script = textwrap.dedent(
+                    f"""
+                    set -euo pipefail
+                    PLEB_ROOT={ROOT!s}
+                    PLEB_STATE_HOME={state!s}
+                    . "$PLEB_ROOT/lib/common.sh"
+                    . "$PLEB_ROOT/lib/update.sh"
+                    _acquire_update_lock
+                    """
+                )
+                env = clean_env(tmp)
+                env["PLEB_UPDATE_LOCK_FD"] = value
+                return subprocess.run(
+                    ["bash", "-c", script],
+                    env=env,
+                    pass_fds=pass_fds,
+                    text=True,
+                    capture_output=True,
+                )
+
+            invalid = attempt("not-a-fd")
+            self.assertNotEqual(invalid.returncode, 0)
+            self.assertIn("must be a numeric", invalid.stderr)
+            closed = attempt("9999")
+            self.assertNotEqual(closed.returncode, 0)
+            self.assertIn("is not open", closed.stderr)
+
+            # A persisted file cannot manufacture this process capability.
+            persisted = tmp / "persisted.env"
+            persisted.write_text("PLEB_UPDATE_LOCK_FD=9999\n")
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                PLEB_STATE_HOME={state!s}
+                PLEB_ENV_USER={persisted!s}
+                . "$PLEB_ROOT/lib/common.sh"
+                [ -z "${{PLEB_UPDATE_LOCK_FD:-}}" ]
+                . "$PLEB_ROOT/lib/update.sh"
+                _acquire_update_lock
+                _release_update_lock
+                """
+            )
+            subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            lock_path = state / "update.lock"
+            holder = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+            candidate = os.open(lock_path, os.O_RDWR)
+            try:
+                fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                busy = attempt(str(candidate), (candidate,))
+                self.assertNotEqual(busy.returncode, 0)
+                self.assertIn("could not acquire the inherited", busy.stderr)
+            finally:
+                fcntl.flock(holder, fcntl.LOCK_UN)
+                os.close(candidate)
+                os.close(holder)
+
+            # Even an otherwise valid, lockable descriptor cannot redirect the
+            # capability away from the one shared Pleb state lock.
+            arbitrary = os.open(state / "arbitrary.lock", os.O_RDWR | os.O_CREAT, 0o600)
+            try:
+                redirected = attempt(str(arbitrary), (arbitrary,))
+                self.assertNotEqual(redirected.returncode, 0)
+                self.assertIn("must refer to", redirected.stderr)
+            finally:
+                os.close(arbitrary)
+
+    def test_failed_update_transaction_restores_both_checkouts_and_fork_engine(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+
+            def two_commit_repo(path: Path, ignore: str = "") -> tuple[str, str]:
+                subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
+                subprocess.run(["git", "-C", str(path), "config", "user.name", "Pleb Test"], check=True)
+                subprocess.run(
+                    ["git", "-C", str(path), "config", "user.email", "pleb@example.invalid"],
+                    check=True,
+                )
+                if ignore:
+                    (path / ".gitignore").write_text(ignore)
+                (path / "payload").write_text("before\n")
+                subprocess.run(["git", "-C", str(path), "add", "-A"], check=True)
+                subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "before"], check=True)
+                before = subprocess.check_output(
+                    ["git", "-C", str(path), "rev-parse", "HEAD"], text=True
+                ).strip()
+                (path / "payload").write_text("after\n")
+                subprocess.run(["git", "-C", str(path), "commit", "-qam", "after"], check=True)
+                after = subprocess.check_output(
+                    ["git", "-C", str(path), "rev-parse", "HEAD"], text=True
+                ).strip()
+                subprocess.run(["git", "-C", str(path), "reset", "-q", "--hard", before], check=True)
+                return before, after
+
+            kilix = tmp / "kilix"
+            src = kilix / "src"
+            kilix_before, kilix_after = two_commit_repo(kilix, "src/\n")
+            src_before, src_after = two_commit_repo(
+                src, "kitty/launcher/kitty\nkitty/launcher/kitten\n"
+            )
+            subprocess.run(
+                ["git", "-C", str(src), "checkout", "-q", "--detach", src_before], check=True
+            )
+            kilix95 = tmp / "kilix-95"
+            kilix95_before, kilix95_after = two_commit_repo(kilix95)
+            fork = src / "kitty/launcher/kitty"
+            kitten = src / "kitty/launcher/kitten"
+            fork.parent.mkdir(parents=True)
+            write_executable(fork, "#!/bin/sh\necho old-fork\n")
+            write_executable(kitten, "#!/bin/sh\necho old-kitten\n")
+            state = tmp / "state"
+            state.mkdir()
+            stamp = state / "kilix-fork-built-ref"
+            stamp.write_text("old-stamp\n")
+
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                PLEB_STATE_HOME={state!s}
+                KILIX_DIR={kilix!s}
+                KILIX95_DIR={kilix95!s}
+                . "$PLEB_ROOT/lib/common.sh"
+                . "$PLEB_ROOT/lib/update.sh"
+                _acquire_update_lock
+                _update_transaction_begin
+                git -C "$KILIX_DIR" reset --hard {kilix_after!s} >/dev/null
+                git -C "$KILIX_DIR/src" reset --hard {src_after!s} >/dev/null
+                git -C "$KILIX95_DIR" reset --hard {kilix95_after!s} >/dev/null
+                printf '%s\n' new-fork >{fork!s}
+                printf '%s\n' new-kitten >{kitten!s}
+                printf '%s\n' new-stamp >{stamp!s}
+                exit 73
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 73)
+            self.assertIn("restoring the previous coherent", result.stderr)
+            for repo, expected, expected_branch in (
+                (kilix, kilix_before, "main"),
+                (src, src_before, None),
+                (kilix95, kilix95_before, "main"),
+            ):
+                actual = subprocess.check_output(
+                    ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+                ).strip()
+                self.assertEqual(actual, expected)
+                branch = subprocess.run(
+                    ["git", "-C", str(repo), "symbolic-ref", "--short", "HEAD"],
+                    text=True,
+                    capture_output=True,
+                )
+                if expected_branch is None:
+                    self.assertNotEqual(branch.returncode, 0)
+                else:
+                    self.assertEqual(branch.stdout.strip(), expected_branch)
+            self.assertIn("old-fork", fork.read_text())
+            self.assertIn("old-kitten", kitten.read_text())
+            self.assertEqual(stamp.read_text(), "old-stamp\n")
+            self.assertEqual(list(state.glob("update-rollback.*")), [])
 
     def test_dirty_checkout_is_rejected_before_update(self):
         with tempfile.TemporaryDirectory() as td:
@@ -366,6 +636,76 @@ touch {marker!s}
             )
             self.assertEqual(observed.read_text(), f"kitty-9.9.9\n{'a' * 64}\n")
 
+    def test_existing_engine_does_not_bypass_configured_prebuilt_pin(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            checkout = tmp / "kilix"
+            checkout.mkdir()
+            observed = tmp / "bootstrap-called"
+            write_executable(
+                checkout / "kilix",
+                "#!/bin/sh\n[ \"${1:-}\" = --which ] && { echo /existing/engine; exit 0; }\nexit 1\n",
+            )
+            write_executable(
+                checkout / "bootstrap.sh",
+                f"#!/bin/sh\nprintf '%s\\n%s\\n' \"$KILIX_PREBUILT_VERSION\" \"$KILIX_PREBUILT_SHA256\" >{observed!s}\n",
+            )
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                KILIX_DIR={checkout!s}
+                KILIX_PREBUILT_VERSION=0.47.0
+                KILIX_PREBUILT_SHA256={'b' * 64}
+                . "$PLEB_ROOT/lib/common.sh"
+                . "$PLEB_ROOT/lib/install.sh"
+                ensure_engine
+                """
+            )
+            subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self.assertEqual(observed.read_text(), f"0.47.0\n{'b' * 64}\n")
+
+    def test_engine_bootstrap_success_must_produce_a_runnable_engine(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            checkout = tmp / "kilix"
+            checkout.mkdir()
+            write_executable(checkout / "kilix", "#!/bin/sh\nexit 1\n")
+            write_executable(checkout / "bootstrap.sh", "#!/bin/sh\nexit 0\n")
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                KILIX_DIR={checkout!s}
+                KILIX_PREBUILT_VERSION=0.47.0
+                KILIX_PREBUILT_SHA256={'c' * 64}
+                . "$PLEB_ROOT/lib/common.sh"
+                . "$PLEB_ROOT/lib/install.sh"
+                ensure_engine
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("no runnable engine", result.stderr)
+
+    def test_unverified_engine_prompt_follows_the_bootstrap_url_display(self):
+        text = (ROOT / "lib/install.sh").read_text()
+        display = text.index("KILIX_ALLOW_UNVERIFIED_PREBUILT=0")
+        prompt = text.index("Allow bootstrap.sh to download that unverified asset?")
+        self.assertLess(display, prompt)
+        self.assertNotIn("displayed unverified asset", text)
+
     def test_fork_build_stamp_is_xdg_state_not_checkout_state(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
@@ -423,6 +763,107 @@ touch {marker!s}
                 capture_output=True,
                 check=True,
             )
+
+    def test_pinned_go_is_reinstalled_when_provenance_stamp_mismatches(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            fake_root = tmp / "fake-go"
+            fake_bin = fake_root / "bin"
+            fake_bin.mkdir(parents=True)
+            install_root = tmp / "pleb-install"
+            (install_root / "scripts").mkdir(parents=True)
+            called = tmp / "install-called"
+            expected = "d" * 64
+            (fake_root / ".pleb-source").write_text(f"go1.26.4\namd64\n{'e' * 64}\n")
+            write_executable(
+                fake_bin / "go",
+                f"""#!/bin/sh
+case "${{1:-}}" in
+  version) echo 'go version go1.26.4 linux/amd64' ;;
+  env) [ "${{2:-}}" = GOROOT ] && echo {fake_root!s} ;;
+  *) exit 1 ;;
+esac
+""",
+            )
+            # Unit tests run unprivileged. This stat shim models the root-owned,
+            # read-only stamp that the real installer creates through sudo.
+            write_executable(
+                fake_bin / "stat",
+                """#!/bin/sh
+case "$2" in
+  %u) echo 0 ;;
+  %a) echo 444 ;;
+  *) exec /usr/bin/stat "$@" ;;
+esac
+""",
+            )
+            write_executable(
+                install_root / "scripts/install-go.sh",
+                f"""#!/bin/sh
+set -eu
+printf '%s\n%s\n%s\n' "$GO_VERSION" amd64 "$GO_SHA256" >{fake_root / '.pleb-source'!s}
+touch {called!s}
+""",
+            )
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                . "$PLEB_ROOT/lib/common.sh"
+                . "$PLEB_ROOT/lib/update.sh"
+                PLEB_ROOT={install_root!s}
+                GO_BIN_DIR={fake_bin!s}
+                PLEBIAN_OS_KILIX_GO_VERSION=go1.26.4
+                PLEBIAN_OS_KILIX_GO_SHA256_AMD64={expected}
+                _ensure_go_for_kilix_build
+                """
+            )
+            env = clean_env(tmp)
+            env["PATH"] = f"{fake_bin}:{env['PATH']}"
+            subprocess.run(
+                ["bash", "-c", script],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self.assertTrue(called.exists())
+            self.assertEqual(
+                (fake_root / ".pleb-source").read_text(),
+                f"go1.26.4\namd64\n{expected}\n",
+            )
+
+    def test_pinned_go_rejects_a_malformed_sha_even_when_version_matches(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            fake_bin = tmp / "bin"
+            fake_bin.mkdir()
+            write_executable(
+                fake_bin / "go",
+                "#!/bin/sh\necho 'go version go1.26.4 linux/amd64'\n",
+            )
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                . "$PLEB_ROOT/lib/common.sh"
+                . "$PLEB_ROOT/lib/update.sh"
+                GO_BIN_DIR={fake_bin!s}
+                PLEBIAN_OS_KILIX_GO_VERSION=go1.26.4
+                PLEBIAN_OS_KILIX_GO_SHA256_AMD64=not-a-sha
+                _ensure_go_for_kilix_build
+                """
+            )
+            env = clean_env(tmp)
+            env["PATH"] = f"{fake_bin}:{env['PATH']}"
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("expected 64 hexadecimal", result.stderr)
 
     def test_pinned_go_fetch_uses_supplied_arch_hash_without_live_metadata(self):
         cases = (
@@ -575,6 +1016,11 @@ exec "$@"
             )
             self.assertEqual(os.readlink(bin_dir / "go"), str(install_dir / "bin/go"))
             self.assertEqual(os.readlink(bin_dir / "gofmt"), str(install_dir / "bin/gofmt"))
+            self.assertEqual(
+                (install_dir / ".pleb-source").read_text(),
+                f"go1.26.4\namd64\n{checksum}\n",
+            )
+            self.assertEqual((install_dir / ".pleb-source").stat().st_mode & 0o777, 0o444)
             self.assertEqual(list((tmp / "local").glob(".pleb-go-stage.*")), [])
 
 

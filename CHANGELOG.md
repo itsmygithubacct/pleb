@@ -4,7 +4,12 @@
 
 - Add exact, architecture-specific Go version and SHA-256 pinning for Plebian-OS.
 - Stage, re-verify, validate, and rollback Go toolchain replacements on failure.
+- Record root-owned Go source provenance and enforce it for pinned fork builds.
 - Serialize updates and refuse dirty Kilix or Kilix 95 checkouts.
+- Validate and borrow the parent Plebian-OS updater's inherited lock without
+  releasing its ownership.
+- Roll back both component positions, the fork engine, and its build stamp when
+  any pre-commit update step fails.
 - Resolve pinned component refs from the current remote fetch rather than
   trusting potentially stale or poisoned local tags.
 - Require full component commit SHAs and an immutable ref for automatic external
@@ -13,6 +18,8 @@
 - Make `pleb update --restart` restart an active kiosk without prompting.
 - Make `pleb status` use the effective system and user session configuration.
 - Make `pleb kiosk off` override a system-wide respawn default.
+- Revalidate configured prebuilt pins, verify bootstrap postconditions, and show
+  the unverified asset URL before asking for consent.
 - Add behavioral coverage for pinning, rollback, locking, restart, persisted
   status, dirty checkouts, and state placement.
 

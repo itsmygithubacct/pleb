@@ -136,21 +136,30 @@ ensure_kilix95() {
 # ensure_engine — make sure kilix has a runnable kitty; if not, fetch the
 # prebuilt one (needs only git/curl/tar). The fork (buttons) needs Go >= 1.26.
 ensure_engine() {
-    local answer
+    local answer engine
     local -a bootstrap_args=()
-    if "$KILIX_DIR/kilix" --which >/dev/null 2>&1; then
-        log "engine: $("$KILIX_DIR/kilix" --which 2>/dev/null | tail -1)"
-        return 0
-    fi
-    [ -x "$KILIX_DIR/bootstrap.sh" ] || die "no engine and no bootstrap.sh in $KILIX_DIR"
     if { [ -n "$KILIX_PREBUILT_VERSION" ] && [ -z "$KILIX_PREBUILT_SHA256" ]; } \
         || { [ -z "$KILIX_PREBUILT_VERSION" ] && [ -n "$KILIX_PREBUILT_SHA256" ]; }; then
         die "KILIX_PREBUILT_VERSION and KILIX_PREBUILT_SHA256 must be set together"
     fi
+    # A configured version/checksum pair is an installation invariant, not just
+    # a download hint.  Let bootstrap.sh revalidate the fallback even when some
+    # engine (including a previously built fork) is already runnable.
+    if [ -z "$KILIX_PREBUILT_VERSION" ] \
+        && "$KILIX_DIR/kilix" --which >/dev/null 2>&1; then
+        log "engine: $("$KILIX_DIR/kilix" --which 2>/dev/null | tail -1)"
+        return 0
+    fi
+    [ -x "$KILIX_DIR/bootstrap.sh" ] || die "no engine and no bootstrap.sh in $KILIX_DIR"
     if [ -z "$KILIX_PREBUILT_VERSION" ]; then
         [ -t 0 ] || die "non-interactive engine install requires pinned KILIX_PREBUILT_VERSION and KILIX_PREBUILT_SHA256"
         warn "no kitty bundle checksum is pinned; Plebian-OS release installs always pin one"
-        ask "Explicitly allow bootstrap.sh to download the displayed unverified asset? [y/N]"
+        # First run without the override. bootstrap.sh refuses before download
+        # and prints the exact release URL so consent can be informed.
+        env KILIX_PREBUILT_VERSION= KILIX_PREBUILT_SHA256= \
+            KILIX_ALLOW_UNVERIFIED_PREBUILT=0 \
+            "$KILIX_DIR/bootstrap.sh" || true
+        ask "Allow bootstrap.sh to download that unverified asset? [y/N]"
         read -r answer
         case "$answer" in
             y|Y|yes|YES) bootstrap_args=(--allow-unverified) ;;
@@ -162,7 +171,10 @@ ensure_engine() {
         "KILIX_PREBUILT_SHA256=$KILIX_PREBUILT_SHA256" \
         "$KILIX_DIR/bootstrap.sh" "${bootstrap_args[@]}" \
         || die "kilix engine bootstrap failed"
-    log "engine ready: $("$KILIX_DIR/kilix" --which 2>/dev/null | tail -1)"
+    engine="$("$KILIX_DIR/kilix" --which 2>/dev/null | head -1 || true)"
+    [ -n "$engine" ] && "$KILIX_DIR/kilix" --which >/dev/null 2>&1 \
+        || die "kilix engine bootstrap reported success, but no runnable engine is available"
+    log "engine ready: $engine"
 }
 
 link_command() {
