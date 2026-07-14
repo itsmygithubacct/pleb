@@ -9,7 +9,7 @@
 #   pleb test --vt 9 --check --secs 6
 
 _T_GEOM=1280x800; _T_VT=9; _T_CHECK=0; _T_SECS=6; _T_MODE=auto
-_T_ENTRY=""; _T_TESTLOG="$HOME/.local/share/pleb/test.log"
+_T_ENTRY=""; _T_TESTLOG="$PLEB_STATE_HOME/test.log"
 
 _free_display() {  # echo a free ":N" starting at $1
     local n="$1"; while [ -e "/tmp/.X11-unix/X$n" ]; do n=$((n+1)); done; echo ":$n"
@@ -19,7 +19,7 @@ _test_report() {   # $1=alive(0/1)
     echo
     if [ "$1" = 1 ]; then log "PASS — kilix is running in the test session"; else err "FAIL — kilix did not come up"; fi
     echo "  --- session log (tail) ---"
-    tail -n 15 "$HOME/.local/share/pleb/session.log" 2>/dev/null | sed 's/^/  /'
+    tail -n 15 "$PLEB_STATE_HOME/session.log" 2>/dev/null | sed 's/^/  /'
     echo "  --- test log (tail) ---"
     tail -n 8 "$_T_TESTLOG" 2>/dev/null | sed 's/^/  /'
 }
