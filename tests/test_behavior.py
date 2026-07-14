@@ -63,6 +63,62 @@ class PlebBehaviorTests(unittest.TestCase):
             )
         self.assertEqual(result.stdout.strip(), f"pleb {(ROOT / 'VERSION').read_text().strip()}")
 
+    def test_recovery_doc_installs_readable_and_uninstalls_from_override_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            destination = tmp / "usr/local/share/doc/pleb/RECOVERY.md"
+            env = clean_env(tmp)
+            env.update(
+                {
+                    "PLEB_RECOVERY_DOC_DST": str(destination),
+                    "XSESSION_DST": str(tmp / "missing/pleb.desktop"),
+                    "SESSION_BIN_DST": str(tmp / "missing/pleb-session"),
+                    "KILIX_LINK": str(tmp / "missing/kilix"),
+                    "PLEB_LINK": str(tmp / "missing/pleb"),
+                    "AUTOLOGIN_CONF": str(tmp / "missing/autologin.conf"),
+                }
+            )
+            install_script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                . "$PLEB_ROOT/lib/common.sh"
+                . "$PLEB_ROOT/lib/install.sh"
+                run_root() {{ "$@"; }}
+                install_recovery_document
+                """
+            )
+            installed = subprocess.run(
+                ["bash", "-c", install_script],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            self.assertEqual(destination.read_bytes(), (ROOT / "docs/RECOVERY.md").read_bytes())
+            self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o644)
+
+            uninstall_script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                . "$PLEB_ROOT/lib/common.sh"
+                . "$PLEB_ROOT/lib/install.sh"
+                run_root() {{ "$@"; }}
+                do_uninstall
+                """
+            )
+            removed = subprocess.run(
+                ["bash", "-c", uninstall_script],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(removed.returncode, 0, removed.stderr)
+            self.assertFalse(destination.exists())
+
     def test_persisted_roots_are_applied_before_dependent_defaults(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
@@ -329,7 +385,9 @@ class PlebBehaviorTests(unittest.TestCase):
                 }
             )
             result = subprocess.run(
-                ["timeout", "2.5", str(ROOT / "bin/pleb-session")],
+                # The first crash backs off for two seconds. Leave enough
+                # startup margin for this assertion on a busy parallel CI host.
+                ["timeout", "4.5", str(ROOT / "bin/pleb-session")],
                 cwd=ROOT,
                 env=env,
                 text=True,
