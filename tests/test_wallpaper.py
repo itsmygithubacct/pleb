@@ -423,7 +423,12 @@ install_pleb_artwork_bundle
             result = self.run_helpers("install_standalone_pleb_wallpaper", env)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("manages the system wallpaper", result.stdout)
-            self.assertFalse(Path(env["PLEB_DATA_HOME"]).exists())
+            storage = Path(env["PLEB_STORAGE_HOME"])
+            for category in ("config", "state", "cache", "session", "data"):
+                path = storage / category
+                self.assertTrue(path.is_dir())
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
+            self.assertEqual(list(Path(env["PLEB_DATA_HOME"]).iterdir()), [])
             self.assertFalse(Path(env["KILIX_DATA_HOME"]).exists())
 
     def test_desktop_mode_off_still_seeds_the_selected_provider(self):

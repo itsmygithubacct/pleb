@@ -22,6 +22,7 @@ log out ──▶ LightDM greeter ──▶ pick "Pleb" ──▶ fullscreen kil
 │   └── pleb-session    # the X session entrypoint (self-contained; installed to /usr/local/bin)
 ├── lib/
 │   ├── common.sh       # shared helpers (paths, sudo, logging)
+│   ├── storage.sh      # private writable-data validation/reconciliation
 │   ├── install.sh      # install/uninstall the LightDM session
 │   ├── autologin.sh    # kiosk autologin on/off
 │   ├── kiosk.sh        # hard-kiosk session setting
@@ -241,11 +242,20 @@ releasing the parent updater's ownership.
 
 The fork-build stamp is stored under
 `~/.local/gpu_terminal/pleb/state/`, not inside any source checkout. Pleb-owned
-configuration, cache, persistent state, and live session files use the
-`~/.local/gpu_terminal/pleb/{config,cache,state,session}` layout.
-The login launcher creates its state directory as `0700`, keeps
-`state/session.log` as `0600`, and rotates a log larger than 1 MiB to
-`session.log.1` at the next login.
+configuration, cache, persistent state, live session files, and durable data
+use the `~/.local/gpu_terminal/pleb/{config,state,cache,session,data}` layout.
+Install (including a Plebian-OS-managed install), update, testing, kiosk changes,
+the Go fetcher, and every login reconcile the component root and all five
+categories as user-owned, non-symlink `0700` directories while preserving their
+contents. Path overrides must be normalized absolute paths and each category
+must remain a strict descendant of `PLEB_STORAGE_HOME`; unsafe, broad, linked,
+or escaped layouts are refused before any directory mode is changed. A missing
+intermediate in a custom nested category path is created as `0700`; an existing
+intermediate is validated as user-owned, non-linked, and not group/world
+writable, but is not itself a configured category boundary and is not chmodded.
+The login
+launcher keeps `state/session.log` as `0600` and rotates a log larger than 1 MiB
+to `session.log.1` at the next login.
 
 ## Environment and persisted configuration knobs
 
@@ -256,16 +266,25 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 |---|---|---|
 | `GPU_TERMINAL_SOURCE_HOME` | `$HOME/gpu_terminal` | Shared root for source checkouts. |
 | `GPU_TERMINAL_HOME` | `$HOME/.local/gpu_terminal` | Shared root for writable application data. |
-| `PLEB_STORAGE_HOME` | `$GPU_TERMINAL_HOME/pleb` | Pleb configuration, state, cache, and session root. |
+| `PLEB_STORAGE_HOME` | `$GPU_TERMINAL_HOME/pleb` | Private Pleb configuration, state, cache, session, and data root. |
 | `PLEB_CONFIG_HOME` | `$PLEB_STORAGE_HOME/config` | Pleb persisted configuration. |
 | `PLEB_STATE_HOME` | `$PLEB_STORAGE_HOME/state` | Pleb logs, locks, and durable state. |
 | `PLEB_CACHE_HOME` | `$PLEB_STORAGE_HOME/cache` | Pleb disposable cache. |
 | `PLEB_SESSION_HOME` | `$PLEB_STORAGE_HOME/session` | Pleb live-session scratch space. |
 | `PLEB_DATA_HOME` | `$PLEB_STORAGE_HOME/data` | Pleb-owned wallpaper, attribution, and other durable data. |
 | `KILIX_STORAGE_HOME` | `$GPU_TERMINAL_HOME/kilix` | Kilix writable-data root. |
+| `KILIX_CONFIG_HOME` | `$KILIX_STORAGE_HOME/config` | Kilix persisted configuration. |
+| `KILIX_STATE_DIRECTORY` | `$KILIX_STORAGE_HOME/state` | Kilix durable state. |
+| `KILIX_CACHE_HOME` | `$KILIX_STORAGE_HOME/cache` | Kilix disposable cache. |
+| `KILIX_SESSION_HOME` | `$KILIX_STORAGE_HOME/session` | Kilix live-session scratch space. |
 | `KILIX_DATA_HOME` | `$KILIX_STORAGE_HOME/data` | Bundled Kilix desktop data and state. |
 | `KILIX_BUILD_DIRECTORY` | `$KILIX_STORAGE_HOME/build` | Generated Kilix fork builds. |
+| `KILIX_PREBUILT_HOME` | `$KILIX_STORAGE_HOME/prebuilt/kitty.app` | Downloaded, verified Kilix engine bundle path. |
 | `KILIX95_STORAGE_HOME` | `$GPU_TERMINAL_HOME/kilix-95` | Kilix 95 writable-data root. |
+| `KILIX95_CONFIG_HOME` | `$KILIX95_STORAGE_HOME/config` | Kilix 95 persisted configuration. |
+| `KILIX95_STATE_HOME` | `$KILIX95_STORAGE_HOME/state` | Kilix 95 durable state. |
+| `KILIX95_CACHE_HOME` | `$KILIX95_STORAGE_HOME/cache` | Kilix 95 disposable cache. |
+| `KILIX95_SESSION_HOME` | `$KILIX95_STORAGE_HOME/session` | Kilix 95 live-session scratch space. |
 | `KILIX95_DATA_HOME` | `$KILIX95_STORAGE_HOME/data` | External Kilix-95 desktop data and state. |
 | `KILIX_DESKTOP_DIR` | `$PLEB_DATA_HOME/desktop` | Pleb-isolated desktop files and `.state.json`, forwarded to either provider. |
 | `KILIX_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix` | Kilix engine checkout. |
@@ -339,12 +358,23 @@ dependencies are left in place; remove them explicitly if you want them gone.
   stable release from go.dev, or accepts an exact version such as
   `install-go.sh go1.26.4`. For a reproducible install, set both `GO_VERSION`
   and `GO_SHA256`; a supplied hash is used directly without querying live
-  checksum metadata. `fetch` is unprivileged. `install` copies the archive into
-  a root-owned staging directory, re-verifies and validates it, then swaps it
-  into `/usr/local/go`; a failed swap restores the previous tree and command
-  links. The installed tree contains a root-owned `.pleb-source` provenance
-  stamp; pinned Pleb updates reinstall Go if that exact version/architecture/hash
-  record is absent or mismatched.
+  checksum metadata. Both `fetch` and direct `install` validate the cache before
+  use. The default cache is private below `PLEB_CACHE_HOME`; an explicit external
+  `GO_CACHE` must be a normalized absolute path with trusted, non-symlink,
+  non-group/world-writable ancestry and a user-owned `0700` leaf. `fetch` is
+  unprivileged. Direct `install` independently checks the manifest against a
+  configured trusted SHA-256 or the official checksum from go.dev. A configured
+  `GO_SHA256` is an intentional operator-supplied trust anchor; offline use
+  therefore requires that pin. Official metadata and privileged staging use
+  isolated system tools and a sanitized command environment. It then copies the
+  archive into a root-owned staging directory, re-verifies and validates it,
+  and swaps it into `/usr/local/go`; a failed swap restores the previous tree
+  and command links. The install and command-link destinations are deliberately
+  fixed at `/usr/local/go` and `/usr/local/bin`; their parent chain must be
+  root-owned, non-symlink, and not group/world writable before staging begins.
+  The installed tree contains a
+  root-owned `.pleb-source` provenance stamp; pinned Pleb updates reinstall Go if
+  that exact version/architecture/hash record is absent or mismatched.
 - Single-monitor sizing is captured at launch; if you hot-plug a monitor or
   change resolution, restart the session (or use `PLEB_WM` for dynamic sizing).
 

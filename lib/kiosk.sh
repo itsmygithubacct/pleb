@@ -20,6 +20,7 @@ kiosk_is_on() {
 
 _write_respawn() {
     local value="$1" comment="$2" dir tmp rc
+    ensure_pleb_private_storage
     case "$PLEB_ENV_USER" in
         /*) ;;
         *) die "Pleb configuration path must be absolute: $PLEB_ENV_USER" ;;

@@ -233,118 +233,6 @@ validate_pleb_artwork_bundle() {
         || die "Plebian wallpaper bundle validation failed"
 }
 
-_pleb_normalized_absolute_path() {
-    local path="$1"
-    case "$path" in
-        /*) ;;
-        *) die "Pleb writable-data path must be absolute: $path" ;;
-    esac
-    [[ "$path" != *$'\n'* && "$path" != *$'\r'* ]] \
-        || die "Pleb writable-data path contains a line break"
-    realpath -m -- "$path" 2>/dev/null \
-        || die "could not normalize Pleb writable-data path: $path"
-}
-
-_pleb_assert_no_symlink_components() {
-    local path="$1" current="" component mode
-    local -a components
-    IFS=/ read -r -a components <<<"${path#/}"
-    for component in "${components[@]}"; do
-        [ -n "$component" ] || continue
-        current="$current/$component"
-        [ ! -L "$current" ] \
-            || die "refusing Pleb writable-data path with a symlink component: $current"
-        if [ -e "$current" ]; then
-            [ -d "$current" ] \
-                || die "Pleb writable-data parent is not a directory: $current"
-            # Before PLEB_STORAGE_HOME exists, a group/world-writable parent
-            # permits another account to swap the path during installation.
-            case "$path" in
-                "$current"|"$current"/*)
-                    mode="$(stat -c '%a' "$current" 2>/dev/null)" \
-                        || die "could not inspect Pleb writable-data parent: $current"
-                    if [ "$current" != "$PLEB_STORAGE_HOME" ] \
-                        && (( (8#$mode & 8#22) != 0 )) \
-                        && (( (8#$mode & 8#1000) == 0 )); then
-                        die "refusing Pleb writable data below a group/world-writable parent: $current"
-                    fi
-                    ;;
-            esac
-        fi
-    done
-}
-
-_pleb_assert_safe_artwork_roots() {
-    local data_root data_input storage data source
-    _pleb_assert_no_symlink_components "$PLEB_STORAGE_HOME"
-    _pleb_assert_no_symlink_components "$PLEB_DATA_HOME"
-    data_root="$(_pleb_normalized_absolute_path "$GPU_TERMINAL_HOME")"
-    storage="$(_pleb_normalized_absolute_path "$PLEB_STORAGE_HOME")"
-    data="$(_pleb_normalized_absolute_path "$PLEB_DATA_HOME")"
-    source="$(_pleb_normalized_absolute_path "$GPU_TERMINAL_SOURCE_HOME")"
-    data_input="${GPU_TERMINAL_HOME%/}"
-    [ -n "$data_input" ] || data_input=/
-    [ "$data_input" = "$data_root" ] \
-        || die "GPU_TERMINAL_HOME must be a normalized absolute path: $GPU_TERMINAL_HOME"
-    [ "${PLEB_STORAGE_HOME%/}" = "$storage" ] \
-        || die "PLEB_STORAGE_HOME must be a normalized absolute path: $PLEB_STORAGE_HOME"
-    [ "${PLEB_DATA_HOME%/}" = "$data" ] \
-        || die "PLEB_DATA_HOME must be a normalized absolute path: $PLEB_DATA_HOME"
-    case "$data_root" in
-        /|/bin|/boot|/dev|/etc|/home|/lib|/lib64|/media|/mnt|/opt|/proc|/root|/run|/sbin|/srv|/sys|/tmp|/usr|/var)
-            die "GPU_TERMINAL_HOME is too broad for writable application data: $data_root" ;;
-    esac
-    case "$data_root" in
-        "$source"|"$source"/*)
-            die "GPU_TERMINAL_HOME must not place writable data in the source tree: $source" ;;
-    esac
-    case "$storage" in
-        "$data_root"/*) ;;
-        *) die "PLEB_STORAGE_HOME must be a strict descendant of GPU_TERMINAL_HOME ($data_root): $storage" ;;
-    esac
-    case "$data" in
-        "$storage"/*) ;;
-        *) die "PLEB_DATA_HOME must be a strict descendant of PLEB_STORAGE_HOME ($storage): $data" ;;
-    esac
-    # The comparison helper above uses the normalized value from here onward.
-    # Keep the globals canonical so every subsequent destination has the same
-    # checked prefix.
-    GPU_TERMINAL_HOME="$data_root"
-    PLEB_STORAGE_HOME="$storage"
-    PLEB_DATA_HOME="$data"
-}
-
-_pleb_private_data_dir() {
-    local dir="$1" owner mode existed=0
-    case "$dir" in
-        "$PLEB_STORAGE_HOME"|"$PLEB_STORAGE_HOME"/*) ;;
-        *) die "Pleb writable-data directory escapes PLEB_STORAGE_HOME: $dir" ;;
-    esac
-    [ ! -L "$dir" ] \
-        || die "refusing unsafe Pleb writable-data directory: $dir"
-    [ ! -e "$dir" ] || existed=1
-    if [ "$existed" = 0 ]; then
-        mkdir -p -- "$dir" \
-            || die "could not create Pleb writable-data directory: $dir"
-    fi
-    _pleb_assert_no_symlink_components "$dir"
-    [ -d "$dir" ] && [ ! -L "$dir" ] \
-        || die "refusing unsafe Pleb writable-data directory: $dir"
-    owner="$(stat -c '%u' "$dir" 2>/dev/null)" \
-        || die "could not inspect Pleb writable-data directory: $dir"
-    [ "$owner" = "$(id -u)" ] \
-        || die "Pleb writable-data directory is not owned by the current user: $dir"
-    mode="$(stat -c '%a' "$dir" 2>/dev/null)" \
-        || die "could not inspect Pleb writable-data directory mode: $dir"
-    # Root placement, ownership, and every path component were validated
-    # before reaching this point. Tightening an older Pleb-specific directory
-    # is therefore safe; broad roots never reach chmod.
-    if [ "$mode" != 700 ]; then
-        chmod 0700 -- "$dir" \
-            || die "could not make Pleb writable-data directory private: $dir"
-    fi
-}
-
 _pleb_artwork_destination_safe() {
     local destination="$1"
     if [ -e "$destination" ] || [ -L "$destination" ]; then
@@ -360,7 +248,7 @@ install_pleb_artwork_bundle() {
     local failure="" published=0
     local -a sources destinations staged backups
     _pleb_artwork_sources
-    _pleb_assert_safe_artwork_roots
+    ensure_pleb_private_storage
     _pleb_artwork_destinations
     validate_pleb_artwork_bundle
     umask 077
@@ -554,6 +442,9 @@ PY
 }
 
 install_standalone_pleb_wallpaper() {
+    # Privacy is part of Pleb's storage contract, not part of artwork ownership.
+    # Plebian-OS manages the files below data/, but must not bypass mode repair.
+    ensure_pleb_private_storage
     if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
         log "Plebian-OS manages the system wallpaper; skipping standalone Pleb artwork"
         return 0
@@ -589,6 +480,10 @@ do_install() {
     [ -f "$PLEB_BIN_SRC" ]    || die "missing $PLEB_BIN_SRC"
     [ -f "$PLEB_DESKTOP_IN" ] || die "missing $PLEB_DESKTOP_IN"
     validate_recovery_document
+
+    # This is required for both standalone and Plebian-OS-managed installs.
+    # Managed installs skip artwork publication, never storage privacy.
+    ensure_pleb_private_storage
 
     ensure_system_deps
     ensure_kilix   # fresh-clone kilix + set up an engine if not already present

@@ -89,6 +89,7 @@ _test_vt() {
 }
 
 run_test() {
+    ensure_pleb_private_storage
     while [ $# -gt 0 ]; do
         case "$1" in
             --xephyr)     _T_MODE=xephyr ;;
