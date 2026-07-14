@@ -115,6 +115,7 @@ export PLEB_ENV_SYSTEM PLEB_ENV_USER
 
 PLEB_BIN_SRC="$PLEB_ROOT/bin/pleb-session"
 PLEB_DESKTOP_IN="$PLEB_ROOT/share/pleb.desktop.in"
+PLEB_RECOVERY_DOC_SRC="$PLEB_ROOT/docs/RECOVERY.md"
 
 # install destinations (system-wide, so LightDM/other users can see them)
 SESSION_BIN_DST="${SESSION_BIN_DST:-/usr/local/bin/pleb-session}"
@@ -125,6 +126,8 @@ AUTOLOGIN_CONF="${AUTOLOGIN_CONF:-/etc/lightdm/lightdm.conf.d/50-pleb-autologin.
 KILIX_LINK="${KILIX_LINK:-/usr/local/bin/kilix}"
 # `pleb` command itself on PATH, so `pleb update`/`pleb status`/… work anywhere.
 PLEB_LINK="${PLEB_LINK:-/usr/local/bin/pleb}"
+# Stable, user-readable documentation path consumed by the Kilix-95 Help menu.
+PLEB_RECOVERY_DOC_DST="${PLEB_RECOVERY_DOC_DST:-/usr/local/share/doc/pleb/RECOVERY.md}"
 
 # kilix engine: where it lives, how to fetch it, and the launcher path.
 KILIX_DIR="${KILIX_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix}"

@@ -22,6 +22,9 @@
 - Reject unsafe standalone artwork storage roots and symlinked or non-private
   directory trees, use race-safe descriptor-based artwork reads, and restore
   the previous full bundle after a publication error.
+- Install a concise dependency/update recovery guide at the stable,
+  user-readable `/usr/local/share/doc/pleb/RECOVERY.md` path, including the
+  preferred Plebian-OS helper and `libxxhash-dev` fallback.
 
 ## 0.1.1 — 2026-07-12
 

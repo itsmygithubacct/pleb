@@ -32,6 +32,8 @@ log out ──▶ LightDM greeter ──▶ pick "Pleb" ──▶ fullscreen kil
 ├── scripts/
 │   ├── install-go.sh   # install/upgrade Go from go.dev (for the kilix fork build)
 │   └── validate-artwork.py # exact wallpaper/attribution/license validator
+├── docs/
+│   └── RECOVERY.md     # dependency/update recovery commands
 ├── assets/             # approved Plebian wallpaper + attribution and GPL-2 text
 └── README.md
 ```
@@ -330,7 +332,9 @@ dependencies are left in place; remove them explicitly if you want them gone.
   `scripts/install-build-deps.sh`: it verifies the complete current manifest,
   installs when verification fails, and verifies again. This avoids a stale
   duplicate package list in Pleb and covers newly added modules such as
-  `libxxhash`.
+  `libxxhash`. If an older install fails at that check, follow the concise
+  [recovery guide](docs/RECOVERY.md); `pleb install` also publishes it at
+  `/usr/local/share/doc/pleb/RECOVERY.md` for the desktop Help menu.
 - **Upgrading Go later:** `~/gpu_terminal/pleb/scripts/install-go.sh` defaults to the latest
   stable release from go.dev, or accepts an exact version such as
   `install-go.sh go1.26.4`. For a reproducible install, set both `GO_VERSION`
