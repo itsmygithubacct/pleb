@@ -566,16 +566,35 @@ install_standalone_pleb_wallpaper() {
     seed_pleb_wallpaper_state
 }
 
+validate_recovery_document() {
+    if [ ! -f "$PLEB_RECOVERY_DOC_SRC" ] || [ -L "$PLEB_RECOVERY_DOC_SRC" ]; then
+        die "missing or unsafe Pleb recovery document: $PLEB_RECOVERY_DOC_SRC"
+    fi
+}
+
+install_recovery_document() {
+    validate_recovery_document
+    case "$PLEB_RECOVERY_DOC_DST" in
+        /*) ;;
+        *) die "PLEB_RECOVERY_DOC_DST must be absolute: $PLEB_RECOVERY_DOC_DST" ;;
+    esac
+    log "installing Pleb recovery guide -> $PLEB_RECOVERY_DOC_DST"
+    run_root install -D -m 0644 -- \
+        "$PLEB_RECOVERY_DOC_SRC" "$PLEB_RECOVERY_DOC_DST"
+}
+
 # do_install — ensure kilix is present, copy pleb-session to /usr/local/bin, and
 # drop the xsession entry so LightDM lists "Pleb" as a choosable session.
 do_install() {
     [ -f "$PLEB_BIN_SRC" ]    || die "missing $PLEB_BIN_SRC"
     [ -f "$PLEB_DESKTOP_IN" ] || die "missing $PLEB_DESKTOP_IN"
+    validate_recovery_document
 
     ensure_system_deps
     ensure_kilix   # fresh-clone kilix + set up an engine if not already present
     ensure_kilix95 # optional: external Kilix 95 when the selected provider needs it
     install_standalone_pleb_wallpaper
+    install_recovery_document
 
     log "installing session launcher -> $SESSION_BIN_DST"
     run_root install -D -m 0755 "$PLEB_BIN_SRC" "$SESSION_BIN_DST"
@@ -601,8 +620,8 @@ do_install() {
 # caches/state, and packages installed as dependencies are intentionally kept.
 do_uninstall() {
     local removed=0
-    for f in "$XSESSION_DST" "$SESSION_BIN_DST"; do
-        if [ -e "$f" ]; then
+    for f in "$XSESSION_DST" "$SESSION_BIN_DST" "$PLEB_RECOVERY_DOC_DST"; do
+        if [ -e "$f" ] || [ -L "$f" ]; then
             log "removing $f"
             run_root rm -f "$f"
             removed=1

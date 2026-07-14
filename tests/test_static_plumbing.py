@@ -137,6 +137,26 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("WALLPAPER_SHA256", validator)
         self.assertIn("validate_png", validator)
 
+    def test_recovery_doc_has_stable_install_and_help_contract(self):
+        common = (ROOT / "lib" / "common.sh").read_text()
+        install = (ROOT / "lib" / "install.sh").read_text()
+        recovery = (ROOT / "docs" / "RECOVERY.md").read_text()
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        stable = "/usr/local/share/doc/pleb/RECOVERY.md"
+        self.assertIn(f"PLEB_RECOVERY_DOC_DST:-{stable}", common)
+        self.assertGreaterEqual(install.count("install_recovery_document"), 2)
+        self.assertIn("install -D -m 0644", install)
+        self.assertIn('"$PLEB_RECOVERY_DOC_DST"', install)
+        self.assertIn(
+            '"$XSESSION_DST" "$SESSION_BIN_DST" "$PLEB_RECOVERY_DOC_DST"',
+            install,
+        )
+        self.assertIn("sudo /usr/local/sbin/plebian-os-install-deps", recovery)
+        self.assertIn("sudo apt-get update", recovery)
+        self.assertIn("sudo apt-get install libxxhash-dev", recovery)
+        self.assertIn("complete, release-matched Kilix build", recovery)
+        self.assertIn(stable, changelog)
+
     def test_screen_size_passthrough_and_new_env_knobs_are_documented(self):
         cli = (ROOT / "bin" / "pleb").read_text()
         common = (ROOT / "lib" / "common.sh").read_text()
