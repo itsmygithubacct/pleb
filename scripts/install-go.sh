@@ -14,12 +14,14 @@
 # PLEBIAN_OS_KILIX_GO_SHA256_AMD64 / _ARM64 variables. When a checksum is
 # supplied this script never consults the live checksum API.
 #
-# Cache dir: $GO_CACHE (default ~/.cache/pleb/go). 'fetch' is unprivileged;
+# Cache dir: $GO_CACHE (default ~/.local/gpu_terminal/pleb/cache/go).
 # 'install' copies and re-verifies the archive in a root-owned staging directory,
 # validates it, then swaps it into place with rollback on any failure.
 set -euo pipefail
 
-GO_CACHE="${GO_CACHE:-$HOME/.cache/pleb/go}"
+GPU_TERMINAL_HOME="${GPU_TERMINAL_HOME:-$HOME/.local/gpu_terminal}"
+PLEB_STORAGE_HOME="${PLEB_STORAGE_HOME:-$GPU_TERMINAL_HOME/pleb}"
+GO_CACHE="${GO_CACHE:-${PLEB_CACHE_HOME:-$PLEB_STORAGE_HOME/cache}/go}"
 GO_INSTALL_DIR="${GO_INSTALL_DIR:-/usr/local/go}"
 GO_BIN_DIR="${GO_BIN_DIR:-/usr/local/bin}"
 OS=linux
