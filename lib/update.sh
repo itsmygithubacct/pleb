@@ -98,10 +98,26 @@ _restore_checkout_position() {
     fi
 }
 
+_restore_kilix_engine_generation() {
+    local current="$KILIX_BUILD_DIRECTORY/current"
+    local previous="$KILIX_BUILD_DIRECTORY/previous"
+    local existed old_id current_id previous_id
+    existed="$(cat "$_UPDATE_TXN_DIR/kilix-engine.existed" 2>/dev/null || echo 0)"
+    if [ "$existed" = 0 ]; then
+        rm -rf -- "$current"
+        return 0
+    fi
+    old_id="$(cat "$_UPDATE_TXN_DIR/kilix-engine.source-id" 2>/dev/null || true)"
+    current_id="$(cat "$current/source-id" 2>/dev/null || true)"
+    [ "$current_id" != "$old_id" ] || return 0
+    previous_id="$(cat "$previous/source-id" 2>/dev/null || true)"
+    [ -d "$previous" ] && [ "$previous_id" = "$old_id" ] || return 1
+    rm -rf -- "$current"
+    mv "$previous" "$current"
+}
+
 _update_transaction_rollback() {
-    local failed=0 fork kitten stamp
-    fork="$KILIX_DIR/src/kitty/launcher/kitty"
-    kitten="$KILIX_DIR/src/kitty/launcher/kitten"
+    local failed=0 stamp
     stamp="$(_kilix_fork_stamp)"
     warn "update failed; restoring the previous coherent Kilix/Kilix 95 state"
 
@@ -116,8 +132,7 @@ _update_transaction_rollback() {
     elif [ -f "$_UPDATE_TXN_DIR/kilix95.head" ]; then
         _restore_checkout_position "$KILIX95_DIR" kilix95 || failed=1
     fi
-    _restore_update_path "$fork" fork-kitty || failed=1
-    _restore_update_path "$kitten" fork-kitten || failed=1
+    _restore_kilix_engine_generation || failed=1
     _restore_update_path "$stamp" fork-stamp || failed=1
 
     if [ "$failed" = 0 ]; then
@@ -151,7 +166,7 @@ _update_cleanup() {
 }
 
 _update_transaction_begin() {
-    local fork kitten stamp
+    local current stamp
     _UPDATE_TXN_DIR="$(mktemp -d "$PLEB_STATE_HOME/update-rollback.XXXXXX")" \
         || die "could not create update rollback state"
     _UPDATE_TXN_ACTIVE=0
@@ -178,11 +193,15 @@ _update_transaction_begin() {
     else
         printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix95.existed"
     fi
-    fork="$KILIX_DIR/src/kitty/launcher/kitty"
-    kitten="$KILIX_DIR/src/kitty/launcher/kitten"
+    current="$KILIX_BUILD_DIRECTORY/current"
     stamp="$(_kilix_fork_stamp)"
-    _snapshot_update_path "$fork" fork-kitty
-    _snapshot_update_path "$kitten" fork-kitten
+    if [ -d "$current" ]; then
+        printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix-engine.existed"
+        cat "$current/source-id" >"$_UPDATE_TXN_DIR/kilix-engine.source-id" 2>/dev/null \
+            || : >"$_UPDATE_TXN_DIR/kilix-engine.source-id"
+    else
+        printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix-engine.existed"
+    fi
     _snapshot_update_path "$stamp" fork-stamp
     _UPDATE_TXN_ACTIVE=1
 }
@@ -430,8 +449,8 @@ _kilix_fork_stamp() {
 _kilix_fork_needs_rebuild() {
     _kilix_fork_enabled || return 1
     local fork kitten head stamped engine
-    fork="$KILIX_DIR/src/kitty/launcher/kitty"
-    kitten="$KILIX_DIR/src/kitty/launcher/kitten"
+    fork="$KILIX_BUILD_DIRECTORY/current/src/kitty/launcher/kitty"
+    kitten="$KILIX_BUILD_DIRECTORY/current/src/kitty/launcher/kitten"
     [ -x "$fork" ] && [ -x "$kitten" ] || return 0
     head="$(_kilix_fork_head)"
     [ -n "$head" ] || return 0
@@ -448,11 +467,13 @@ _rebuild_kilix_fork() {
         warn "PLEBIAN_OS_BUILD_KILIX_FORK=${PLEBIAN_OS_BUILD_KILIX_FORK:-0}; not rebuilding the fork"
         return 0
     }
-    ensure_kilix_build_deps
     _ensure_go_for_kilix_build
+    # Kilix owns the complete build manifest. Its verifier must be the final
+    # dependency gate before --build (including pkg-config's libxxhash check).
+    ensure_kilix_build_deps
     log "rebuilding kilix fork (go $(go version 2>/dev/null | awk '{print $3}')) ..."
     "$KILIX_DIR/kilix" --build || die "kilix fork build failed"
-    fork="$KILIX_DIR/src/kitty/launcher/kitty"
+    fork="$KILIX_BUILD_DIRECTORY/current/src/kitty/launcher/kitty"
     [ -x "$fork" ] || die "kilix fork build did not produce $fork"
     engine="$("$KILIX_DIR/kilix" --which 2>/dev/null | head -1 || true)"
     [ "$engine" = "$fork" ] \

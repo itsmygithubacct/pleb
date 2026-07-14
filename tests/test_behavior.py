@@ -2,6 +2,7 @@ import fcntl
 import hashlib
 import io
 import os
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -16,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def clean_env(home: Path) -> dict[str, str]:
     env = os.environ.copy()
     for key in list(env):
-        if key.startswith(("KILIX", "PLEB")):
+        if key.startswith(("GPU_TERMINAL", "KILIX", "PLEB")):
             env.pop(key)
     env["HOME"] = str(home)
     env["GOTELEMETRY"] = "off"
@@ -61,6 +62,171 @@ class PlebBehaviorTests(unittest.TestCase):
                 check=True,
             )
         self.assertEqual(result.stdout.strip(), f"pleb {(ROOT / 'VERSION').read_text().strip()}")
+
+    def test_persisted_roots_are_applied_before_dependent_defaults(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source = tmp / "persisted-source"
+            data = tmp / "persisted-data"
+            state = tmp / "special-state"
+            config = tmp / "session.env"
+            config.write_text(
+                f"GPU_TERMINAL_SOURCE_HOME={source!s}\n"
+                f"GPU_TERMINAL_HOME={data!s}\n"
+                f"PLEB_STATE_HOME={state!s}\n"
+            )
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                . "$PLEB_ROOT/lib/common.sh"
+                printf '%s\n' "$GPU_TERMINAL_SOURCE_HOME" "$GPU_TERMINAL_HOME" \
+                    "$PLEB_STORAGE_HOME" "$PLEB_STATE_HOME" "$PLEB_DATA_HOME" \
+                    "$KILIX_DIR" "$KILIX_DATA_HOME" "$KILIX_BUILD_DIRECTORY" \
+                    "$KILIX95_DIR" "$KILIX95_DATA_HOME" "$KILIX_DESKTOP_DIR"
+                """
+            )
+            env = clean_env(tmp)
+            env["PLEB_ENV_USER"] = str(config)
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self.assertEqual(
+                result.stdout.splitlines(),
+                [
+                    str(source),
+                    str(data),
+                    str(data / "pleb"),
+                    str(state),
+                    str(data / "pleb/data"),
+                    str(source / "kilix"),
+                    str(data / "kilix/data"),
+                    str(data / "kilix/build"),
+                    str(source / "kilix-95"),
+                    str(data / "kilix-95/data"),
+                    str(data / "pleb/data/desktop"),
+                ],
+            )
+
+            explicit_data = tmp / "explicit-data"
+            env["GPU_TERMINAL_HOME"] = str(explicit_data)
+            overridden = subprocess.run(
+                ["bash", "-c", script],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self.assertEqual(overridden.stdout.splitlines()[1], str(explicit_data))
+            self.assertEqual(overridden.stdout.splitlines()[2], str(explicit_data / "pleb"))
+
+    def test_session_loads_and_exports_the_same_source_and_storage_contract(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source = tmp / "source"
+            data = tmp / "data"
+            observed = tmp / "observed"
+            engine = tmp / "kilix"
+            write_executable(
+                engine,
+                "#!/bin/sh\n"
+                f"printf '%s\\n' \"$GPU_TERMINAL_SOURCE_HOME\" \"$GPU_TERMINAL_HOME\" "
+                f"\"$PLEB_STORAGE_HOME\" \"$PLEB_DATA_HOME\" "
+                f"\"$KILIX_STORAGE_HOME\" \"$KILIX_DATA_HOME\" "
+                f"\"$KILIX_BUILD_DIRECTORY\" \"$KILIX95_STORAGE_HOME\" "
+                f"\"$KILIX95_DATA_HOME\" "
+                f"\"$KILIX_DESKTOP_DIR\" "
+                f"\"$KILIX_DIR\" \"$KILIX95_DIR\" >{observed!s}\n",
+            )
+            config = tmp / ".local/gpu_terminal/pleb/config/session.env"
+            config.parent.mkdir(parents=True)
+            config.write_text(
+                f"GPU_TERMINAL_SOURCE_HOME={source!s}\n"
+                f"GPU_TERMINAL_HOME={data!s}\n"
+                f"KILIX={engine!s}\n"
+                "PLEB_NO_FILL=1\n"
+            )
+            env = clean_env(tmp)
+            env.pop("PLEB_ENV_USER")
+            subprocess.run(
+                [str(ROOT / "bin/pleb-session")],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self.assertEqual(
+                observed.read_text().splitlines(),
+                [
+                    str(source),
+                    str(data),
+                    str(data / "pleb"),
+                    str(data / "pleb/data"),
+                    str(data / "kilix"),
+                    str(data / "kilix/data"),
+                    str(data / "kilix/build"),
+                    str(data / "kilix-95"),
+                    str(data / "kilix-95/data"),
+                    str(data / "pleb/data/desktop"),
+                    str(source / "kilix"),
+                    str(source / "kilix-95"),
+                ],
+            )
+            session_log = data / "pleb/state/session.log"
+            self.assertTrue(session_log.is_file())
+            self.assertEqual(stat.S_IMODE(session_log.stat().st_mode), 0o600)
+
+    def test_session_log_is_private_rotated_and_rejects_symlinks(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            engine = tmp / "kilix"
+            write_executable(engine, "#!/bin/sh\nexit 0\n")
+            log = tmp / "state/session.log"
+            log.parent.mkdir()
+            original = b"x" * (1048576 + 1)
+            log.write_bytes(original)
+            log.chmod(0o644)
+            env = clean_env(tmp)
+            env.update(
+                {
+                    "KILIX": str(engine),
+                    "PLEB_LOG": str(log),
+                    "PLEB_NO_FILL": "1",
+                }
+            )
+            subprocess.run(
+                [str(ROOT / "bin/pleb-session")],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self.assertEqual((Path(f"{log}.1")).read_bytes(), original)
+            self.assertEqual(stat.S_IMODE(log.stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(Path(f"{log}.1").stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(log.parent.stat().st_mode), 0o700)
+
+            target = tmp / "must-not-be-written"
+            target.write_text("sentinel\n")
+            linked_log = tmp / "state/linked.log"
+            linked_log.symlink_to(target)
+            env["PLEB_LOG"] = str(linked_log)
+            rejected = subprocess.run(
+                [str(ROOT / "bin/pleb-session")],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("refusing unsafe session log", rejected.stderr)
+            self.assertEqual(target.read_text(), "sentinel\n")
 
     def test_status_uses_persisted_session_env_and_explicit_env_wins(self):
         with tempfile.TemporaryDirectory() as td:
@@ -118,6 +284,8 @@ class PlebBehaviorTests(unittest.TestCase):
                 capture_output=True,
                 check=True,
             )
+            self.assertEqual(stat.S_IMODE(user_env.stat().st_mode), 0o600)
+            self.assertEqual(user_env.read_text().count("PLEB_RESPAWN="), 1)
             persisted_off = subprocess.run(
                 [str(ROOT / "bin/pleb"), "status"],
                 cwd=ROOT,
@@ -397,6 +565,107 @@ class PlebBehaviorTests(unittest.TestCase):
             finally:
                 os.close(arbitrary)
 
+    def test_update_rebuild_uses_kilix_dependency_contract_for_libxxhash(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            kilix = tmp / "kilix"
+            scripts = kilix / "scripts"
+            scripts.mkdir(parents=True)
+            build = tmp / "kilix-data/build"
+            state = tmp / "pleb-state"
+            calls = tmp / "dependency-calls"
+            ready = tmp / "libxxhash-ready"
+            installer = scripts / "install-build-deps.sh"
+            write_executable(
+                installer,
+                "#!/bin/sh\n"
+                "set -eu\n"
+                f"calls={calls!s}\n"
+                f"ready={ready!s}\n"
+                "if [ \"${1:-}\" = --verify ]; then\n"
+                "  echo 'verify libxxhash' >>\"$calls\"\n"
+                "  [ -f \"$ready\" ] || { echo 'pkg-config libxxhash: MISSING'; exit 1; }\n"
+                "else\n"
+                "  echo 'install libxxhash' >>\"$calls\"\n"
+                "  : >\"$ready\"\n"
+                "fi\n",
+            )
+            launcher = kilix / "kilix"
+            fork = build / "current/src/kitty/launcher/kitty"
+            kitten = build / "current/src/kitty/launcher/kitten"
+            write_executable(
+                launcher,
+                "#!/bin/sh\n"
+                "set -eu\n"
+                "case \"${1:-}\" in\n"
+                "  --build)\n"
+                f"    echo build >>{calls!s}\n"
+                f"    mkdir -p {fork.parent!s}\n"
+                f"    printf '#!/bin/sh\\n' >{fork!s}\n"
+                f"    printf '#!/bin/sh\\n' >{kitten!s}\n"
+                f"    chmod 0755 {fork!s} {kitten!s}\n"
+                "    ;;\n"
+                f"  --which) echo {fork!s} ;;\n"
+                "  *) exit 2 ;;\n"
+                "esac\n",
+            )
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                KILIX_DIR={kilix!s}
+                KILIX_BUILD_DIRECTORY={build!s}
+                PLEB_STATE_HOME={state!s}
+                PLEB_SKIP_DEPS=0
+                . "$PLEB_ROOT/lib/common.sh"
+                . "$PLEB_ROOT/lib/install.sh"
+                . "$PLEB_ROOT/lib/update.sh"
+                _ensure_go_for_kilix_build() {{ :; }}
+                _kilix_fork_head() {{ :; }}
+                _rebuild_kilix_fork
+                """
+            )
+            rebuilt = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(rebuilt.returncode, 0, rebuilt.stderr)
+            self.assertEqual(
+                calls.read_text().splitlines(),
+                [
+                    "verify libxxhash",
+                    "install libxxhash",
+                    "verify libxxhash",
+                    "build",
+                ],
+            )
+
+            ready.unlink()
+            calls.write_text("")
+            skip_script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                KILIX_DIR={kilix!s}
+                PLEB_SKIP_DEPS=1
+                . "$PLEB_ROOT/lib/common.sh"
+                . "$PLEB_ROOT/lib/install.sh"
+                ensure_kilix_build_deps
+                """
+            )
+            skipped = subprocess.run(
+                ["bash", "-c", skip_script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(skipped.returncode, 0)
+            self.assertEqual(calls.read_text().splitlines(), ["verify libxxhash"])
+            self.assertIn("PLEB_SKIP_DEPS=1", skipped.stderr)
+            self.assertIn("libxxhash", skipped.stdout + skipped.stderr)
+
     def test_failed_update_transaction_restores_both_checkouts_and_fork_engine(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
@@ -435,11 +704,14 @@ class PlebBehaviorTests(unittest.TestCase):
             )
             kilix95 = tmp / "kilix-95"
             kilix95_before, kilix95_after = two_commit_repo(kilix95)
-            fork = src / "kitty/launcher/kitty"
-            kitten = src / "kitty/launcher/kitten"
+            build = tmp / "kilix-storage" / "build"
+            current = build / "current"
+            fork = current / "src/kitty/launcher/kitty"
+            kitten = current / "src/kitty/launcher/kitten"
             fork.parent.mkdir(parents=True)
             write_executable(fork, "#!/bin/sh\necho old-fork\n")
             write_executable(kitten, "#!/bin/sh\necho old-kitten\n")
+            (current / "source-id").write_text("old\n")
             state = tmp / "state"
             state.mkdir()
             stamp = state / "kilix-fork-built-ref"
@@ -451,6 +723,7 @@ class PlebBehaviorTests(unittest.TestCase):
                 PLEB_ROOT={ROOT!s}
                 PLEB_STATE_HOME={state!s}
                 KILIX_DIR={kilix!s}
+                KILIX_BUILD_DIRECTORY={build!s}
                 KILIX95_DIR={kilix95!s}
                 . "$PLEB_ROOT/lib/common.sh"
                 . "$PLEB_ROOT/lib/update.sh"
@@ -459,6 +732,9 @@ class PlebBehaviorTests(unittest.TestCase):
                 git -C "$KILIX_DIR" reset --hard {kilix_after!s} >/dev/null
                 git -C "$KILIX_DIR/src" reset --hard {src_after!s} >/dev/null
                 git -C "$KILIX95_DIR" reset --hard {kilix95_after!s} >/dev/null
+                mv {current!s} {build / 'previous'!s}
+                mkdir -p {current / 'src/kitty/launcher'!s}
+                printf '%s\n' new >{current / 'source-id'!s}
                 printf '%s\n' new-fork >{fork!s}
                 printf '%s\n' new-kitten >{kitten!s}
                 printf '%s\n' new-stamp >{stamp!s}

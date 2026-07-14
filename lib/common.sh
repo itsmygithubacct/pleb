@@ -5,7 +5,9 @@
 # shellcheck disable=SC2034
 
 # --- paths -------------------------------------------------------------------
-# PLEB_ROOT is the checkout dir (~/pleb). Resolve relative to this file.
+# PLEB_ROOT is the checkout containing this CLI. Resolve the actual path so an
+# installed /usr/local/bin/pleb symlink keeps working even when the source root
+# is configured differently.
 PLEB_ROOT="${PLEB_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 # Load the same persistent session defaults as bin/pleb-session before deriving
@@ -14,7 +16,20 @@ PLEB_ROOT="${PLEB_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 # files (and are sourced by pleb-session); the CLI deliberately uses that same
 # established contract rather than implementing a subtly different parser.
 PLEB_ENV_SYSTEM="${PLEB_ENV_SYSTEM:-/etc/pleb/session.env}"
-PLEB_ENV_USER="${PLEB_ENV_USER:-${XDG_CONFIG_HOME:-$HOME/.config}/pleb/session.env}"
+# The user env file must be located before it can supply path defaults. An
+# explicit environment path wins; otherwise locate it below the most specific
+# inherited storage root, finally falling back to the canonical writable root.
+if [[ ! ${PLEB_ENV_USER+x} ]]; then
+    if [[ ${PLEB_CONFIG_HOME+x} ]]; then
+        PLEB_ENV_USER="$PLEB_CONFIG_HOME/session.env"
+    elif [[ ${PLEB_STORAGE_HOME+x} ]]; then
+        PLEB_ENV_USER="$PLEB_STORAGE_HOME/config/session.env"
+    elif [[ ${GPU_TERMINAL_HOME+x} ]]; then
+        PLEB_ENV_USER="$GPU_TERMINAL_HOME/pleb/config/session.env"
+    else
+        PLEB_ENV_USER="$HOME/.local/gpu_terminal/pleb/config/session.env"
+    fi
+fi
 
 _pleb_config_safe_to_source() {
     local cfg="$1" owner mode dir
@@ -45,7 +60,7 @@ _pleb_config_safe_to_source() {
 
 load_pleb_session_env() {
     local vars var cfg
-    vars="KILIX_DIR KILIX KILIX_REPO KILIX_BRANCH KILIX_REF KILIX_ALLOW_MUTABLE_REF KILIX_PREBUILT_VERSION KILIX_PREBUILT_SHA256 PLEB_KILIX_ARGS PLEB_WM PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL PLEB_INSTALL_KILIX95 PLEB_SKIP_DEPS PLEB_UPDATE_LOCK_FD PLEBIAN_OS_BUILD_KILIX_FORK PLEBIAN_OS_KILIX_GO_MIN_VERSION PLEBIAN_OS_KILIX_GO_VERSION PLEBIAN_OS_KILIX_GO_SHA256_AMD64 PLEBIAN_OS_KILIX_GO_SHA256_ARM64"
+    vars="GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX95_STORAGE_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_REPO KILIX_BRANCH KILIX_REF KILIX_ALLOW_MUTABLE_REF KILIX_PREBUILT_VERSION KILIX_PREBUILT_SHA256 PLEB_KILIX_ARGS PLEB_WM PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL PLEB_INSTALL_KILIX95 PLEB_SKIP_DEPS PLEBIAN_OS_MANAGED_INSTALL PLEB_UPDATE_LOCK_FD PLEBIAN_OS_BUILD_KILIX_FORK PLEBIAN_OS_KILIX_GO_MIN_VERSION PLEBIAN_OS_KILIX_GO_VERSION PLEBIAN_OS_KILIX_GO_SHA256_AMD64 PLEBIAN_OS_KILIX_GO_SHA256_ARM64"
     declare -A had saved
     for var in $vars; do
         if [[ ${!var+x} ]]; then
@@ -73,9 +88,33 @@ load_pleb_session_env() {
 }
 load_pleb_session_env
 
+# Derive defaults only after persisted configuration has loaded. This is what
+# lets a path stored in session.env affect both the CLI and the login session;
+# assigning these defaults before load_pleb_session_env would incorrectly make
+# them look like explicit caller overrides.
+GPU_TERMINAL_SOURCE_HOME="${GPU_TERMINAL_SOURCE_HOME:-$HOME/gpu_terminal}"
+GPU_TERMINAL_HOME="${GPU_TERMINAL_HOME:-$HOME/.local/gpu_terminal}"
+PLEB_STORAGE_HOME="${PLEB_STORAGE_HOME:-$GPU_TERMINAL_HOME/pleb}"
+PLEB_CONFIG_HOME="${PLEB_CONFIG_HOME:-$PLEB_STORAGE_HOME/config}"
+PLEB_STATE_HOME="${PLEB_STATE_HOME:-$PLEB_STORAGE_HOME/state}"
+PLEB_CACHE_HOME="${PLEB_CACHE_HOME:-$PLEB_STORAGE_HOME/cache}"
+PLEB_SESSION_HOME="${PLEB_SESSION_HOME:-$PLEB_STORAGE_HOME/session}"
+PLEB_DATA_HOME="${PLEB_DATA_HOME:-$PLEB_STORAGE_HOME/data}"
+KILIX_STORAGE_HOME="${KILIX_STORAGE_HOME:-$GPU_TERMINAL_HOME/kilix}"
+KILIX_DATA_HOME="${KILIX_DATA_HOME:-$KILIX_STORAGE_HOME/data}"
+KILIX_BUILD_DIRECTORY="${KILIX_BUILD_DIRECTORY:-$KILIX_STORAGE_HOME/build}"
+KILIX95_STORAGE_HOME="${KILIX95_STORAGE_HOME:-$GPU_TERMINAL_HOME/kilix-95}"
+KILIX95_DATA_HOME="${KILIX95_DATA_HOME:-$KILIX95_STORAGE_HOME/data}"
+KILIX_DESKTOP_DIR="${KILIX_DESKTOP_DIR:-$PLEB_DATA_HOME/desktop}"
+export GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME
+export PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME
+export PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_DATA_HOME
+export KILIX_BUILD_DIRECTORY KILIX95_STORAGE_HOME KILIX95_DATA_HOME
+export KILIX_DESKTOP_DIR
+export PLEB_ENV_SYSTEM PLEB_ENV_USER
+
 PLEB_BIN_SRC="$PLEB_ROOT/bin/pleb-session"
 PLEB_DESKTOP_IN="$PLEB_ROOT/share/pleb.desktop.in"
-PLEB_STATE_HOME="${PLEB_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/pleb}"
 
 # install destinations (system-wide, so LightDM/other users can see them)
 SESSION_BIN_DST="${SESSION_BIN_DST:-/usr/local/bin/pleb-session}"
@@ -88,7 +127,7 @@ KILIX_LINK="${KILIX_LINK:-/usr/local/bin/kilix}"
 PLEB_LINK="${PLEB_LINK:-/usr/local/bin/pleb}"
 
 # kilix engine: where it lives, how to fetch it, and the launcher path.
-KILIX_DIR="${KILIX_DIR:-$HOME/kilix}"
+KILIX_DIR="${KILIX_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix}"
 KILIX_DEFAULT="${KILIX:-$KILIX_DIR/kilix}"
 KILIX_REPO="${KILIX_REPO:-https://github.com/itsmygithubacct/kilix.git}"
 KILIX_BRANCH="${KILIX_BRANCH:-}"   # empty = the repo's default branch
@@ -107,12 +146,13 @@ KILIX_DESKTOP_NAME="${KILIX_DESKTOP_NAME:-desktop}"
 # Optional Kilix 95 desktop checkout. Plain Pleb shell sessions and custom
 # desktop commands do not require it; install/update touch it only when the
 # selected provider needs it or PLEB_INSTALL_KILIX95=1.
-KILIX95_DIR="${KILIX95_DIR:-$HOME/kilix-95}"
+KILIX95_DIR="${KILIX95_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-95}"
 KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
 KILIX95_BRANCH="${KILIX95_BRANCH:-}"   # empty = the repo's default branch
 KILIX95_REF="${KILIX95_REF:-}"         # optional full commit SHA
 KILIX95_ALLOW_MUTABLE_REF="${KILIX95_ALLOW_MUTABLE_REF:-0}"
 KILIX95_ALLOW_UNPINNED_INSTALL="${KILIX95_ALLOW_UNPINNED_INSTALL:-0}"
+export KILIX_DIR KILIX_DEFAULT KILIX95_DIR
 
 # --- pretty output -----------------------------------------------------------
 if [ -t 1 ]; then
@@ -144,7 +184,8 @@ run_root() {
 # never need a root shell redirection).
 write_root() {
     local dest="$1" tmp
-    tmp="$(mktemp)" || die "mktemp failed"
+    mkdir -p "$PLEB_SESSION_HOME" || die "could not create $PLEB_SESSION_HOME"
+    tmp="$(mktemp "$PLEB_SESSION_HOME/root-write.XXXXXX")" || die "mktemp failed"
     cat >"$tmp"
     run_root install -D -m 0644 "$tmp" "$dest"
     rm -f "$tmp"

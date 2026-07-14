@@ -40,7 +40,7 @@ cmd_status() {
     if [ -x "$eng" ] && "$eng" --which >/dev/null 2>&1; then
         info "engine   : $("$eng" --which 2>/dev/null | tail -1)  [$eng]"
     else
-        info "engine   : NOT RUNNABLE at $eng  (run ~/kilix/bootstrap.sh)"
+        info "engine   : NOT RUNNABLE at $eng  (run $KILIX_DIR/bootstrap.sh)"
     fi
     if [ -f "$XSESSION_DST" ]; then info "session  : installed ($XSESSION_DST)"
     else info "session  : not installed  (run: pleb install)"; fi

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.1.2 — 2026-07-14
+
+- Use `~/gpu_terminal` as the shared source-checkout root and
+  `~/.local/gpu_terminal` as the shared writable-data root.
+- Apply persisted storage and source-path settings before deriving dependent
+  defaults, while preserving explicit process-environment precedence.
+- Export the complete source/data path contract into Pleb and Kilix desktop
+  sessions.
+- Keep session logs and persisted kiosk configuration private, safely rotate
+  oversized session logs, and reject unsafe log/configuration targets.
+- Keep generated Kilix fork artifacts outside the source checkout and include
+  their state in update rollback.
+- Bundle and exact-validate the approved Plebian wallpaper, attribution, and
+  GPL text; standalone installs copy it under Pleb-owned data and atomically
+  seed only an absent Pleb-isolated desktop state without changing provider
+  defaults such as Kilix-95's XP wallpaper.
+- Make Kilix's `scripts/install-build-deps.sh` the authoritative pre-build
+  dependency gate, including its `libxxhash` pkg-config check; verify before
+  installation and again before `kilix --build`.
+- Reject unsafe standalone artwork storage roots and symlinked or non-private
+  directory trees, use race-safe descriptor-based artwork reads, and restore
+  the previous full bundle after a publication error.
+
 ## 0.1.1 — 2026-07-12
 
 - Add exact, architecture-specific Go version and SHA-256 pinning for Plebian-OS.

@@ -16,7 +16,7 @@ log out ──▶ LightDM greeter ──▶ pick "Pleb" ──▶ fullscreen kil
 ## Layout
 
 ```
-~/pleb/
+~/gpu_terminal/pleb/
 ├── bin/
 │   ├── pleb            # the CLI: install / uninstall / test / autologin / status / doctor
 │   └── pleb-session    # the X session entrypoint (self-contained; installed to /usr/local/bin)
@@ -30,15 +30,18 @@ log out ──▶ LightDM greeter ──▶ pick "Pleb" ──▶ fullscreen kil
 ├── share/
 │   └── pleb.desktop.in # xsession entry template (installed to /usr/share/xsessions)
 ├── scripts/
-│   └── install-go.sh   # install/upgrade Go from go.dev (for the kilix fork build)
+│   ├── install-go.sh   # install/upgrade Go from go.dev (for the kilix fork build)
+│   └── validate-artwork.py # exact wallpaper/attribution/license validator
+├── assets/             # approved Plebian wallpaper + attribution and GPL-2 text
 └── README.md
 ```
 
-The engine is a kilix checkout at `~/kilix`. You don't need to set it up
+The engine is a kilix checkout at `~/gpu_terminal/kilix`. You don't need to set it up
 yourself — **`pleb install` clones kilix from upstream if it isn't already
 there** and fetches a prebuilt kitty so it runs immediately. The clickable-button
-**fork** (`src/kitty/launcher/kitty`) is built on demand later with `pleb update`
-or `~/kilix/kilix --build` (needs Go ≥ 1.26).
+**fork** (`~/.local/gpu_terminal/kilix/build/current/src/kitty/launcher/kitty`)
+is built on demand later with `pleb update` or `~/gpu_terminal/kilix/kilix --build` (needs
+Go ≥ 1.26). Generated binaries and objects never land in the Kilix source tree.
 
 A standalone unpinned install prints the exact asset URL and asks for explicit
 consent before accepting it without a checksum. Configured prebuilt pins are
@@ -50,29 +53,48 @@ manifests always supply a verified pair.
 `$KILIX_LINK`), so `kilix desktop`, `kilix serve`, and friends work from anywhere
 out of the box.
 
+For a standalone install, Pleb validates and copies the approved Plebian
+wallpaper to
+`~/.local/gpu_terminal/pleb/data/wallpapers/plebian-os.png`, with its exact
+attribution and GPL version 2 text below the adjacent `data/doc/` tree. Install
+atomically creates Pleb's isolated `$KILIX_DESKTOP_DIR/.state.json` only if it
+is absent—even when desktop launch is currently disabled, so enabling it later
+needs no reinstall. `KILIX_DESKTOP_DIR` defaults to
+`$PLEB_DATA_HOME/desktop` and is forwarded to either compatible provider;
+provider-global `$KILIX_DATA_HOME/desktop` and `$KILIX95_DATA_HOME/desktop`
+state is never touched. Existing Pleb state—including a symlink or custom
+wallpaper—is never replaced. A Plebian-OS provisioned install passes
+`PLEBIAN_OS_MANAGED_INSTALL=1` and instead owns the identical wallpaper and
+desktop-state location as part of the distribution. Direct Kilix-95 XP sessions
+therefore retain their kittens-fire wallpaper default.
+
 ## Requirements
 
 - A **LightDM**-based Linux desktop with **Xorg** (`startx`/`xinit`).
 - **git**, **curl**, **tar** (to clone kilix and fetch its prebuilt engine).
 - `sudo` for `install` / `autologin` (system files only).
-- On Debian/Ubuntu, `pleb install` installs the needed runtime/build packages
-  with apt, including the FluidSynth/SoundFont packages used by kilix-amp MIDI
-  playback. Set `PLEB_SKIP_DEPS=1` to skip package-manager changes.
+- On Debian/Ubuntu, `pleb install` installs Pleb's runtime packages with apt,
+  including the FluidSynth/SoundFont runtime used by kilix-amp MIDI playback.
+  Before a fork build, `pleb update` runs Kilix's own complete cross-distro
+  dependency verifier and installer (including the `libxxhash` pkg-config
+  module). Set `PLEB_SKIP_DEPS=1` to prevent package-manager changes; an update
+  then fails clearly if Kilix reports a missing build prerequisite.
 - Optional: `xserver-xephyr` for nested `pleb test`; Go ≥ 1.26 for the fork.
 
 ## Quick start
 
 ```sh
-~/pleb/bin/pleb install         # clone kilix + engine, add "Pleb" to LightDM (asks for sudo)
-~/pleb/bin/pleb doctor          # check prerequisites (engine, X, greeter)
-~/pleb/bin/pleb test            # try it in a throwaway X server — nothing permanent
+~/gpu_terminal/pleb/bin/pleb install  # clone kilix + engine, add "Pleb" to LightDM (asks for sudo)
+~/gpu_terminal/pleb/bin/pleb doctor   # check prerequisites (engine, X, greeter)
+~/gpu_terminal/pleb/bin/pleb test     # try it in a throwaway X server — nothing permanent
 ```
 
 Then **log out** of your current desktop, and at the LightDM greeter open the
 session menu (the little badge/gear near the password box), choose **Pleb**, and
 log in. To go back, log out and pick your usual session again.
 
-> Add `~/pleb/bin` to your `PATH` (or `alias pleb=~/pleb/bin/pleb`) to drop the
+> Add `~/gpu_terminal/pleb/bin` to your `PATH` (or alias
+> `pleb=~/gpu_terminal/pleb/bin/pleb`) to drop the
 > full path.
 
 ## The `pleb` CLI
@@ -175,7 +197,7 @@ sudo systemctl restart lightdm   # apply now (or it takes effect next login)
 ```
 
 `pleb kiosk on` (no sudo) writes `PLEB_RESPAWN=1` to
-`~/.config/pleb/session.env`, which `pleb-session` sources at startup. `off`
+`~/.local/gpu_terminal/pleb/config/session.env`, which `pleb-session` sources at startup. `off`
 writes an explicit `0`, so it can override a system-wide default. Values passed
 in the real process environment still win (this keeps `pleb test`, which passes
 `PLEB_RESPAWN=0`, deterministic). You can put any knob from the table below in
@@ -195,7 +217,8 @@ pleb update --restart    # explicitly restart an active kiosk; never prompts
 pleb update --no-restart # update only; leave LightDM alone
 ```
 
-`pleb update` fast-forwards or pins `~/kilix`, updates the optional `~/kilix-95`
+`pleb update` fast-forwards or pins `~/gpu_terminal/kilix`, updates the optional
+`~/gpu_terminal/kilix-95`
 desktop checkout when the selected provider needs it, installs the configured Go
 toolchain when necessary, and rebuilds the fork. It only offers to restart
 LightDM when Pleb is configured as the active kiosk/autologin session. Updates
@@ -215,7 +238,12 @@ inherited file descriptor. Pleb validates and borrows that lock without
 releasing the parent updater's ownership.
 
 The fork-build stamp is stored under
-`${XDG_STATE_HOME:-~/.local/state}/pleb/`, not inside the Kilix checkout.
+`~/.local/gpu_terminal/pleb/state/`, not inside any source checkout. Pleb-owned
+configuration, cache, persistent state, and live session files use the
+`~/.local/gpu_terminal/pleb/{config,cache,state,session}` layout.
+The login launcher creates its state directory as `0700`, keeps
+`state/session.log` as `0600`, and rotates a log larger than 1 MiB to
+`session.log.1` at the next login.
 
 ## Environment and persisted configuration knobs
 
@@ -224,7 +252,21 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KILIX_DIR` | `$HOME/kilix` | Kilix engine checkout. |
+| `GPU_TERMINAL_SOURCE_HOME` | `$HOME/gpu_terminal` | Shared root for source checkouts. |
+| `GPU_TERMINAL_HOME` | `$HOME/.local/gpu_terminal` | Shared root for writable application data. |
+| `PLEB_STORAGE_HOME` | `$GPU_TERMINAL_HOME/pleb` | Pleb configuration, state, cache, and session root. |
+| `PLEB_CONFIG_HOME` | `$PLEB_STORAGE_HOME/config` | Pleb persisted configuration. |
+| `PLEB_STATE_HOME` | `$PLEB_STORAGE_HOME/state` | Pleb logs, locks, and durable state. |
+| `PLEB_CACHE_HOME` | `$PLEB_STORAGE_HOME/cache` | Pleb disposable cache. |
+| `PLEB_SESSION_HOME` | `$PLEB_STORAGE_HOME/session` | Pleb live-session scratch space. |
+| `PLEB_DATA_HOME` | `$PLEB_STORAGE_HOME/data` | Pleb-owned wallpaper, attribution, and other durable data. |
+| `KILIX_STORAGE_HOME` | `$GPU_TERMINAL_HOME/kilix` | Kilix writable-data root. |
+| `KILIX_DATA_HOME` | `$KILIX_STORAGE_HOME/data` | Bundled Kilix desktop data and state. |
+| `KILIX_BUILD_DIRECTORY` | `$KILIX_STORAGE_HOME/build` | Generated Kilix fork builds. |
+| `KILIX95_STORAGE_HOME` | `$GPU_TERMINAL_HOME/kilix-95` | Kilix 95 writable-data root. |
+| `KILIX95_DATA_HOME` | `$KILIX95_STORAGE_HOME/data` | External Kilix-95 desktop data and state. |
+| `KILIX_DESKTOP_DIR` | `$PLEB_DATA_HOME/desktop` | Pleb-isolated desktop files and `.state.json`, forwarded to either provider. |
+| `KILIX_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix` | Kilix engine checkout. |
 | `KILIX` | `$KILIX_DIR/kilix` | Path to the kilix launcher. |
 | `KILIX_BRANCH` | *(repo default)* | Optional Kilix branch for install/update. |
 | `KILIX_REF` | *(none)* | Optional full 40-character Kilix commit SHA for install/update. |
@@ -235,7 +277,7 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `PLEBIAN_OS_KILIX_GO_VERSION` | *(none)* | Exact Go release, such as `go1.26.4`; requires the matching architecture hash. |
 | `PLEBIAN_OS_KILIX_GO_SHA256_AMD64` | *(none)* | Trusted SHA-256 for the pinned Linux amd64 Go archive. |
 | `PLEBIAN_OS_KILIX_GO_SHA256_ARM64` | *(none)* | Trusted SHA-256 for the pinned Linux arm64 Go archive. |
-| `PLEB_SKIP_DEPS` | `0` | If `1`, skip apt dependency installation during `pleb install`. |
+| `PLEB_SKIP_DEPS` | `0` | If `1`, skip package installation during `pleb install`/`update`; update still verifies and fails if prerequisites are missing. |
 | `PLEB_KILIX_ARGS` | auto | Args passed to kilix; unset means native fullscreen with a WM, screen-fill sizing without one. |
 | `PLEB_WM` | *(none)* | Window manager to run before kilix (enables native fullscreen). |
 | `PLEB_NO_FILL` | `0` | Skip the no-WM screen-fill sizing. |
@@ -246,13 +288,13 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `KILIX_DESKTOP_COMMAND` | *(none)* | Shell command run by `kilix desktop` when provider is `command`. |
 | `KILIX_DESKTOP_NAME` | `desktop` | Label/tab title for custom desktop providers. |
 | `KILIX95_AUTO_INSTALL` | `1` | Lets `kilix desktop` clone external Kilix 95 when needed. |
-| `KILIX95_DIR` | `$HOME/kilix-95` | External Kilix 95 checkout used for desktop sessions. |
+| `KILIX95_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix-95` | External Kilix 95 checkout used for desktop sessions. |
 | `KILIX95_REPO` | `https://github.com/itsmygithubacct/kilix-95.git` | Repo cloned when Kilix 95 is needed. |
 | `KILIX95_BRANCH` | *(repo default)* | Optional Kilix 95 branch. |
 | `KILIX95_REF` | *(none)* | Optional exact Kilix 95 commit/tag. |
 | `KILIX95_ALLOW_MUTABLE_REF` | `0` | Explicitly trust a mutable tag/branch in `KILIX95_REF`. |
 | `KILIX95_ALLOW_UNPINNED_INSTALL` | `0` | Explicitly allow an automatic external-provider clone without `KILIX95_REF`. |
-| `PLEB_LOG` | `~/.local/share/pleb/session.log` | Session log. |
+| `PLEB_LOG` | `~/.local/gpu_terminal/pleb/state/session.log` | Session log. |
 
 Use `PLEB_DESKTOP=0` or `KILIX_DESKTOP_PROVIDER=none` for no desktop at all. To
 supply a different desktop through the same Kilix facade:
@@ -270,22 +312,26 @@ pleb autologin off      # if you enabled it
 pleb uninstall          # removes /usr/local/bin/pleb-session + the xsession entry
 ```
 
-`~/pleb`, `~/kilix`, optional `~/kilix-95`, XDG state/cache, and packages
-installed as dependencies are left in place; remove them explicitly if you want
-them gone.
+`~/gpu_terminal/pleb`, `~/gpu_terminal/kilix`, optional
+`~/gpu_terminal/kilix-95`, `~/.local/gpu_terminal`, and packages installed as
+dependencies are left in place; remove them explicitly if you want them gone.
 
 ## Notes & limitations
 
 - **Engine: the kilix fork** (with clickable `→ ↓ ▢ ✕` pane buttons) builds to
-  `~/kilix/src/kitty/launcher/kitty` and is what `kilix` uses. Building it needs
+  `~/.local/gpu_terminal/kilix/build/current/src/kitty/launcher/kitty` and is
+  what `kilix` uses. Building it needs
   **Go ≥ 1.26**; if your distro ships an older Go, install a newer toolchain with
   [`scripts/install-go.sh`](scripts/install-go.sh). If no fork binary is present,
   kilix falls back to a prebuilt kitty (a working terminal, no buttons); `pleb
-  install` sets that up automatically, and `~/kilix/kilix --build` (or `pleb
-  update`) produces the fork once Go is new enough. `pleb update` also re-runs
-  the dependency installer before building so older installs pick up newly added
-  build packages such as `libxkbcommon-x11-dev`.
-- **Upgrading Go later:** `~/pleb/scripts/install-go.sh` defaults to the latest
+  install` sets that up automatically, and `~/gpu_terminal/kilix/kilix --build` (or `pleb
+  update`) produces the fork once Go is new enough. Immediately before
+  `kilix --build`, `pleb update` delegates to Kilix's
+  `scripts/install-build-deps.sh`: it verifies the complete current manifest,
+  installs when verification fails, and verifies again. This avoids a stale
+  duplicate package list in Pleb and covers newly added modules such as
+  `libxxhash`.
+- **Upgrading Go later:** `~/gpu_terminal/pleb/scripts/install-go.sh` defaults to the latest
   stable release from go.dev, or accepts an exact version such as
   `install-go.sh go1.26.4`. For a reproducible install, set both `GO_VERSION`
   and `GO_SHA256`; a supplied hash is used directly without querying live
@@ -308,7 +354,9 @@ OS image.
 
 ## License
 
-Pleb is released under the [MIT License](LICENSE). It is a standalone set of
+Pleb's code is released under the [MIT License](LICENSE). It is a standalone set of
 scripts that *invoke* kilix at runtime — it does not include or link kilix/kitty
 code (it clones kilix separately on install). kilix and kitty are licensed under
-the **GPLv3** by their respective authors.
+the **GPLv3** by their respective authors. The bundled Plebian wallpaper is a
+separate GPL-2.0-or-later artwork distribution; its preserved notices and the
+complete GPL version 2 text are in [`assets/`](assets/README.md).

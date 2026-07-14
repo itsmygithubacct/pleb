@@ -27,8 +27,27 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("KILIX95_REF=$KILIX95_REF", text)
         self.assertIn("KILIX95_ALLOW_MUTABLE_REF=$KILIX95_ALLOW_MUTABLE_REF", text)
         self.assertIn("KILIX95_ALLOW_UNPINNED_INSTALL=$KILIX95_ALLOW_UNPINNED_INSTALL", text)
+        self.assertIn("GPU_TERMINAL_SOURCE_HOME=$GPU_TERMINAL_SOURCE_HOME", text)
+        self.assertIn("PLEB_DATA_HOME=$PLEB_DATA_HOME", text)
+        self.assertIn("KILIX_DATA_HOME=$KILIX_DATA_HOME", text)
+        self.assertIn("KILIX_BUILD_DIRECTORY=$KILIX_BUILD_DIRECTORY", text)
+        self.assertIn("KILIX95_DATA_HOME=$KILIX95_DATA_HOME", text)
+        self.assertIn("KILIX_DESKTOP_DIR=$KILIX_DESKTOP_DIR", text)
         self.assertNotIn("DESKTOP_CMD=", text)
         self.assertIn("none|off|disabled) return 1", text)
+
+    def test_source_and_storage_roots_are_separate_and_session_logs_are_private(self):
+        common = (ROOT / "lib" / "common.sh").read_text()
+        session = (ROOT / "bin" / "pleb-session").read_text()
+        readme = (ROOT / "README.md").read_text()
+        for text in (common, session):
+            self.assertIn('${GPU_TERMINAL_SOURCE_HOME:-$HOME/gpu_terminal}', text)
+            self.assertIn('${GPU_TERMINAL_HOME:-$HOME/.local/gpu_terminal}', text)
+            self.assertIn('$GPU_TERMINAL_SOURCE_HOME/kilix', text)
+            self.assertIn('$GPU_TERMINAL_SOURCE_HOME/kilix-95', text)
+        self.assertIn('chmod 0600 -- "$PLEB_LOG"', session)
+        self.assertIn('mv -- "$PLEB_LOG" "$PLEB_LOG.1"', session)
+        self.assertIn("`GPU_TERMINAL_SOURCE_HOME`", readme)
 
     def test_kilix95_requirement_follows_provider(self):
         checks = [
@@ -93,29 +112,30 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("systemctl kill -s KILL \"$svc\"", text)
         self.assertIn("systemctl start \"$svc\"", text)
 
-    def test_install_includes_kilix_fork_build_deps(self):
+    def test_update_delegates_the_complete_build_manifest_to_kilix(self):
         text = (ROOT / "lib" / "install.sh").read_text()
-        self.assertIn("dpkg-query", text)
-        self.assertIn("${Status}\\n", text)
-        self.assertIn("grep -qx 'install ok installed'", text)
-        self.assertIn('if [ "${#missing[@]}" -eq 0 ]; then', text)
-        self.assertIn('"${missing[@]}"', text)
-        for pkg in (
-            "libxkbcommon-x11-dev",
-            "libxkbcommon-dev",
-            "libxcb-xkb-dev",
-            "libx11-dev",
-            "libxrandr-dev",
-            "libxinerama-dev",
-            "libxcursor-dev",
-            "libxi-dev",
-            "libx11-xcb-dev",
-            "libdbus-1-dev",
-            "libgl1-mesa-dev",
-            "libfontconfig-dev",
-            "python3-dev",
-        ):
-            self.assertIn(pkg, text)
+        update = (ROOT / "lib" / "update.sh").read_text()
+        self.assertIn('$KILIX_DIR/scripts/install-build-deps.sh', text)
+        self.assertGreaterEqual(text.count('"$installer" --verify'), 2)
+        self.assertIn('${PLEB_SKIP_DEPS:-0}', text)
+        self.assertIn("libxxhash", text)
+        for stale_pkg in ("libxxhash-dev", "libx11-dev", "python3-dev"):
+            self.assertNotIn(stale_pkg, text)
+        verify = update.index("ensure_kilix_build_deps")
+        build = update.index('"$KILIX_DIR/kilix" --build', verify)
+        self.assertLess(verify, build)
+
+    def test_standalone_install_owns_validated_wallpaper_but_managed_os_skips_it(self):
+        install = (ROOT / "lib" / "install.sh").read_text()
+        validator = (ROOT / "scripts" / "validate-artwork.py").read_text()
+        self.assertIn("install_standalone_pleb_wallpaper", install)
+        self.assertIn('${PLEBIAN_OS_MANAGED_INSTALL:-0}', install)
+        self.assertIn("$KILIX_DESKTOP_DIR", install)
+        self.assertNotIn('$KILIX_DATA_HOME/desktop', install)
+        self.assertNotIn('$KILIX95_DATA_HOME/desktop', install)
+        self.assertIn("os.link(temporary, state_path, follow_symlinks=False)", install)
+        self.assertIn("WALLPAPER_SHA256", validator)
+        self.assertIn("validate_png", validator)
 
     def test_screen_size_passthrough_and_new_env_knobs_are_documented(self):
         cli = (ROOT / "bin" / "pleb").read_text()

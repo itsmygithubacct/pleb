@@ -6,22 +6,22 @@
 #   - startx / .xinitrc, for testing on a spare VT
 #   - `pleb test`, nested inside Xephyr
 #
-# It is deliberately SELF-CONTAINED (no sourcing of ~/pleb/lib) so it keeps
-# working after it is copied to /usr/local/bin, independent of ~/pleb.
+# It is deliberately SELF-CONTAINED (no sourcing of the Pleb checkout) so it
+# keeps working after it is copied to /usr/local/bin.
 #
 # A no-window-manager X session: a single fullscreen kilix client. When kilix
 # exits, the X session ends (LightDM returns to the greeter), unless respawn
 # (hard-kiosk) mode keeps it alive — see PLEB_RESPAWN below.
 #
 # Environment knobs:
-#   KILIX_DIR         kilix engine checkout        (default: $HOME/kilix)
+#   KILIX_DIR         kilix checkout (default: $HOME/gpu_terminal/kilix)
 #   KILIX             path to the kilix launcher   (default: $KILIX_DIR/kilix)
 #   PLEB_KILIX_ARGS   extra args passed to kilix   (default: native fullscreen
 #                     when a WM is present; no-WM sessions use screen-fill)
 #   PLEB_WM           window manager to run first  (default: none; e.g. "openbox")
 #   PLEB_NO_FILL      if =1, skip the no-WM screen-fill sizing (default: off)
 #   PLEB_BG           root window solid colour     (default: #101010)
-#   PLEB_LOG          session log file             (default: ~/.local/share/pleb/session.log)
+#   PLEB_LOG          session log file (default: ~/.local/gpu_terminal/pleb/state/session.log)
 #   PLEB_RESPAWN      if =1, relaunch kilix if it exits (kiosk mode); default off
 #   PLEB_DESKTOP      if truthy, boot straight into `kilix desktop` instead of
 #                     a bare shell; default off
@@ -32,7 +32,8 @@
 #   KILIX_DESKTOP_NAME     label/title for a custom desktop provider
 #   KILIX_DESKTOP_FLAVOR   first-launch desktop flavor (95 or xp)
 #   KILIX95_AUTO_INSTALL   allow `kilix desktop` to clone external Kilix 95
-#   KILIX95_DIR       external Kilix 95 checkout path (default: $HOME/kilix-95)
+#   KILIX95_DIR       external Kilix 95 checkout
+#                     (default: $HOME/gpu_terminal/kilix-95)
 #   KILIX95_REPO      external Kilix 95 repo URL
 #   KILIX95_BRANCH    optional Kilix 95 branch
 #   KILIX95_REF       optional full Kilix 95 commit SHA
@@ -46,12 +47,26 @@
 # PLEB_WM=openbox (or any EWMH WM) to get native fullscreen + F11 instead.
 set -u
 [ "$(id -u)" != 0 ] || { echo "pleb-session refuses to run as root" >&2; exit 1; }
+umask 077
 
 # Optional persistent env defaults so knobs survive across logins without editing
 # this launcher. System first, then user. Values already present in the real
 # environment are restored after sourcing, so `PLEB_DESKTOP=0 pleb session` wins
 # over `/etc/pleb/session.env`.
-_pleb_vars="KILIX_DIR KILIX KILIX_REF KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
+PLEB_ENV_SYSTEM="${PLEB_ENV_SYSTEM:-/etc/pleb/session.env}"
+if [[ ! ${PLEB_ENV_USER+x} ]]; then
+    if [[ ${PLEB_CONFIG_HOME+x} ]]; then
+        PLEB_ENV_USER="$PLEB_CONFIG_HOME/session.env"
+    elif [[ ${PLEB_STORAGE_HOME+x} ]]; then
+        PLEB_ENV_USER="$PLEB_STORAGE_HOME/config/session.env"
+    elif [[ ${GPU_TERMINAL_HOME+x} ]]; then
+        PLEB_ENV_USER="$GPU_TERMINAL_HOME/pleb/config/session.env"
+    else
+        PLEB_ENV_USER="$HOME/.local/gpu_terminal/pleb/config/session.env"
+    fi
+fi
+
+_pleb_vars="GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX95_STORAGE_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_REF KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
 declare -A _pleb_had _pleb_saved
 for _pleb_v in $_pleb_vars; do
     if [[ ${!_pleb_v+x} ]]; then
@@ -61,7 +76,7 @@ for _pleb_v in $_pleb_vars; do
         _pleb_had[$_pleb_v]=0
     fi
 done
-for _pleb_cfg in /etc/pleb/session.env "${XDG_CONFIG_HOME:-$HOME/.config}/pleb/session.env"; do
+for _pleb_cfg in "$PLEB_ENV_SYSTEM" "$PLEB_ENV_USER"; do
     # shellcheck source=/dev/null
     [ -r "$_pleb_cfg" ] && . "$_pleb_cfg"
 done
@@ -72,7 +87,28 @@ for _pleb_v in $_pleb_vars; do
 done
 unset _pleb_cfg _pleb_v _pleb_vars _pleb_had _pleb_saved
 
-KILIX_DIR="${KILIX_DIR:-$HOME/kilix}"
+GPU_TERMINAL_SOURCE_HOME="${GPU_TERMINAL_SOURCE_HOME:-$HOME/gpu_terminal}"
+GPU_TERMINAL_HOME="${GPU_TERMINAL_HOME:-$HOME/.local/gpu_terminal}"
+PLEB_STORAGE_HOME="${PLEB_STORAGE_HOME:-$GPU_TERMINAL_HOME/pleb}"
+PLEB_CONFIG_HOME="${PLEB_CONFIG_HOME:-$PLEB_STORAGE_HOME/config}"
+PLEB_STATE_HOME="${PLEB_STATE_HOME:-$PLEB_STORAGE_HOME/state}"
+PLEB_CACHE_HOME="${PLEB_CACHE_HOME:-$PLEB_STORAGE_HOME/cache}"
+PLEB_SESSION_HOME="${PLEB_SESSION_HOME:-$PLEB_STORAGE_HOME/session}"
+PLEB_DATA_HOME="${PLEB_DATA_HOME:-$PLEB_STORAGE_HOME/data}"
+KILIX_STORAGE_HOME="${KILIX_STORAGE_HOME:-$GPU_TERMINAL_HOME/kilix}"
+KILIX_DATA_HOME="${KILIX_DATA_HOME:-$KILIX_STORAGE_HOME/data}"
+KILIX_BUILD_DIRECTORY="${KILIX_BUILD_DIRECTORY:-$KILIX_STORAGE_HOME/build}"
+KILIX95_STORAGE_HOME="${KILIX95_STORAGE_HOME:-$GPU_TERMINAL_HOME/kilix-95}"
+KILIX95_DATA_HOME="${KILIX95_DATA_HOME:-$KILIX95_STORAGE_HOME/data}"
+KILIX_DESKTOP_DIR="${KILIX_DESKTOP_DIR:-$PLEB_DATA_HOME/desktop}"
+export GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME
+export PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME
+export PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_DATA_HOME
+export KILIX_BUILD_DIRECTORY KILIX95_STORAGE_HOME KILIX95_DATA_HOME
+export KILIX_DESKTOP_DIR
+export PLEB_ENV_SYSTEM PLEB_ENV_USER
+
+KILIX_DIR="${KILIX_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix}"
 KILIX="${KILIX:-$KILIX_DIR/kilix}"
 KILIX_REF="${KILIX_REF:-}"
 KILIX_ALLOW_MUTABLE_REF="${KILIX_ALLOW_MUTABLE_REF:-0}"
@@ -83,7 +119,7 @@ else
     _PLEB_KILIX_ARGS_DEFAULT=1
 fi
 PLEB_BG="${PLEB_BG:-#101010}"
-PLEB_LOG="${PLEB_LOG:-$HOME/.local/share/pleb/session.log}"
+PLEB_LOG="${PLEB_LOG:-$PLEB_STATE_HOME/session.log}"
 PLEB_RESPAWN="${PLEB_RESPAWN:-0}"
 case "$PLEB_RESPAWN" in
     1|yes|true|on) PLEB_RESPAWN=1 ;;
@@ -95,24 +131,55 @@ KILIX_DESKTOP_COMMAND="${KILIX_DESKTOP_COMMAND:-}"
 KILIX_DESKTOP_NAME="${KILIX_DESKTOP_NAME:-desktop}"
 KILIX_DESKTOP_FLAVOR="${KILIX_DESKTOP_FLAVOR:-}"
 KILIX95_AUTO_INSTALL="${KILIX95_AUTO_INSTALL:-1}"
-KILIX95_DIR="${KILIX95_DIR:-$HOME/kilix-95}"
+KILIX95_DIR="${KILIX95_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-95}"
 KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
 KILIX95_BRANCH="${KILIX95_BRANCH:-}"
 KILIX95_REF="${KILIX95_REF:-}"
 KILIX95_ALLOW_MUTABLE_REF="${KILIX95_ALLOW_MUTABLE_REF:-0}"
 KILIX95_ALLOW_UNPINNED_INSTALL="${KILIX95_ALLOW_UNPINNED_INSTALL:-0}"
+export KILIX_DIR KILIX KILIX95_DIR
 
 # --- logging -----------------------------------------------------------------
-mkdir -p "$(dirname "$PLEB_LOG")" 2>/dev/null || true
-# keep the log from growing without bound across relogins
-_trim_log() {
-    if [ -f "$PLEB_LOG" ] && [ "$(wc -c <"$PLEB_LOG" 2>/dev/null || echo 0)" -gt 1048576 ]; then
-        tail -c 262144 "$PLEB_LOG" >"$PLEB_LOG.tmp" 2>/dev/null \
-            && cat "$PLEB_LOG.tmp" >"$PLEB_LOG" 2>/dev/null
-        rm -f "$PLEB_LOG.tmp"
+# The state directory and log contain recent-path and session metadata. Keep
+# them private, reject link tricks, and rotate once per login before opening the
+# descriptor. The containing directory is private, so the validation/open pair
+# cannot be raced by another local account.
+case "$PLEB_LOG" in
+    /*) ;;
+    *) echo "pleb-session: session log path must be absolute: $PLEB_LOG" >&2; exit 1 ;;
+esac
+_pleb_log_dir="$(dirname "$PLEB_LOG")"
+mkdir -p -- "$_pleb_log_dir" \
+    || { echo "pleb-session: cannot create log directory: $_pleb_log_dir" >&2; exit 1; }
+if [ ! -d "$_pleb_log_dir" ] || [ -L "$_pleb_log_dir" ] \
+    || [ "$(stat -c '%u' "$_pleb_log_dir" 2>/dev/null)" != "$(id -u)" ]; then
+    echo "pleb-session: refusing unsafe log directory: $_pleb_log_dir" >&2
+    exit 1
+fi
+chmod 0700 -- "$_pleb_log_dir" \
+    || { echo "pleb-session: cannot make log directory private: $_pleb_log_dir" >&2; exit 1; }
+
+if [ -e "$PLEB_LOG" ] || [ -L "$PLEB_LOG" ]; then
+    if [ ! -f "$PLEB_LOG" ] || [ -L "$PLEB_LOG" ] \
+        || [ "$(stat -c '%u' "$PLEB_LOG" 2>/dev/null)" != "$(id -u)" ] \
+        || [ "$(stat -c '%h' "$PLEB_LOG" 2>/dev/null)" != 1 ]; then
+        echo "pleb-session: refusing unsafe session log: $PLEB_LOG" >&2
+        exit 1
     fi
-}
-_trim_log
+    chmod 0600 -- "$PLEB_LOG" \
+        || { echo "pleb-session: cannot make log private: $PLEB_LOG" >&2; exit 1; }
+    if [ "$(wc -c <"$PLEB_LOG" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+        rm -f -- "$PLEB_LOG.1" \
+            || { echo "pleb-session: cannot replace rotated log: $PLEB_LOG.1" >&2; exit 1; }
+        mv -- "$PLEB_LOG" "$PLEB_LOG.1" \
+            || { echo "pleb-session: cannot rotate session log: $PLEB_LOG" >&2; exit 1; }
+    fi
+fi
+: >>"$PLEB_LOG" \
+    || { echo "pleb-session: cannot open session log: $PLEB_LOG" >&2; exit 1; }
+chmod 0600 -- "$PLEB_LOG" \
+    || { echo "pleb-session: cannot make log private: $PLEB_LOG" >&2; exit 1; }
+unset _pleb_log_dir
 exec >>"$PLEB_LOG" 2>&1
 echo "=== pleb-session start $(date) DISPLAY=${DISPLAY:-?} user=$(id -un) ==="
 
@@ -224,6 +291,20 @@ DESKTOP_ARGS=()
 if _pleb_desktop_enabled; then
     echo "--- PLEB_DESKTOP=$PLEB_DESKTOP: session program is 'kilix desktop' ($KILIX_DESKTOP_PROVIDER) ---"
     DESKTOP_ARGS=(env KILIX_IN_OVERLAY=1
+                  "GPU_TERMINAL_SOURCE_HOME=$GPU_TERMINAL_SOURCE_HOME"
+                  "GPU_TERMINAL_HOME=$GPU_TERMINAL_HOME"
+                  "PLEB_STORAGE_HOME=$PLEB_STORAGE_HOME"
+                  "PLEB_CONFIG_HOME=$PLEB_CONFIG_HOME"
+                  "PLEB_STATE_HOME=$PLEB_STATE_HOME"
+                  "PLEB_CACHE_HOME=$PLEB_CACHE_HOME"
+                  "PLEB_SESSION_HOME=$PLEB_SESSION_HOME"
+                  "PLEB_DATA_HOME=$PLEB_DATA_HOME"
+                  "KILIX_STORAGE_HOME=$KILIX_STORAGE_HOME"
+                  "KILIX_DATA_HOME=$KILIX_DATA_HOME"
+                  "KILIX_BUILD_DIRECTORY=$KILIX_BUILD_DIRECTORY"
+                  "KILIX95_STORAGE_HOME=$KILIX95_STORAGE_HOME"
+                  "KILIX95_DATA_HOME=$KILIX95_DATA_HOME"
+                  "KILIX_DESKTOP_DIR=$KILIX_DESKTOP_DIR"
                   "KILIX_REF=$KILIX_REF"
                   "KILIX_ALLOW_MUTABLE_REF=$KILIX_ALLOW_MUTABLE_REF"
                   "KILIX_DESKTOP_PROVIDER=$KILIX_DESKTOP_PROVIDER"
@@ -246,7 +327,6 @@ if [ "$PLEB_RESPAWN" = 1 ]; then
     crashes=0
     delay=1
     while :; do
-        _trim_log
         start=$(date +%s)
         printf -- '--- launching'
         printf ' %q' "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
