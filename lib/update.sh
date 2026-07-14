@@ -27,7 +27,9 @@ _release_update_lock() {
 
 _acquire_update_lock() {
     local inherited_path expected_path
-    mkdir -p "$PLEB_STATE_HOME"
+    # Reconcile every category before the first lock, cache, or rollback write.
+    # Older managed installs may have created these under umask 022.
+    ensure_pleb_private_storage
     if [ -n "${PLEB_UPDATE_LOCK_FD:-}" ]; then
         [[ "$PLEB_UPDATE_LOCK_FD" =~ ^[0-9]+$ ]] \
             || die "PLEB_UPDATE_LOCK_FD must be a numeric inherited file descriptor"
