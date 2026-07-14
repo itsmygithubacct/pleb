@@ -12,6 +12,17 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+COORDINATED_STORAGE_VARS = (
+    "KILIX_CONFIG_HOME",
+    "KILIX_STATE_DIRECTORY",
+    "KILIX_CACHE_HOME",
+    "KILIX_SESSION_HOME",
+    "KILIX_PREBUILT_HOME",
+    "KILIX95_CONFIG_HOME",
+    "KILIX95_STATE_HOME",
+    "KILIX95_CACHE_HOME",
+    "KILIX95_SESSION_HOME",
+)
 
 
 def clean_env(home: Path) -> dict[str, str]:
@@ -124,7 +135,7 @@ class PlebBehaviorTests(unittest.TestCase):
             tmp = Path(td)
             source = tmp / "persisted-source"
             data = tmp / "persisted-data"
-            state = tmp / "special-state"
+            state = data / "pleb/special-state"
             config = tmp / "session.env"
             config.write_text(
                 f"GPU_TERMINAL_SOURCE_HOME={source!s}\n"
@@ -138,7 +149,7 @@ class PlebBehaviorTests(unittest.TestCase):
                 . "$PLEB_ROOT/lib/common.sh"
                 printf '%s\n' "$GPU_TERMINAL_SOURCE_HOME" "$GPU_TERMINAL_HOME" \
                     "$PLEB_STORAGE_HOME" "$PLEB_STATE_HOME" "$PLEB_DATA_HOME" \
-                    "$KILIX_DIR" "$KILIX_DATA_HOME" "$KILIX_BUILD_DIRECTORY" \
+                    "$KILIX_DIR" "$KILIX_DATA_HOME" "$KILIX_BUILD_DIRECTORY" "$KILIX_PREBUILT_HOME" \
                     "$KILIX95_DIR" "$KILIX95_DATA_HOME" "$KILIX_DESKTOP_DIR"
                 """
             )
@@ -162,6 +173,7 @@ class PlebBehaviorTests(unittest.TestCase):
                     str(source / "kilix"),
                     str(data / "kilix/data"),
                     str(data / "kilix/build"),
+                    str(data / "kilix/prebuilt/kitty.app"),
                     str(source / "kilix-95"),
                     str(data / "kilix-95/data"),
                     str(data / "pleb/data/desktop"),
@@ -180,6 +192,72 @@ class PlebBehaviorTests(unittest.TestCase):
             self.assertEqual(overridden.stdout.splitlines()[1], str(explicit_data))
             self.assertEqual(overridden.stdout.splitlines()[2], str(explicit_data / "pleb"))
 
+    def test_coordinated_storage_env_is_exported_and_explicit_values_win(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            persisted = {name: tmp / "persisted" / name.lower() for name in COORDINATED_STORAGE_VARS}
+            explicit = {name: tmp / "explicit" / name.lower() for name in COORDINATED_STORAGE_VARS}
+            observed = tmp / "observed"
+            engine = tmp / "kilix"
+            names = " ".join(COORDINATED_STORAGE_VARS)
+            write_executable(
+                engine,
+                "#!/usr/bin/env bash\n"
+                f"for name in {names}; do printf '%s=%s\\n' \"$name\" \"${{!name}}\"; done >{observed!s}\n",
+            )
+            config = tmp / "session.env"
+            config.write_text(
+                "".join(f"{name}={value!s}\n" for name, value in persisted.items())
+                + f"KILIX={engine!s}\nPLEB_NO_FILL=1\n"
+            )
+            print_script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                . "$PLEB_ROOT/lib/common.sh"
+                for name in {names}; do printf '%s=%s\n' "$name" "${{!name}}"; done
+                """
+            )
+
+            explicit_env = clean_env(tmp)
+            explicit_env["PLEB_ENV_USER"] = str(config)
+            explicit_env.update({name: str(value) for name, value in explicit.items()})
+            common = subprocess.run(
+                ["bash", "-c", print_script],
+                cwd=ROOT,
+                env=explicit_env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            expected_explicit = [f"{name}={explicit[name]}" for name in COORDINATED_STORAGE_VARS]
+            self.assertEqual(common.stdout.splitlines(), expected_explicit)
+
+            subprocess.run(
+                [str(ROOT / "bin/pleb-session")],
+                cwd=ROOT,
+                env=explicit_env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self.assertEqual(observed.read_text().splitlines(), expected_explicit)
+
+            persisted_env = clean_env(tmp)
+            persisted_env["PLEB_ENV_USER"] = str(config)
+            subprocess.run(
+                [str(ROOT / "bin/pleb-session")],
+                cwd=ROOT,
+                env=persisted_env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self.assertEqual(
+                observed.read_text().splitlines(),
+                [f"{name}={persisted[name]}" for name in COORDINATED_STORAGE_VARS],
+            )
+
     def test_session_loads_and_exports_the_same_source_and_storage_contract(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
@@ -192,8 +270,12 @@ class PlebBehaviorTests(unittest.TestCase):
                 "#!/bin/sh\n"
                 f"printf '%s\\n' \"$GPU_TERMINAL_SOURCE_HOME\" \"$GPU_TERMINAL_HOME\" "
                 f"\"$PLEB_STORAGE_HOME\" \"$PLEB_DATA_HOME\" "
-                f"\"$KILIX_STORAGE_HOME\" \"$KILIX_DATA_HOME\" "
-                f"\"$KILIX_BUILD_DIRECTORY\" \"$KILIX95_STORAGE_HOME\" "
+                f"\"$KILIX_STORAGE_HOME\" \"$KILIX_CONFIG_HOME\" "
+                f"\"$KILIX_STATE_DIRECTORY\" \"$KILIX_CACHE_HOME\" "
+                f"\"$KILIX_SESSION_HOME\" \"$KILIX_DATA_HOME\" "
+                f"\"$KILIX_BUILD_DIRECTORY\" \"$KILIX_PREBUILT_HOME\" \"$KILIX95_STORAGE_HOME\" "
+                f"\"$KILIX95_CONFIG_HOME\" \"$KILIX95_STATE_HOME\" "
+                f"\"$KILIX95_CACHE_HOME\" \"$KILIX95_SESSION_HOME\" "
                 f"\"$KILIX95_DATA_HOME\" "
                 f"\"$KILIX_DESKTOP_DIR\" "
                 f"\"$KILIX_DIR\" \"$KILIX95_DIR\" >{observed!s}\n",
@@ -224,9 +306,18 @@ class PlebBehaviorTests(unittest.TestCase):
                     str(data / "pleb"),
                     str(data / "pleb/data"),
                     str(data / "kilix"),
+                    str(data / "kilix/config"),
+                    str(data / "kilix/state"),
+                    str(data / "kilix/cache"),
+                    str(data / "kilix/session"),
                     str(data / "kilix/data"),
                     str(data / "kilix/build"),
+                    str(data / "kilix/prebuilt/kitty.app"),
                     str(data / "kilix-95"),
+                    str(data / "kilix-95/config"),
+                    str(data / "kilix-95/state"),
+                    str(data / "kilix-95/cache"),
+                    str(data / "kilix-95/session"),
                     str(data / "kilix-95/data"),
                     str(data / "pleb/data/desktop"),
                     str(source / "kilix"),
@@ -470,8 +561,8 @@ class PlebBehaviorTests(unittest.TestCase):
     def test_update_lock_rejects_a_second_process(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            state = tmp / "state"
-            state.mkdir()
+            state = tmp / ".local/gpu_terminal/pleb/state"
+            state.mkdir(parents=True)
             lock_path = state / "update.lock"
             with lock_path.open("w") as held:
                 fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -497,8 +588,8 @@ class PlebBehaviorTests(unittest.TestCase):
     def test_inherited_update_lock_is_validated_borrowed_and_left_open(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            state = tmp / "state"
-            state.mkdir()
+            state = tmp / ".local/gpu_terminal/pleb/state"
+            state.mkdir(parents=True)
             user_env = tmp / "session.env"
             user_env.write_text("PLEB_UPDATE_LOCK_FD=9999\n")
             lock_fd = os.open(state / "update.lock", os.O_RDWR | os.O_CREAT, 0o600)
@@ -545,8 +636,8 @@ class PlebBehaviorTests(unittest.TestCase):
     def test_inherited_update_lock_rejects_invalid_closed_and_busy_fds(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            state = tmp / "state"
-            state.mkdir()
+            state = tmp / ".local/gpu_terminal/pleb/state"
+            state.mkdir(parents=True)
 
             def attempt(value: str, pass_fds: tuple[int, ...] = ()) -> subprocess.CompletedProcess[str]:
                 script = textwrap.dedent(
@@ -770,8 +861,8 @@ class PlebBehaviorTests(unittest.TestCase):
             write_executable(fork, "#!/bin/sh\necho old-fork\n")
             write_executable(kitten, "#!/bin/sh\necho old-kitten\n")
             (current / "source-id").write_text("old\n")
-            state = tmp / "state"
-            state.mkdir()
+            state = tmp / ".local/gpu_terminal/pleb/state"
+            state.mkdir(parents=True)
             stamp = state / "kilix-fork-built-ref"
             stamp.write_text("old-stamp\n")
 
@@ -1200,24 +1291,29 @@ touch {called!s}
             self.assertIn("expected 64 hexadecimal", result.stderr)
 
     def test_pinned_go_fetch_uses_supplied_arch_hash_without_live_metadata(self):
-        cases = (
-            ("x86_64", "AMD64"),
-            ("aarch64", "ARM64"),
-        )
-        for machine, suffix in cases:
-            with self.subTest(machine=machine), tempfile.TemporaryDirectory() as td:
-                tmp = Path(td)
-                fake_bin = tmp / "bin"
-                cache = tmp / "cache"
-                fake_bin.mkdir()
-                archive = tmp / "download"
-                archive.write_bytes(f"archive-for-{machine}".encode())
-                checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
-                curl_log = tmp / "curl.log"
-                write_executable(fake_bin / "uname", f"#!/bin/sh\necho {machine}\n")
-                write_executable(
-                    fake_bin / "curl",
-                    """#!/bin/sh
+        machine = os.uname().machine
+        if machine in ("x86_64", "amd64"):
+            go_arch, suffix = "amd64", "AMD64"
+        elif machine in ("aarch64", "arm64"):
+            go_arch, suffix = "arm64", "ARM64"
+        else:
+            self.skipTest(f"unsupported Go test architecture: {machine}")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            fake_bin = tmp / "bin"
+            cache = tmp / ".local/gpu_terminal/pleb/cache/go"
+            fake_bin.mkdir()
+            archive = tmp / "download"
+            archive.write_bytes(f"archive-for-{machine}".encode())
+            checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+            curl_log = tmp / "curl.log"
+            cache.mkdir(parents=True)
+            (cache / f"go1.26.4.linux-{go_arch}.tar.gz").write_bytes(
+                archive.read_bytes()
+            )
+            write_executable(
+                fake_bin / "curl",
+                """#!/bin/sh
 printf '%s\n' "$*" >>"$CURL_LOG"
 out=
 while [ "$#" -gt 0 ]; do
@@ -1226,40 +1322,43 @@ done
 [ -n "$out" ] || exit 91
 cp "$GO_TEST_ARCHIVE" "$out"
 """,
-                )
-                env = clean_env(tmp)
-                env.update(
-                    {
-                        "PATH": f"{fake_bin}:{env['PATH']}",
-                        "GO_CACHE": str(cache),
-                        "GO_TEST_ARCHIVE": str(archive),
-                        "CURL_LOG": str(curl_log),
-                        "PLEBIAN_OS_KILIX_GO_VERSION": "go1.26.4",
-                        f"PLEBIAN_OS_KILIX_GO_SHA256_{suffix}": checksum,
-                    }
-                )
-                subprocess.run(
-                    [str(ROOT / "scripts/install-go.sh"), "fetch"],
-                    cwd=ROOT,
-                    env=env,
-                    text=True,
-                    capture_output=True,
-                    check=True,
-                )
-                calls = curl_log.read_text().splitlines()
-                self.assertEqual(len(calls), 1)
-                self.assertIn("https://go.dev/dl/go1.26.4.linux-", calls[0])
-                self.assertNotIn("VERSION?m=text", calls[0])
-                self.assertNotIn("mode=json", calls[0])
+            )
+            env = clean_env(tmp)
+            env.update(
+                {
+                    "PATH": f"{fake_bin}:{env['PATH']}",
+                    "GO_CACHE": str(cache),
+                    "GO_TEST_ARCHIVE": str(archive),
+                    "CURL_LOG": str(curl_log),
+                    "PLEBIAN_OS_KILIX_GO_VERSION": "go1.26.4",
+                    f"PLEBIAN_OS_KILIX_GO_SHA256_{suffix}": checksum,
+                }
+            )
+            subprocess.run(
+                [str(ROOT / "scripts/install-go.sh"), "fetch"],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            storage = tmp / ".local/gpu_terminal/pleb"
+            for path in (
+                storage,
+                *(storage / name for name in ("config", "state", "cache", "session", "data")),
+            ):
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(cache.stat().st_mode), 0o700)
+            self.assertFalse(curl_log.exists())
 
     def test_failed_go_swap_restores_tree_and_command_links(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            cache = tmp / "cache"
+            cache = tmp / ".local/gpu_terminal/pleb/cache/go"
             install_dir = tmp / "local/go"
             bin_dir = tmp / "local/bin"
             fake_bin = tmp / "fake-bin"
-            cache.mkdir()
+            cache.mkdir(parents=True)
             (install_dir / "bin").mkdir(parents=True)
             bin_dir.mkdir(parents=True)
             fake_bin.mkdir()
@@ -1273,14 +1372,6 @@ cp "$GO_TEST_ARCHIVE" "$out"
             checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
             (cache / ".manifest").write_text(f"go1.26.4\namd64\n{checksum}\n")
             write_executable(fake_bin / "uname", "#!/bin/sh\necho x86_64\n")
-            write_executable(
-                fake_bin / "sudo",
-                """#!/bin/sh
-[ "${1:-}" = -- ] && shift
-[ "${1:-}" = ln ] && exit 73
-exec "$@"
-""",
-            )
             env = clean_env(tmp)
             env.update(
                 {
@@ -1288,10 +1379,23 @@ exec "$@"
                     "GO_CACHE": str(cache),
                     "GO_INSTALL_DIR": str(install_dir),
                     "GO_BIN_DIR": str(bin_dir),
+                    "GO_VERSION": "go1.26.4",
+                    "GO_SHA256": checksum,
+                    "GO_INSTALL_SCRIPT": str(ROOT / "scripts/install-go.sh"),
                 }
             )
+            runner = """
+set -euo pipefail
+source "$GO_INSTALL_SCRIPT"
+validate_install_destinations() { :; }
+run_root() {
+    [ "${1:-}" != ln ] || return 73
+    "$SYSTEM_ENV" -i PATH="$TRUSTED_SYSTEM_PATH" HOME="$HOME" LC_ALL=C "$@"
+}
+do_install
+"""
             result = subprocess.run(
-                [str(ROOT / "scripts/install-go.sh"), "install"],
+                ["bash", "-c", runner],
                 cwd=ROOT,
                 env=env,
                 text=True,
@@ -1307,11 +1411,11 @@ exec "$@"
     def test_successful_go_swap_installs_validated_tree_and_links(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            cache = tmp / "cache"
+            cache = tmp / ".local/gpu_terminal/pleb/cache/go"
             install_dir = tmp / "local/go"
             bin_dir = tmp / "local/bin"
             fake_bin = tmp / "fake-bin"
-            cache.mkdir()
+            cache.mkdir(parents=True)
             bin_dir.mkdir(parents=True)
             fake_bin.mkdir()
             archive = cache / "go1.26.4.linux-amd64.tar.gz"
@@ -1319,13 +1423,6 @@ exec "$@"
             checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
             (cache / ".manifest").write_text(f"go1.26.4\namd64\n{checksum}\n")
             write_executable(fake_bin / "uname", "#!/bin/sh\necho x86_64\n")
-            write_executable(
-                fake_bin / "sudo",
-                """#!/bin/sh
-[ "${1:-}" = -- ] && shift
-exec "$@"
-""",
-            )
             env = clean_env(tmp)
             env.update(
                 {
@@ -1333,10 +1430,22 @@ exec "$@"
                     "GO_CACHE": str(cache),
                     "GO_INSTALL_DIR": str(install_dir),
                     "GO_BIN_DIR": str(bin_dir),
+                    "GO_VERSION": "go1.26.4",
+                    "GO_SHA256": checksum,
+                    "GO_INSTALL_SCRIPT": str(ROOT / "scripts/install-go.sh"),
                 }
             )
+            runner = """
+set -euo pipefail
+source "$GO_INSTALL_SCRIPT"
+validate_install_destinations() { :; }
+run_root() {
+    "$SYSTEM_ENV" -i PATH="$TRUSTED_SYSTEM_PATH" HOME="$HOME" LC_ALL=C "$@"
+}
+do_install
+"""
             result = subprocess.run(
-                [str(ROOT / "scripts/install-go.sh"), "install"],
+                ["bash", "-c", runner],
                 cwd=ROOT,
                 env=env,
                 text=True,
@@ -1356,6 +1465,220 @@ exec "$@"
             )
             self.assertEqual((install_dir / ".pleb-source").stat().st_mode & 0o777, 0o444)
             self.assertEqual(list((tmp / "local").glob(".pleb-go-stage.*")), [])
+            storage = tmp / ".local/gpu_terminal/pleb"
+            for path in (
+                storage,
+                *(storage / name for name in ("config", "state", "cache", "session", "data")),
+            ):
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(cache.stat().st_mode), 0o700)
+
+    def test_go_cache_preflight_rejects_traversal_and_unsafe_external_paths(self):
+        # External-cache ancestry deliberately cannot live below /tmp: that
+        # shared world-writable component is exactly what the preflight rejects.
+        with tempfile.TemporaryDirectory(dir=Path.home()) as td:
+            tmp = Path(td)
+
+            def attempt(cache: Path | str) -> subprocess.CompletedProcess[str]:
+                env = clean_env(tmp)
+                env["GO_CACHE"] = str(cache)
+                return subprocess.run(
+                    [str(ROOT / "scripts/install-go.sh"), "install"],
+                    cwd=ROOT,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                )
+
+            pleb_cache = tmp / ".local/gpu_terminal/pleb/cache"
+            traversal = attempt(f"{pleb_cache}/../../outside")
+            self.assertNotEqual(traversal.returncode, 0)
+            self.assertIn("normalized absolute path", traversal.stderr)
+
+            target = tmp / "external-target"
+            target.mkdir(mode=0o700)
+            linked = tmp / "external-link"
+            linked.symlink_to(target, target_is_directory=True)
+            symlinked = attempt(linked)
+            self.assertNotEqual(symlinked.returncode, 0)
+            self.assertIn("symlink component", symlinked.stderr)
+
+            writable_parent = tmp / "writable-parent"
+            writable_parent.mkdir(mode=0o700)
+            writable_parent.chmod(0o777)
+            nested = writable_parent / "cache"
+            nested.mkdir(mode=0o700)
+            writable = attempt(nested)
+            self.assertNotEqual(writable.returncode, 0)
+            self.assertIn("group/world-writable", writable.stderr)
+
+            loose_leaf = tmp / "loose-cache"
+            loose_leaf.mkdir(mode=0o755)
+            loose = attempt(loose_leaf)
+            self.assertNotEqual(loose.returncode, 0)
+            self.assertIn("must have mode 0700", loose.stderr)
+
+    def test_go_install_destinations_are_fixed_before_storage_or_sudo(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            for variable, value in (
+                ("GO_INSTALL_DIR", tmp / "user-owned/go"),
+                ("GO_BIN_DIR", tmp / "user-owned/bin"),
+            ):
+                with self.subTest(variable=variable):
+                    env = clean_env(tmp)
+                    env[variable] = str(value)
+                    result = subprocess.run(
+                        [str(ROOT / "scripts/install-go.sh"), "install"],
+                        cwd=ROOT,
+                        env=env,
+                        text=True,
+                        capture_output=True,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("is fixed at /usr/local/", result.stderr)
+                    self.assertFalse((tmp / ".local/gpu_terminal/pleb").exists())
+
+    def test_go_installer_privileged_startup_ignores_bash_env_functions(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            marker = tmp / "poisoned-set-reached"
+            bash_env = tmp / "poison-set.sh"
+            bash_env.write_text(
+                f"set() {{ /usr/bin/touch {marker!s}; builtin set \"$@\"; }}\n"
+                "export -f set\n"
+            )
+            env = clean_env(tmp)
+            env.update(
+                {
+                    "BASH_ENV": str(bash_env),
+                    # This fails safely at the destination gate after startup.
+                    "GO_INSTALL_DIR": str(tmp / "user-owned/go"),
+                }
+            )
+            result = subprocess.run(
+                [str(ROOT / "scripts/install-go.sh"), "install"],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("fixed at /usr/local/go", result.stderr)
+            self.assertFalse(marker.exists())
+
+    def test_direct_go_install_rejects_path_and_startup_hook_poisoning(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            cache = tmp / ".local/gpu_terminal/pleb/cache/go"
+            fake_bin = tmp / "fake-bin"
+            cache.mkdir(parents=True)
+            fake_bin.mkdir()
+            archive = cache / "go1.26.4.linux-amd64.tar.gz"
+            make_go_archive(archive)
+            fabricated = hashlib.sha256(archive.read_bytes()).hexdigest()
+            (cache / ".manifest").write_text(f"go1.26.4\namd64\n{fabricated}\n")
+            write_executable(fake_bin / "uname", "#!/bin/sh\necho x86_64\n")
+            fake_tool_marker = tmp / "path-tool-reached"
+            attacker_json = (
+                '[{"version":"go1.26.4","files":['
+                '{"filename":"go1.26.4.linux-amd64.tar.gz",'
+                f'"sha256":"{fabricated}"}}]}}]'
+            )
+            write_executable(
+                fake_bin / "curl",
+                f"#!/bin/sh\ntouch {fake_tool_marker!s}\nprintf '%s\\n' '{attacker_json}'\n",
+            )
+            write_executable(
+                fake_bin / "python3",
+                f"#!/bin/sh\ntouch {fake_tool_marker!s}\nprintf '%s\\n' {fabricated}\n",
+            )
+            for tool in ("env", "id", "sudo", "sha256sum"):
+                write_executable(
+                    fake_bin / tool,
+                    f"#!/bin/sh\ntouch {fake_tool_marker!s}\nexit 99\n",
+                )
+
+            function_marker = tmp / "exported-function-reached"
+            bash_env = tmp / "poison-functions.sh"
+            bash_env.write_text(
+                f"""
+curl() {{ /usr/bin/touch {function_marker!s}; /usr/bin/printf '%s\\n' '{attacker_json}'; }}
+python3() {{ /usr/bin/touch {function_marker!s}; /usr/bin/printf '%s\\n' {fabricated}; }}
+env() {{ /usr/bin/touch {function_marker!s}; /usr/bin/env "$@"; }}
+id() {{ /usr/bin/touch {function_marker!s}; /usr/bin/id "$@"; }}
+sudo() {{ /usr/bin/touch {function_marker!s}; return 99; }}
+sha256sum() {{ /usr/bin/touch {function_marker!s}; /usr/bin/printf '%s  %s\\n' {fabricated} "$1"; }}
+chmod() {{ /usr/bin/touch {function_marker!s}; want={fabricated}; _FETCHED_SHA={fabricated}; /usr/bin/chmod "$@"; }}
+mv() {{ /usr/bin/touch {function_marker!s}; want={fabricated}; _FETCHED_SHA={fabricated}; /usr/bin/mv "$@"; }}
+set() {{ /usr/bin/touch {function_marker!s}; builtin set "$@"; }}
+export -f curl python3 env id sudo sha256sum chmod mv set
+"""
+            )
+            curlrc_marker = tmp / "curlrc-reached"
+            (tmp / ".curlrc").write_text(f"--trace-ascii {curlrc_marker!s}\n")
+            python_hook_marker = tmp / "python-hook-reached"
+            python_path = tmp / "python-poison"
+            python_path.mkdir()
+            (python_path / "sitecustomize.py").write_text(
+                f"from pathlib import Path\nPath({str(python_hook_marker)!r}).touch()\n"
+            )
+            env = clean_env(tmp)
+            for name in ("GO_VERSION", "GO_SHA256"):
+                env.pop(name, None)
+            root_staging_marker = tmp / "root-staging-reached"
+            env.update(
+                {
+                    "PATH": f"{fake_bin}:{env['PATH']}",
+                    "GO_CACHE": str(cache),
+                    "GO_INSTALL_DIR": str(tmp / "local/go"),
+                    "GO_BIN_DIR": str(tmp / "local/bin"),
+                    "BASH_ENV": str(bash_env),
+                    "POISON_FUNCTIONS": str(bash_env),
+                    "PYTHONPATH": str(python_path),
+                    "GO_INSTALL_SCRIPT": str(ROOT / "scripts/install-go.sh"),
+                    "ROOT_STAGING_MARKER": str(root_staging_marker),
+                }
+            )
+            runner = """
+set -euo pipefail
+source "$POISON_FUNCTIONS"
+# /bin/bash -p prevents inherited `set`; remove the explicitly sourced copy so
+# install-go.sh can execute its first builtin statement and purge every other
+# poison function before doing any work.
+unset -f set
+source "$GO_INSTALL_SCRIPT"
+validate_install_destinations() { :; }
+run_root() {
+    /usr/bin/touch "$ROOT_STAGING_MARKER"
+    return 99
+}
+do_install
+"""
+            result = subprocess.run(
+                ["/bin/bash", "-p", "-c", runner],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("staging verified", result.stdout)
+            self.assertFalse(fake_tool_marker.exists())
+            self.assertFalse(function_marker.exists())
+            self.assertFalse(curlrc_marker.exists())
+            self.assertFalse(python_hook_marker.exists())
+            self.assertFalse(root_staging_marker.exists())
+            if "could not independently verify the cached Go archive" in result.stderr:
+                self.skipTest("go.dev checksum metadata is unavailable")
+            self.assertIn(
+                "manifest does not match the independently trusted official checksum",
+                result.stderr,
+            )
+            self.assertEqual(
+                (ROOT / "scripts/install-go.sh").read_text().splitlines()[0],
+                "#!/bin/bash -p",
+            )
 
 
 if __name__ == "__main__":

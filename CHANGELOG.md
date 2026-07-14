@@ -8,8 +8,26 @@
   defaults, while preserving explicit process-environment precedence.
 - Export the complete source/data path contract into Pleb and Kilix desktop
   sessions.
+- Preserve explicit caller precedence for all coordinated Kilix and Kilix 95
+  config, state, cache, session, and data paths while loading persisted session
+  defaults, and export those category paths through the self-contained launcher.
 - Keep session logs and persisted kiosk configuration private, safely rotate
   oversized session logs, and reject unsafe log/configuration targets.
+- Reconcile the complete Pleb storage root and its config, state, cache,
+  session, and data categories to user-owned `0700` directories during managed
+  and standalone install, update, direct Go fetches, testing, kiosk changes,
+  and login; preserve contents and reject broad, linked, or escaped overrides
+  before changing modes.
+- Apply the same private-cache preflight to Go fetch and direct install,
+  canonicalize before containment checks, and reject linked, traversing,
+  loosely permissioned, or unsafely owned external cache paths before sudo
+  stages an archive.
+- Require direct Go installs to authenticate a cached manifest against a pinned
+  SHA-256 or a freshly derived official checksum before root stages or executes
+  archive content; ignore caller PATH, shell/Python/curl startup hooks, and
+  privileged-command environment when deriving or consuming that trust, and
+  restrict staging/link destinations to validated root-owned `/usr/local`
+  parents; fail closed with offline pinning advice.
 - Keep generated Kilix fork artifacts outside the source checkout and include
   their state in update rollback.
 - Bundle and exact-validate the approved Plebian wallpaper, attribution, and

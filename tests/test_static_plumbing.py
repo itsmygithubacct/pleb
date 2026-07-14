@@ -32,6 +32,18 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("KILIX_DATA_HOME=$KILIX_DATA_HOME", text)
         self.assertIn("KILIX_BUILD_DIRECTORY=$KILIX_BUILD_DIRECTORY", text)
         self.assertIn("KILIX95_DATA_HOME=$KILIX95_DATA_HOME", text)
+        for name in (
+            "KILIX_CONFIG_HOME",
+            "KILIX_STATE_DIRECTORY",
+            "KILIX_CACHE_HOME",
+            "KILIX_SESSION_HOME",
+            "KILIX_PREBUILT_HOME",
+            "KILIX95_CONFIG_HOME",
+            "KILIX95_STATE_HOME",
+            "KILIX95_CACHE_HOME",
+            "KILIX95_SESSION_HOME",
+        ):
+            self.assertIn(f"{name}=${name}", text)
         self.assertIn("KILIX_DESKTOP_DIR=$KILIX_DESKTOP_DIR", text)
         self.assertNotIn("DESKTOP_CMD=", text)
         self.assertIn("none|off|disabled) return 1", text)
