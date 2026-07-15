@@ -240,10 +240,14 @@ The Plebian-OS updater passes its already-held copy of this same lock through an
 inherited file descriptor. Pleb validates and borrows that lock without
 releasing the parent updater's ownership.
 
-The fork-build stamp is stored under
-`~/.local/gpu_terminal/pleb/state/`, not inside any source checkout. Pleb-owned
-configuration, cache, persistent state, live session files, and durable data
-use the `~/.local/gpu_terminal/pleb/{config,state,cache,session,data}` layout.
+The canonical fork-build stamp is stored at
+`~/.local/gpu_terminal/kilix/state/fork-built-ref`, beside the Kilix generation
+it describes, and never inside a source checkout or duplicated under Pleb
+state. Pleb snapshots and restores that same Kilix-owned stamp during updates,
+and transactionally retires the legacy Pleb-side duplicate when encountered.
+Pleb-owned configuration, cache, persistent state, live session files, and
+durable data use the
+`~/.local/gpu_terminal/pleb/{config,state,cache,session,data}` layout.
 Install (including a Plebian-OS-managed install), update, testing, kiosk changes,
 the Go fetcher, and every login reconcile the component root and all five
 categories as user-owned, non-symlink `0700` directories while preserving their
