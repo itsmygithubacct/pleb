@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2 — 2026-07-14
+## 0.1.2 — 2026-07-15
 
 - Use `~/gpu_terminal` as the shared source-checkout root and
   `~/.local/gpu_terminal` as the shared writable-data root.
@@ -30,6 +30,16 @@
   parents; fail closed with offline pinning advice.
 - Keep generated Kilix fork artifacts outside the source checkout and include
   their state in update rollback.
+- Coordinate Pleb, direct Kilix, Plebian-OS update, and first-boot builds
+  through Kilix's private shared transaction lock. Treat Kilix's contained
+  generation, exact `source-id`, and `state/fork-built-ref` as the single
+  engine identity, retiring the older duplicate Pleb stamp only after commit.
+- Preserve the exact pre-update `current` and `previous` generation links
+  during rebuilds, protect an older rollback generation while a new one is
+  promoted, and atomically restore both links and the canonical stamp after any
+  later failure. Coherence checks now reject escaping generation topology,
+  malformed source/stamp bytes, non-regular launchers, and a broken `kitten`
+  probe before an update can commit.
 - Bundle and exact-validate the approved Plebian wallpaper, attribution, and
   GPL text; standalone installs copy it under Pleb-owned data and atomically
   seed only an absent Pleb-isolated desktop state without changing provider
