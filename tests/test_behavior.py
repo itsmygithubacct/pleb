@@ -714,6 +714,56 @@ class PlebBehaviorTests(unittest.TestCase):
             finally:
                 os.close(arbitrary)
 
+    def test_inherited_kilix_transaction_lock_is_validated_and_borrowed(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            storage = tmp / ".local/gpu_terminal/kilix"
+            state = storage / "state"
+            state.mkdir(parents=True)
+            state.chmod(0o700)
+            lock = state / "build-update.lock"
+            lock_fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                script = textwrap.dedent(
+                    f"""
+                    set -euo pipefail
+                    PLEB_ROOT={ROOT!s}
+                    KILIX_STORAGE_HOME={storage!s}
+                    KILIX_STATE_DIRECTORY={state!s}
+                    . "$PLEB_ROOT/lib/common.sh"
+                    . "$PLEB_ROOT/lib/update.sh"
+                    _acquire_kilix_transaction_lock
+                    [ "$_KILIX_TXN_LOCK_BORROWED" = 1 ]
+                    [ "$KILIX_TRANSACTION_LOCK_PATH" = {lock!s} ]
+                    _release_kilix_transaction_lock
+                    [ -e /proc/$$/fd/{lock_fd} ]
+                    flock -n -x {lock_fd}
+                    printf '%s\n' BORROWED_KILIX_LOCK_OK
+                    """
+                )
+                env = clean_env(tmp)
+                env["KILIX_TRANSACTION_LOCK_FD"] = str(lock_fd)
+                result = subprocess.run(
+                    ["bash", "-c", script],
+                    env=env,
+                    pass_fds=(lock_fd,),
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                )
+                self.assertIn("BORROWED_KILIX_LOCK_OK", result.stdout)
+
+                competitor = os.open(lock, os.O_RDWR)
+                try:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(competitor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                finally:
+                    os.close(competitor)
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+
     def test_update_rebuild_uses_kilix_dependency_contract_for_libxxhash(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
@@ -721,7 +771,9 @@ class PlebBehaviorTests(unittest.TestCase):
             scripts = kilix / "scripts"
             scripts.mkdir(parents=True)
             build = tmp / "kilix-data/build"
+            kilix_state = tmp / "kilix-data/state"
             state = tmp / "pleb-state"
+            head = "a" * 40
             calls = tmp / "dependency-calls"
             ready = tmp / "libxxhash-ready"
             installer = scripts / "install-build-deps.sh"
@@ -740,6 +792,7 @@ class PlebBehaviorTests(unittest.TestCase):
                 "fi\n",
             )
             launcher = kilix / "kilix"
+            generation = build / "generations/build.Test"
             fork = build / "current/src/kitty/launcher/kitty"
             kitten = build / "current/src/kitty/launcher/kitten"
             write_executable(
@@ -749,12 +802,18 @@ class PlebBehaviorTests(unittest.TestCase):
                 "case \"${1:-}\" in\n"
                 "  --build)\n"
                 f"    echo build >>{calls!s}\n"
-                f"    mkdir -p {fork.parent!s}\n"
+                f"    mkdir -p {generation / 'src/kitty/launcher'!s} {kilix_state!s}\n"
+                f"    chmod 0700 {build!s} {kilix_state!s}\n"
+                f"    rm -rf {build / 'current'!s}\n"
+                f"    ln -s generations/build.Test {build / 'current'!s}\n"
                 f"    printf '#!/bin/sh\\n' >{fork!s}\n"
                 f"    printf '#!/bin/sh\\n' >{kitten!s}\n"
                 f"    chmod 0755 {fork!s} {kitten!s}\n"
+                f"    printf '%s\\n' {head!s} >{build / 'current/source-id'!s}\n"
+                f"    printf '%s\\t%s\\n' {kilix.resolve()!s} {head!s} >{kilix_state / 'fork-built-ref'!s}\n"
+                f"    chmod 0600 {kilix_state / 'fork-built-ref'!s}\n"
                 "    ;;\n"
-                f"  --which) echo {fork!s} ;;\n"
+                f"  --which) echo {fork!s}; echo kilix-test ;;\n"
                 "  *) exit 2 ;;\n"
                 "esac\n",
             )
@@ -763,14 +822,16 @@ class PlebBehaviorTests(unittest.TestCase):
                 set -euo pipefail
                 PLEB_ROOT={ROOT!s}
                 KILIX_DIR={kilix!s}
+                KILIX_STORAGE_HOME={build.parent!s}
                 KILIX_BUILD_DIRECTORY={build!s}
+                KILIX_STATE_DIRECTORY={kilix_state!s}
                 PLEB_STATE_HOME={state!s}
                 PLEB_SKIP_DEPS=0
                 . "$PLEB_ROOT/lib/common.sh"
                 . "$PLEB_ROOT/lib/install.sh"
                 . "$PLEB_ROOT/lib/update.sh"
                 _ensure_go_for_kilix_build() {{ :; }}
-                _kilix_fork_head() {{ :; }}
+                _kilix_fork_head() {{ printf '%s\\n' {head!s}; }}
                 _rebuild_kilix_fork
                 """
             )
@@ -854,23 +915,43 @@ class PlebBehaviorTests(unittest.TestCase):
             kilix95 = tmp / "kilix-95"
             kilix95_before, kilix95_after = two_commit_repo(kilix95)
             build = tmp / "kilix-storage" / "build"
+            generations = build / "generations"
+            old_current_generation = generations / "build.OldCurrent"
+            old_previous_generation = generations / "build.OldPrevious"
+            new_generation = generations / "build.NewFailed"
             current = build / "current"
+            previous = build / "previous"
             fork = current / "src/kitty/launcher/kitty"
             kitten = current / "src/kitty/launcher/kitten"
-            fork.parent.mkdir(parents=True)
+            (old_current_generation / "src/kitty/launcher").mkdir(parents=True)
+            old_previous_generation.mkdir()
+            current.symlink_to("generations/build.OldCurrent")
+            previous.symlink_to("generations/build.OldPrevious")
+            build.chmod(0o700)
             write_executable(fork, "#!/bin/sh\necho old-fork\n")
             write_executable(kitten, "#!/bin/sh\necho old-kitten\n")
             (current / "source-id").write_text("old\n")
+            (old_previous_generation / "sentinel").write_text("older-generation\n")
+            current_identity = (os.lstat(current).st_dev, os.lstat(current).st_ino)
+            previous_identity = (os.lstat(previous).st_dev, os.lstat(previous).st_ino)
             state = tmp / ".local/gpu_terminal/pleb/state"
             state.mkdir(parents=True)
-            stamp = state / "kilix-fork-built-ref"
+            legacy_stamp = state / "kilix-fork-built-ref"
+            legacy_stamp.write_text("legacy-stamp\n")
+            kilix_state = tmp / "kilix-storage/state"
+            kilix_state.mkdir(parents=True)
+            kilix_state.chmod(0o700)
+            stamp = kilix_state / "fork-built-ref"
             stamp.write_text("old-stamp\n")
+            stamp.chmod(0o600)
 
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
                 PLEB_ROOT={ROOT!s}
                 PLEB_STATE_HOME={state!s}
+                KILIX_STORAGE_HOME={build.parent!s}
+                KILIX_STATE_DIRECTORY={kilix_state!s}
                 KILIX_DIR={kilix!s}
                 KILIX_BUILD_DIRECTORY={build!s}
                 KILIX95_DIR={kilix95!s}
@@ -881,8 +962,9 @@ class PlebBehaviorTests(unittest.TestCase):
                 git -C "$KILIX_DIR" reset --hard {kilix_after!s} >/dev/null
                 git -C "$KILIX_DIR/src" reset --hard {src_after!s} >/dev/null
                 git -C "$KILIX95_DIR" reset --hard {kilix95_after!s} >/dev/null
-                mv {current!s} {build / 'previous'!s}
-                mkdir -p {current / 'src/kitty/launcher'!s}
+                mv {current!s} {previous!s}
+                mkdir -p {new_generation / 'src/kitty/launcher'!s}
+                ln -s generations/build.NewFailed {current!s}
                 printf '%s\n' new >{current / 'source-id'!s}
                 printf '%s\n' new-fork >{fork!s}
                 printf '%s\n' new-kitten >{kitten!s}
@@ -918,8 +1000,53 @@ class PlebBehaviorTests(unittest.TestCase):
                     self.assertEqual(branch.stdout.strip(), expected_branch)
             self.assertIn("old-fork", fork.read_text())
             self.assertIn("old-kitten", kitten.read_text())
+            self.assertEqual(os.readlink(current), "generations/build.OldCurrent")
+            self.assertEqual(os.readlink(previous), "generations/build.OldPrevious")
+            self.assertEqual(
+                (os.lstat(current).st_dev, os.lstat(current).st_ino),
+                current_identity,
+            )
+            self.assertEqual(
+                (os.lstat(previous).st_dev, os.lstat(previous).st_ino),
+                previous_identity,
+            )
+            self.assertEqual(
+                (old_previous_generation / "sentinel").read_text(),
+                "older-generation\n",
+            )
+            self.assertFalse(new_generation.exists())
             self.assertEqual(stamp.read_text(), "old-stamp\n")
+            self.assertEqual(legacy_stamp.read_text(), "legacy-stamp\n")
             self.assertEqual(list(state.glob("update-rollback.*")), [])
+
+            committed = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    textwrap.dedent(
+                        f"""
+                        set -euo pipefail
+                        PLEB_ROOT={ROOT!s}
+                        PLEB_STATE_HOME={state!s}
+                        KILIX_STORAGE_HOME={build.parent!s}
+                        KILIX_STATE_DIRECTORY={kilix_state!s}
+                        KILIX_DIR={kilix!s}
+                        KILIX_BUILD_DIRECTORY={build!s}
+                        KILIX95_DIR={kilix95!s}
+                        . "$PLEB_ROOT/lib/common.sh"
+                        . "$PLEB_ROOT/lib/update.sh"
+                        _acquire_update_lock
+                        _update_transaction_begin
+                        _update_transaction_commit
+                        """
+                    ),
+                ],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(committed.returncode, 0, committed.stderr)
+            self.assertFalse(legacy_stamp.exists())
 
     def test_dirty_checkout_is_rejected_before_update(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1131,16 +1258,174 @@ touch {marker!s}
         self.assertLess(display, prompt)
         self.assertNotIn("displayed unverified asset", text)
 
-    def test_fork_build_stamp_is_xdg_state_not_checkout_state(self):
+    def test_fork_build_contract_uses_one_coherent_canonical_identity(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            state = tmp / "xdg-state" / "pleb"
+            kilix = tmp / "kilix-real"
+            src = kilix / "src"
+            subprocess.run(["git", "init", "-q", "-b", "main", str(src)], check=True)
+            subprocess.run(["git", "-C", str(src), "config", "user.name", "Pleb Test"], check=True)
+            subprocess.run(
+                ["git", "-C", str(src), "config", "user.email", "pleb@example.invalid"],
+                check=True,
+            )
+            (src / "tracked").write_text("source\n")
+            subprocess.run(["git", "-C", str(src), "add", "tracked"], check=True)
+            subprocess.run(["git", "-C", str(src), "commit", "-q", "-m", "source"], check=True)
+            head = subprocess.check_output(
+                ["git", "-C", str(src), "rev-parse", "HEAD"], text=True
+            ).strip()
+            checkout = tmp / "kilix-link"
+            checkout.symlink_to(kilix, target_is_directory=True)
+
+            build = tmp / "kilix-storage" / "build"
+            generation = build / "generations/build.Valid"
+            (generation / "src/kitty/launcher").mkdir(parents=True)
+            (build / "current").symlink_to("generations/build.Valid")
+            build.chmod(0o700)
+            fork = build / "current/src/kitty/launcher/kitty"
+            kitten = build / "current/src/kitty/launcher/kitten"
+            write_executable(fork, "#!/bin/sh\nexit 0\n")
+            write_executable(kitten, "#!/bin/sh\nexit 0\n")
+            source_id = build / "current/source-id"
+            source_id.write_text(head + "\n")
+
+            kilix_state = tmp / "kilix-storage" / "state"
+            kilix_state.mkdir()
+            kilix_state.chmod(0o700)
+            stamp = kilix_state / "fork-built-ref"
+            stamp.write_text(f"{kilix.resolve()}\t{head}\n")
+            stamp.chmod(0o600)
+            pleb_state = tmp / "pleb-state"
+
+            launcher = kilix / "kilix"
+
+            def write_launcher(engine: Path = fork, rc: int = 0) -> None:
+                write_executable(
+                    launcher,
+                    "#!/bin/sh\n"
+                    "[ \"${1:-}\" = --which ] || exit 2\n"
+                    f"printf '%s\\n' '{engine}'\n"
+                    "printf '%s\\n' 'kilix-test 1.0'\n"
+                    f"exit {rc}\n",
+                )
+
+            write_launcher()
+            prefix = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                PLEB_STATE_HOME={pleb_state!s}
+                KILIX_STORAGE_HOME={build.parent!s}
+                KILIX_STATE_DIRECTORY={kilix_state!s}
+                KILIX_DIR={checkout!s}
+                KILIX_BUILD_DIRECTORY={build!s}
+                . "$PLEB_ROOT/lib/common.sh"
+                . "$PLEB_ROOT/lib/update.sh"
+                """
+            )
+
+            def run(body: str):
+                return subprocess.run(
+                    ["bash", "-c", prefix + body],
+                    env=clean_env(tmp),
+                    text=True,
+                    capture_output=True,
+                )
+
+            valid = run("_verify_kilix_fork_build\n! _kilix_fork_needs_rebuild\n")
+            self.assertEqual(valid.returncode, 0, valid.stderr)
+            self.assertFalse((pleb_state / "kilix-fork-built-ref").exists())
+
+            source_id.write_text("wrong\n")
+            self.assertEqual(run("_kilix_fork_needs_rebuild\n").returncode, 0)
+            source_id.write_text(head + "\n\n")
+            self.assertEqual(run("_kilix_fork_needs_rebuild\n").returncode, 0)
+            source_id.write_text(head + "\n")
+
+            stamp.write_text("wrong\n")
+            self.assertEqual(run("_kilix_fork_needs_rebuild\n").returncode, 0)
+            stamp.write_text(f"{kilix.resolve()}\t{head}\n\n")
+            self.assertEqual(run("_kilix_fork_needs_rebuild\n").returncode, 0)
+            stamp.write_text(f"{kilix.resolve()}\t{head}\n")
+
+            kitten.unlink()
+            self.assertEqual(run("_kilix_fork_needs_rebuild\n").returncode, 0)
+            write_executable(kitten, "#!/bin/sh\nexit 0\n")
+
+            write_executable(kitten, "#!/bin/sh\nexit 74\n")
+            self.assertEqual(run("_kilix_fork_needs_rebuild\n").returncode, 0)
+            broken_kitten = run("_verify_kilix_fork_build\n")
+            self.assertNotEqual(broken_kitten.returncode, 0)
+            self.assertIn("kitten failed", broken_kitten.stderr)
+            write_executable(kitten, "#!/bin/sh\nexit 0\n")
+
+            (build / "current").unlink()
+            (build / "current").symlink_to(generation)
+            self.assertEqual(run("_kilix_fork_needs_rebuild\n").returncode, 0)
+            unsafe_generation = run("_verify_kilix_fork_build\n")
+            self.assertNotEqual(unsafe_generation.returncode, 0)
+            self.assertIn("contained current generation", unsafe_generation.stderr)
+            (build / "current").unlink()
+            (build / "current").symlink_to("generations/build.Valid")
+
+            write_launcher(tmp / "wrong-engine")
+            self.assertEqual(run("_kilix_fork_needs_rebuild\n").returncode, 0)
+
+            write_launcher(rc=73)
+            self.assertEqual(run("_kilix_fork_needs_rebuild\n").returncode, 0)
+            failed_probe = run("_verify_kilix_fork_build\n")
+            self.assertNotEqual(failed_probe.returncode, 0)
+            self.assertIn("failed its post-build version probe", failed_probe.stderr)
+
+            write_launcher()
+            stamp.chmod(0o644)
+            unsafe_mode = run("_validate_kilix_fork_stamp_path\n")
+            self.assertNotEqual(unsafe_mode.returncode, 0)
+            self.assertIn("mode 0600", unsafe_mode.stderr)
+
+            stamp.chmod(0o600)
+            alias = kilix_state / "fork-built-ref.alias"
+            os.link(stamp, alias)
+            unsafe_links = run("_validate_kilix_fork_stamp_path\n")
+            self.assertNotEqual(unsafe_links.returncode, 0)
+            self.assertIn("exactly one hard link", unsafe_links.stderr)
+            alias.unlink()
+
+            kilix_state.chmod(0o777)
+            unsafe_state_mode = run("_validate_kilix_fork_stamp_path\n")
+            self.assertNotEqual(unsafe_state_mode.returncode, 0)
+            self.assertIn("mode 0700", unsafe_state_mode.stderr)
+            kilix_state.chmod(0o700)
+
+            source_storage = run(
+                f"KILIX_STORAGE_HOME={kilix.resolve()!s}\n"
+                f"KILIX_STATE_DIRECTORY={kilix.resolve() / 'state'!s}\n"
+                "_validate_kilix_fork_stamp_path\n"
+            )
+            self.assertNotEqual(source_storage.returncode, 0)
+            self.assertIn("Kilix checkout", source_storage.stderr)
+
+            broad_storage = run(
+                "KILIX_STORAGE_HOME=$HOME\n"
+                "KILIX_STATE_DIRECTORY=$HOME/state\n"
+                "_validate_kilix_fork_stamp_path\n"
+            )
+            self.assertNotEqual(broad_storage.returncode, 0)
+            self.assertIn("too broad", broad_storage.stderr)
+
+    def test_fork_build_stamp_is_canonical_kilix_state_not_checkout_or_pleb_state(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            pleb_state = tmp / "xdg-state" / "pleb"
+            kilix_state = tmp / "xdg-state" / "kilix"
             checkout = tmp / "kilix"
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
                 PLEB_ROOT={ROOT!s}
-                PLEB_STATE_HOME={state!s}
+                PLEB_STATE_HOME={pleb_state!s}
+                KILIX_STATE_DIRECTORY={kilix_state!s}
                 KILIX_DIR={checkout!s}
                 . "$PLEB_ROOT/lib/common.sh"
                 . "$PLEB_ROOT/lib/update.sh"
@@ -1154,8 +1439,9 @@ touch {marker!s}
                 capture_output=True,
                 check=True,
             )
-            self.assertEqual(result.stdout.strip(), str(state / "kilix-fork-built-ref"))
+            self.assertEqual(result.stdout.strip(), str(kilix_state / "fork-built-ref"))
             self.assertNotIn(str(checkout), result.stdout)
+            self.assertNotIn(str(pleb_state), result.stdout)
 
     def test_go_build_check_requires_the_configured_exact_release(self):
         with tempfile.TemporaryDirectory() as td:

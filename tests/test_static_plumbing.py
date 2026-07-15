@@ -111,8 +111,12 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("PLEBIAN_OS_KILIX_GO_SHA256_ARM64", text)
         self.assertIn("scripts/install-go.sh", text)
         self.assertIn("ensure_kilix_build_deps", text)
+        self.assertIn("$KILIX_STATE_DIRECTORY/fork-built-ref", text)
         self.assertIn("$PLEB_STATE_HOME/kilix-fork-built-ref", text)
+        self.assertIn("legacy-fork-stamp", text)
         self.assertNotIn("$KILIX_DIR/.kilix-fork-built-ref", text)
+        self.assertIn("$KILIX_BUILD_DIRECTORY/current/source-id", text)
+        self.assertIn("_verify_kilix_fork_build", text)
         self.assertIn('"$KILIX_DIR/kilix" --build || die "kilix fork build failed"', text)
         self.assertNotIn("fork build failed — keeping the previous engine binary", text)
 
