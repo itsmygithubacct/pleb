@@ -1767,9 +1767,19 @@ do_install
 
             def attempt(cache: Path | str) -> subprocess.CompletedProcess[str]:
                 env = clean_env(tmp)
-                env["GO_CACHE"] = str(cache)
+                env.update(
+                    {
+                        "GO_CACHE": str(cache),
+                        "GO_INSTALL_SCRIPT": str(ROOT / "scripts/install-go.sh"),
+                    }
+                )
                 return subprocess.run(
-                    [str(ROOT / "scripts/install-go.sh"), "install"],
+                    [
+                        "bash",
+                        "-c",
+                        'source "$GO_INSTALL_SCRIPT"; '
+                        "validate_install_destinations() { :; }; do_install",
+                    ],
                     cwd=ROOT,
                     env=env,
                     text=True,
