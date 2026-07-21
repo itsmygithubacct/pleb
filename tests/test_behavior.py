@@ -12,6 +12,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# Kilix deliberately launches with a private umask. Tests that create public
+# safety-sentinel directories must not inherit that interactive shell policy.
+os.umask(0o022)
 COORDINATED_STORAGE_VARS = (
     "KILIX_CONFIG_HOME",
     "KILIX_STATE_DIRECTORY",
@@ -914,6 +917,8 @@ class PlebBehaviorTests(unittest.TestCase):
             )
             kilix95 = tmp / "kilix-95"
             kilix95_before, kilix95_after = two_commit_repo(kilix95)
+            presenter_source = tmp / "presenter-source"
+            two_commit_repo(presenter_source)
             build = tmp / "kilix-storage" / "build"
             generations = build / "generations"
             old_current_generation = generations / "build.OldCurrent"
@@ -960,6 +965,8 @@ class PlebBehaviorTests(unittest.TestCase):
                 _acquire_update_lock
                 _update_transaction_begin
                 git -C "$KILIX_DIR" reset --hard {kilix_after!s} >/dev/null
+                git -c protocol.file.allow=always -C "$KILIX_DIR" submodule add \
+                    {presenter_source!s} third_party/kitty-frame-presenter >/dev/null
                 git -C "$KILIX_DIR/src" reset --hard {src_after!s} >/dev/null
                 git -C "$KILIX95_DIR" reset --hard {kilix95_after!s} >/dev/null
                 mv {current!s} {previous!s}
@@ -1018,6 +1025,25 @@ class PlebBehaviorTests(unittest.TestCase):
             self.assertEqual(stamp.read_text(), "old-stamp\n")
             self.assertEqual(legacy_stamp.read_text(), "legacy-stamp\n")
             self.assertEqual(list(state.glob("update-rollback.*")), [])
+            self.assertFalse(
+                (kilix / "third_party/kitty-frame-presenter/payload").exists()
+            )
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "-C", str(kilix), "status", "--porcelain"],
+                    text=True,
+                ).strip(),
+                "",
+            )
+            presenter_config = subprocess.run(
+                [
+                    "git", "-C", str(kilix), "config", "--local",
+                    "--get-regexp", r"^submodule\..*\.url$",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(presenter_config.returncode, 0)
 
             committed = subprocess.run(
                 [

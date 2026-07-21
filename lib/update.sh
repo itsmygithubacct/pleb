@@ -185,6 +185,17 @@ _restore_checkout_position() {
     fi
 }
 
+_deinit_new_kilix_submodule() {
+    local path="$1" key="$2" initialized mode
+    initialized="$(cat "$_UPDATE_TXN_DIR/$key.initialized" 2>/dev/null || echo 0)"
+    [ "$initialized" = 0 ] || return 0
+    mode="$(git -C "$KILIX_DIR" ls-files --stage -- "$path" 2>/dev/null \
+        | awk 'NR == 1 { print $1 }')"
+    [ -n "$mode" ] || return 0
+    [ "$mode" = 160000 ] || return 1
+    git -C "$KILIX_DIR" submodule deinit -f -- "$path" >/dev/null 2>&1
+}
+
 _validate_kilix_storage_root() {
     local storage source kilix_root=""
     storage="$(_pleb_normalized_absolute_path \
@@ -450,11 +461,22 @@ _update_transaction_rollback() {
     legacy_stamp="$PLEB_STATE_HOME/kilix-fork-built-ref"
     warn "update failed; restoring the previous coherent Kilix/Kilix 95 state"
 
+    # Deinitialize submodules introduced by the failed parent update while the
+    # new .gitmodules entry still exists. Restoring the parent first would
+    # strand their worktrees/config when the old commit did not know the path.
+    _deinit_new_kilix_submodule src kilix-src || failed=1
+    _deinit_new_kilix_submodule \
+        third_party/kitty-frame-presenter kilix-presenter || failed=1
     _restore_checkout_position "$KILIX_DIR" kilix || failed=1
-    if [ "$(cat "$_UPDATE_TXN_DIR/kilix-src.initialized" 2>/dev/null || echo 1)" = 0 ]; then
-        git -C "$KILIX_DIR" submodule deinit -f -- src >/dev/null 2>&1 || failed=1
-    elif [ -f "$_UPDATE_TXN_DIR/kilix-src.head" ]; then
+    if [ "$(cat "$_UPDATE_TXN_DIR/kilix-src.initialized" 2>/dev/null || echo 0)" = 1 ] \
+        && [ -f "$_UPDATE_TXN_DIR/kilix-src.head" ]; then
         _restore_checkout_position "$KILIX_DIR/src" kilix-src || failed=1
+    fi
+    if [ "$(cat "$_UPDATE_TXN_DIR/kilix-presenter.initialized" 2>/dev/null || echo 0)" = 1 ] \
+        && [ -f "$_UPDATE_TXN_DIR/kilix-presenter.head" ]; then
+        _restore_checkout_position \
+            "$KILIX_DIR/third_party/kitty-frame-presenter" \
+            kilix-presenter || failed=1
     fi
     if [ "$(cat "$_UPDATE_TXN_DIR/kilix95.existed" 2>/dev/null || echo 1)" = 0 ]; then
         rm -rf -- "$KILIX95_DIR" || failed=1
@@ -516,6 +538,14 @@ _update_transaction_begin() {
         _record_checkout_position "$KILIX_DIR/src" kilix-src
     else
         printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix-src.initialized"
+    fi
+    if git -C "$KILIX_DIR/third_party/kitty-frame-presenter" \
+            rev-parse --verify HEAD >/dev/null 2>&1; then
+        printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix-presenter.initialized"
+        _record_checkout_position \
+            "$KILIX_DIR/third_party/kitty-frame-presenter" kilix-presenter
+    else
+        printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix-presenter.initialized"
     fi
     if [ -e "$KILIX95_DIR" ] || [ -L "$KILIX95_DIR" ]; then
         printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix95.existed"

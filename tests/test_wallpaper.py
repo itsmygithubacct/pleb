@@ -11,6 +11,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# Safety tests model ordinary externally owned paths, independent of the
+# private umask used by an interactive Kilix session.
+os.umask(0o022)
 VALIDATOR = ROOT / "scripts/validate-artwork.py"
 WALLPAPER = ROOT / "assets/desktop/plebian-os.png"
 DESKTOP_README = ROOT / "assets/desktop/README.md"
