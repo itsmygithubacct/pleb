@@ -8,6 +8,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# Keep directory-mode assertions deterministic when invoked from Kilix, whose
+# runtime shell uses a private umask.
+os.umask(0o022)
 CATEGORIES = ("config", "state", "cache", "session", "data")
 
 
