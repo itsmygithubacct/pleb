@@ -12,6 +12,7 @@
 #   pleb version            print the Plebian-OS release version
 #   pleb doctor             check prerequisites
 #   pleb screen-size ...    show/increase/decrease/reset Kilix terminal scale
+#   pleb settings           configure shared Kilix chrome in a terminal UI
 #   pleb session            exec the session now (for the current $DISPLAY)
 #
 # Non-destructive: your current desktop session is untouched; "Pleb" is another choice
@@ -46,6 +47,11 @@ cmd_status() {
     else info "session  : not installed  (run: pleb install)"; fi
     if [ -x "$SESSION_BIN_DST" ]; then info "launcher : $SESSION_BIN_DST"
     else info "launcher : not installed"; fi
+    if [ -x "$KILIX_SETTINGS_LINK" ]; then
+        info "settings : $GPU_TERMINAL_SETTINGS_FILE  [$KILIX_SETTINGS_LINK]"
+    else
+        info "settings : $GPU_TERMINAL_SETTINGS_FILE  (command not linked)"
+    fi
     if [ -L "$KILIX_LINK" ]; then info "kilix cmd: $KILIX_LINK -> $(readlink "$KILIX_LINK")"
     else info "kilix cmd: not linked (run: pleb install)"; fi
     if desktop_enabled; then
@@ -96,6 +102,12 @@ cmd_screen_size() {
     "$KILIX_DEFAULT" screen-size "$@"
 }
 
+cmd_settings() {
+    local settings="$KILIX_DIR/kilix-settings"
+    [ -f "$settings" ] || die "kilix-settings not found at $settings"
+    exec python3 "$settings" "$@"
+}
+
 main() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
@@ -120,6 +132,7 @@ main() {
         doctor)     cmd_doctor ;;
         screen-size|font-size)
                     cmd_screen_size "$@" ;;
+        settings)   cmd_settings "$@" ;;
         session)    exec "$PLEB_BIN_SRC" ;;
         version|--version|-V)
                     echo "pleb $(cat "$PLEB_ROOT/VERSION" 2>/dev/null || echo unknown)" ;;
