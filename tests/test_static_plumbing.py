@@ -28,6 +28,7 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("KILIX95_ALLOW_MUTABLE_REF=$KILIX95_ALLOW_MUTABLE_REF", text)
         self.assertIn("KILIX95_ALLOW_UNPINNED_INSTALL=$KILIX95_ALLOW_UNPINNED_INSTALL", text)
         self.assertIn("GPU_TERMINAL_SOURCE_HOME=$GPU_TERMINAL_SOURCE_HOME", text)
+        self.assertIn("GPU_TERMINAL_SETTINGS_FILE=$GPU_TERMINAL_SETTINGS_FILE", text)
         self.assertIn("PLEB_DATA_HOME=$PLEB_DATA_HOME", text)
         self.assertIn("KILIX_DATA_HOME=$KILIX_DATA_HOME", text)
         self.assertIn("KILIX_BUILD_DIRECTORY=$KILIX_BUILD_DIRECTORY", text)
@@ -183,6 +184,18 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("KILIX_PREBUILT_SHA256", common)
         self.assertIn("PLEB_SKIP_DEPS", readme)
         self.assertIn("pleb screen-size larger", readme)
+
+    def test_shared_chrome_settings_and_network_manager_are_installed(self):
+        cli = (ROOT / "bin" / "pleb").read_text()
+        common = (ROOT / "lib" / "common.sh").read_text()
+        install = (ROOT / "lib" / "install.sh").read_text()
+        self.assertIn("settings)   cmd_settings", cli)
+        self.assertIn("$KILIX_DIR/kilix-settings", cli)
+        self.assertIn("$GPU_TERMINAL_HOME/settings.conf", common)
+        self.assertIn("KILIX_SETTINGS_LINK", common)
+        self.assertIn("network-manager", install)
+        self.assertIn('python3 "$KILIX_DIR/kilix-settings" --ensure', install)
+        self.assertIn('link_command "$KILIX_DIR/kilix-settings"', install)
 
     def test_session_disables_x_keyboard_bell(self):
         text = (ROOT / "bin" / "pleb-session").read_text()

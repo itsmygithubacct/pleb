@@ -47,7 +47,7 @@ _install_missing_apt_packages() {
 ensure_system_deps() {
     local -a deps
     deps=(
-        git curl tar sudo
+        git curl tar sudo network-manager
         lightdm xinit x11-xserver-utils x11-utils xterm
         libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
         fontconfig fonts-dejavu-core
@@ -487,6 +487,12 @@ do_install() {
 
     ensure_system_deps
     ensure_kilix   # fresh-clone kilix + set up an engine if not already present
+    if [ ! -f "$KILIX_DIR/kilix-settings" ] \
+            || [ -L "$KILIX_DIR/kilix-settings" ]; then
+        die "missing or unsafe Kilix settings TUI: $KILIX_DIR/kilix-settings"
+    fi
+    python3 "$KILIX_DIR/kilix-settings" --ensure \
+        || die "could not initialize $GPU_TERMINAL_SETTINGS_FILE"
     ensure_kilix95 # optional: external Kilix 95 when the selected provider needs it
     install_standalone_pleb_wallpaper
     install_recovery_document
@@ -500,6 +506,9 @@ do_install() {
     # put `kilix` on PATH so `kilix desktop` / `kilix serve` etc. work anywhere
     log "linking kilix command -> $KILIX_LINK"
     link_command "$KILIX_DIR/kilix" "$KILIX_LINK" "kilix"
+
+    log "linking kilix-settings command -> $KILIX_SETTINGS_LINK"
+    link_command "$KILIX_DIR/kilix-settings" "$KILIX_SETTINGS_LINK" "kilix-settings"
 
     # and `pleb` itself, so `pleb update` / `pleb status` etc. work anywhere
     # (bin/pleb resolves its checkout through the symlink via readlink -f)
@@ -526,6 +535,12 @@ do_uninstall() {
     if [ -L "$KILIX_LINK" ] && [ "$(readlink "$KILIX_LINK")" = "$KILIX_DIR/kilix" ]; then
         log "removing kilix command symlink $KILIX_LINK"
         run_root rm -f "$KILIX_LINK"
+        removed=1
+    fi
+    if [ -L "$KILIX_SETTINGS_LINK" ] \
+            && [ "$(readlink "$KILIX_SETTINGS_LINK")" = "$KILIX_DIR/kilix-settings" ]; then
+        log "removing kilix-settings command symlink $KILIX_SETTINGS_LINK"
+        run_root rm -f "$KILIX_SETTINGS_LINK"
         removed=1
     fi
     # likewise the pleb command symlink, only if it points at our checkout

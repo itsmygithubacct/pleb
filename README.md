@@ -18,7 +18,7 @@ log out ──▶ LightDM greeter ──▶ pick "Pleb" ──▶ fullscreen kil
 ```
 ~/gpu_terminal/pleb/
 ├── bin/
-│   ├── pleb            # the CLI: install / uninstall / test / autologin / status / doctor
+│   ├── pleb            # the CLI: install / uninstall / test / settings / status / doctor
 │   └── pleb-session    # the X session entrypoint (self-contained; installed to /usr/local/bin)
 ├── lib/
 │   ├── common.sh       # shared helpers (paths, sudo, logging)
@@ -52,9 +52,9 @@ revalidated even when an engine is already runnable. For automation, set
 `KILIX_PREBUILT_VERSION` and `KILIX_PREBUILT_SHA256` together; Plebian-OS
 manifests always supply a verified pair.
 
-`pleb install` also symlinks `kilix` onto your `PATH` (`/usr/local/bin/kilix`, or
-`$KILIX_LINK`), so `kilix desktop`, `kilix serve`, and friends work from anywhere
-out of the box.
+`pleb install` also symlinks `kilix` and `kilix-settings` onto your `PATH`
+(`/usr/local/bin` by default), so `kilix desktop`, `kilix settings`, and friends
+work from anywhere out of the box.
 
 For a standalone install, Pleb validates and copies the approved Plebian
 wallpaper to
@@ -77,7 +77,8 @@ therefore retain their kittens-fire wallpaper default.
 - **git**, **curl**, **tar** (to clone kilix and fetch its prebuilt engine).
 - `sudo` for `install` / `autologin` (system files only).
 - On Debian/Ubuntu, `pleb install` installs Pleb's runtime packages with apt,
-  including the FluidSynth/SoundFont runtime used by kilix-amp MIDI playback.
+  including NetworkManager's `nmtui` for the top-bar network/Wi-Fi widget and
+  the FluidSynth/SoundFont runtime used by kilix-amp MIDI playback.
   Before a fork build, `pleb update` runs Kilix's own complete cross-distro
   dependency verifier and installer (including the `libxxhash` pkg-config
   module). Set `PLEB_SKIP_DEPS=1` to prevent package-manager changes; an update
@@ -114,10 +115,16 @@ log in. To go back, log out and pick your usual session again.
 | `pleb update [-y] [--no-restart\|--restart]` | Update clean checkouts, rebuild the fork, and optionally restart an active kiosk. |
 | `pleb status` | Show the effective persisted engine / desktop / install / autologin / kiosk state. |
 | `pleb screen-size ...` | Show, increase, decrease, reset, or set Kilix terminal scale. |
+| `pleb settings` | Toggle Kilix's top-bar widgets and clickable pane-title buttons. |
 | `pleb session` | Exec the session now, against the current `$DISPLAY`. |
 
 `install`, `uninstall`, and `autologin` need root; the CLI calls `sudo` only for
 the specific file operations, so you'll be prompted once.
+
+`pleb settings` and Kilix 95's Settings menu edit the same non-executable
+`~/.local/gpu_terminal/settings.conf`. It is the source of truth for the
+network, calendar, date/time, battery, font-size, four-way split, maximize, and
+close controls; changes are reflected by running Kilix windows.
 
 ## Testing without risking your desktop
 
@@ -270,6 +277,7 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 |---|---|---|
 | `GPU_TERMINAL_SOURCE_HOME` | `$HOME/gpu_terminal` | Shared root for source checkouts. |
 | `GPU_TERMINAL_HOME` | `$HOME/.local/gpu_terminal` | Shared root for writable application data. |
+| `GPU_TERMINAL_SETTINGS_FILE` | `$GPU_TERMINAL_HOME/settings.conf` | Shared clickable-chrome source of truth. |
 | `PLEB_STORAGE_HOME` | `$GPU_TERMINAL_HOME/pleb` | Private Pleb configuration, state, cache, session, and data root. |
 | `PLEB_CONFIG_HOME` | `$PLEB_STORAGE_HOME/config` | Pleb persisted configuration. |
 | `PLEB_STATE_HOME` | `$PLEB_STORAGE_HOME/state` | Pleb logs, locks, and durable state. |
@@ -334,7 +342,7 @@ KILIX_DESKTOP_COMMAND='exec /path/to/desktop'
 
 ```sh
 pleb autologin off      # if you enabled it
-pleb uninstall          # removes /usr/local/bin/pleb-session + the xsession entry
+pleb uninstall          # removes session integration and Pleb/Kilix command links
 ```
 
 `~/gpu_terminal/pleb`, `~/gpu_terminal/kilix`, optional
@@ -343,7 +351,7 @@ dependencies are left in place; remove them explicitly if you want them gone.
 
 ## Notes & limitations
 
-- **Engine: the kilix fork** (with clickable `→ ↓ ▢ ✕` pane buttons) builds to
+- **Engine: the kilix fork** (with clickable `+ - ← ↑ ↓ → ▢ ✕` pane buttons) builds to
   `~/.local/gpu_terminal/kilix/build/current/src/kitty/launcher/kitty` and is
   what `kilix` uses. Building it needs
   **Go ≥ 1.26**; if your distro ships an older Go, install a newer toolchain with
