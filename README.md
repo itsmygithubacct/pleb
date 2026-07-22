@@ -77,8 +77,9 @@ therefore retain their kittens-fire wallpaper default.
 - **git**, **curl**, **tar** (to clone kilix and fetch its prebuilt engine).
 - `sudo` for `install` / `autologin` (system files only).
 - On Debian/Ubuntu, `pleb install` installs Pleb's runtime packages with apt,
-  including NetworkManager's `nmtui` for the top-bar network/Wi-Fi widget and
-  the FluidSynth/SoundFont runtime used by kilix-amp MIDI playback.
+  including NetworkManager's `nmtui` for the top-bar network/Wi-Fi widget,
+  `pulsemixer` for its volume widget, and the FluidSynth/SoundFont runtime used
+  by kilix-amp MIDI playback.
   Before a fork build, `pleb update` runs Kilix's own complete cross-distro
   dependency verifier and installer (including the `libxxhash` pkg-config
   module). Set `PLEB_SKIP_DEPS=1` to prevent package-manager changes; an update
@@ -123,8 +124,8 @@ the specific file operations, so you'll be prompted once.
 
 `pleb settings` and Kilix 95's Settings menu edit the same non-executable
 `~/.local/gpu_terminal/settings.conf`. It is the source of truth for the
-network, calendar, date/time, battery, font-size, four-way split, maximize, and
-close controls; changes are reflected by running Kilix windows.
+volume, network, calendar, date/time, battery, font-size, four-way split,
+maximize, and close controls; changes are reflected by running Kilix windows.
 
 ## Testing without risking your desktop
 
