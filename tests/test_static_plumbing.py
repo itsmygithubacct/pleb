@@ -185,7 +185,7 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("PLEB_SKIP_DEPS", readme)
         self.assertIn("pleb screen-size larger", readme)
 
-    def test_shared_chrome_settings_and_network_manager_are_installed(self):
+    def test_shared_chrome_settings_and_widget_tools_are_installed(self):
         cli = (ROOT / "bin" / "pleb").read_text()
         common = (ROOT / "lib" / "common.sh").read_text()
         install = (ROOT / "lib" / "install.sh").read_text()
@@ -194,6 +194,7 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("$GPU_TERMINAL_HOME/settings.conf", common)
         self.assertIn("KILIX_SETTINGS_LINK", common)
         self.assertIn("network-manager", install)
+        self.assertIn("pulsemixer", install)
         self.assertIn('python3 "$KILIX_DIR/kilix-settings" --ensure', install)
         self.assertIn('link_command "$KILIX_DIR/kilix-settings"', install)
 
