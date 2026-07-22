@@ -52,7 +52,7 @@ ensure_system_deps() {
         libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
         fontconfig fonts-dejavu-core
         python3-pil python3-xlib python3-websockets
-        pulseaudio pulseaudio-utils alsa-utils ffmpeg xauth zenity
+        pulseaudio pulseaudio-utils pulsemixer alsa-utils ffmpeg xauth zenity
         dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
         fluidsynth fluid-soundfont-gm
     )
