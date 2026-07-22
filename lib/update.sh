@@ -467,6 +467,8 @@ _update_transaction_rollback() {
     _deinit_new_kilix_submodule src kilix-src || failed=1
     _deinit_new_kilix_submodule \
         third_party/kitty-frame-presenter kilix-presenter || failed=1
+    _deinit_new_kilix_submodule \
+        third_party/kilix-content kilix-content || failed=1
     _restore_checkout_position "$KILIX_DIR" kilix || failed=1
     if [ "$(cat "$_UPDATE_TXN_DIR/kilix-src.initialized" 2>/dev/null || echo 0)" = 1 ] \
         && [ -f "$_UPDATE_TXN_DIR/kilix-src.head" ]; then
@@ -477,6 +479,12 @@ _update_transaction_rollback() {
         _restore_checkout_position \
             "$KILIX_DIR/third_party/kitty-frame-presenter" \
             kilix-presenter || failed=1
+    fi
+    if [ "$(cat "$_UPDATE_TXN_DIR/kilix-content.initialized" 2>/dev/null || echo 0)" = 1 ] \
+        && [ -f "$_UPDATE_TXN_DIR/kilix-content.head" ]; then
+        _restore_checkout_position \
+            "$KILIX_DIR/third_party/kilix-content" \
+            kilix-content || failed=1
     fi
     if [ "$(cat "$_UPDATE_TXN_DIR/kilix95.existed" 2>/dev/null || echo 1)" = 0 ]; then
         rm -rf -- "$KILIX95_DIR" || failed=1
@@ -546,6 +554,14 @@ _update_transaction_begin() {
             "$KILIX_DIR/third_party/kitty-frame-presenter" kilix-presenter
     else
         printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix-presenter.initialized"
+    fi
+    if git -C "$KILIX_DIR/third_party/kilix-content" \
+            rev-parse --verify HEAD >/dev/null 2>&1; then
+        printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix-content.initialized"
+        _record_checkout_position \
+            "$KILIX_DIR/third_party/kilix-content" kilix-content
+    else
+        printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix-content.initialized"
     fi
     if [ -e "$KILIX95_DIR" ] || [ -L "$KILIX95_DIR" ]; then
         printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix95.existed"

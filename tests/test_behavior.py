@@ -919,6 +919,8 @@ class PlebBehaviorTests(unittest.TestCase):
             kilix95_before, kilix95_after = two_commit_repo(kilix95)
             presenter_source = tmp / "presenter-source"
             two_commit_repo(presenter_source)
+            content_source = tmp / "content-source"
+            two_commit_repo(content_source)
             build = tmp / "kilix-storage" / "build"
             generations = build / "generations"
             old_current_generation = generations / "build.OldCurrent"
@@ -967,6 +969,8 @@ class PlebBehaviorTests(unittest.TestCase):
                 git -C "$KILIX_DIR" reset --hard {kilix_after!s} >/dev/null
                 git -c protocol.file.allow=always -C "$KILIX_DIR" submodule add \
                     {presenter_source!s} third_party/kitty-frame-presenter >/dev/null
+                git -c protocol.file.allow=always -C "$KILIX_DIR" submodule add \
+                    {content_source!s} third_party/kilix-content >/dev/null
                 git -C "$KILIX_DIR/src" reset --hard {src_after!s} >/dev/null
                 git -C "$KILIX95_DIR" reset --hard {kilix95_after!s} >/dev/null
                 mv {current!s} {previous!s}
@@ -1027,6 +1031,9 @@ class PlebBehaviorTests(unittest.TestCase):
             self.assertEqual(list(state.glob("update-rollback.*")), [])
             self.assertFalse(
                 (kilix / "third_party/kitty-frame-presenter/payload").exists()
+            )
+            self.assertFalse(
+                (kilix / "third_party/kilix-content/payload").exists()
             )
             self.assertEqual(
                 subprocess.check_output(
