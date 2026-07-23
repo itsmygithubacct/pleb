@@ -52,11 +52,12 @@ revalidated even when an engine is already runnable. For automation, set
 `KILIX_PREBUILT_VERSION` and `KILIX_PREBUILT_SHA256` together; Plebian-OS
 manifests always supply a verified pair.
 
-`pleb install` also builds Kilix's exact, transitively pinned Kilix Temps
-source/graphics closure and symlinks `kilix`, `kilix-settings`, and
-`kilix-temps` onto your `PATH` (`/usr/local/bin` by default). The dashboard is
-therefore ready when the optional thermometer or either desktop Start menu is
-first used, rather than relying on a pre-existing developer checkout.
+`pleb install` also installs Kilix's exact, transitively pinned Kilix Temps and
+tmux-tui source closures. It symlinks `kilix`, `kilix-settings`, `kilix-temps`,
+`tmux-tui`, and tmux-cli's `tb.py` as `tb` onto your `PATH`
+(`/usr/local/bin` by default). The dashboard and Tmux Manager are therefore
+ready when either desktop Start menu first uses them, without relying on a
+pre-existing developer checkout.
 
 For a standalone install, Pleb validates and copies the approved Plebian
 wallpaper to

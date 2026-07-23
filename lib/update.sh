@@ -497,6 +497,9 @@ _update_transaction_rollback() {
     _restore_update_path "$KILIX_TEMPS_BIN" kilix-temps-bin file || failed=1
     _restore_update_path "$KILIX_TEMPS_LIBRARY" kilix-temps-library file || failed=1
     _restore_update_path "$KILIX_TEMPS_STAMP" kilix-temps-stamp file || failed=1
+    _restore_update_path "$TMUX_TUI_BIN" tmux-tui-bin file || failed=1
+    _restore_update_path "$TMUX_CLI_BIN" tmux-cli-bin file || failed=1
+    _restore_update_path "$TMUX_TUI_STAMP" tmux-tui-stamp file || failed=1
 
     if [ "$failed" = 0 ]; then
         log "restored the pre-update component commits and fork engine"
@@ -582,6 +585,9 @@ _update_transaction_begin() {
     _snapshot_update_path "$KILIX_TEMPS_BIN" kilix-temps-bin
     _snapshot_update_path "$KILIX_TEMPS_LIBRARY" kilix-temps-library
     _snapshot_update_path "$KILIX_TEMPS_STAMP" kilix-temps-stamp
+    _snapshot_update_path "$TMUX_TUI_BIN" tmux-tui-bin
+    _snapshot_update_path "$TMUX_CLI_BIN" tmux-cli-bin
+    _snapshot_update_path "$TMUX_TUI_STAMP" tmux-tui-stamp
     _UPDATE_TXN_ACTIVE=1
     _begin_kilix_engine_mutation
     rm -f -- "$legacy_stamp" \
@@ -1075,6 +1081,7 @@ do_update() {
     # graphical dependencies. Reconcile that closure inside the same rollback
     # transaction as the engine/provider update.
     install_kilix_temps
+    install_tmux_tui
 
     if _kilix_fork_enabled; then
         if _kilix_fork_needs_rebuild; then
