@@ -149,6 +149,13 @@ KILIX_TEMPS_BIN="$HOME/.local/bin/kilix-temps"
 KILIX_TEMPS_LIBRARY="$HOME/.local/lib/kilix-temps/libsoft-raster.so"
 KILIX_TEMPS_STAMP="$KILIX_STATE_DIRECTORY/kilix-temps-install.refs"
 KILIX_TEMPS_LINK="${KILIX_TEMPS_LINK:-/usr/local/bin/kilix-temps}"
+# Kilix installs its pinned tmux-tui/tmux-cli source closure under the same
+# user prefix. Pleb publishes both commands for login shells and system menus.
+TMUX_TUI_BIN="$HOME/.local/bin/tmux-tui"
+TMUX_CLI_BIN="$HOME/.local/bin/tb"
+TMUX_TUI_STAMP="$KILIX_STATE_DIRECTORY/tmux-tui-install.refs"
+TMUX_TUI_LINK="${TMUX_TUI_LINK:-/usr/local/bin/tmux-tui}"
+TMUX_CLI_LINK="${TMUX_CLI_LINK:-/usr/local/bin/tb}"
 # Stable, user-readable documentation path consumed by the Kilix-95 Help menu.
 PLEB_RECOVERY_DOC_DST="${PLEB_RECOVERY_DOC_DST:-/usr/local/share/doc/pleb/RECOVERY.md}"
 
@@ -179,6 +186,7 @@ KILIX95_REF="${KILIX95_REF:-}"         # optional full commit SHA
 KILIX95_ALLOW_MUTABLE_REF="${KILIX95_ALLOW_MUTABLE_REF:-0}"
 KILIX95_ALLOW_UNPINNED_INSTALL="${KILIX95_ALLOW_UNPINNED_INSTALL:-0}"
 export KILIX_DIR KILIX_DEFAULT KILIX95_DIR KILIX_TEMPS_BIN
+export TMUX_TUI_BIN TMUX_CLI_BIN
 
 # --- pretty output -----------------------------------------------------------
 if [ -t 1 ]; then

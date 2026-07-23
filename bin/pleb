@@ -59,6 +59,11 @@ cmd_status() {
     else
         info "temps    : missing (run: pleb install)"
     fi
+    if [ -x "$TMUX_TUI_BIN" ] && [ -x "$TMUX_CLI_BIN" ]; then
+        info "tmux     : manager $TMUX_TUI_BIN; cli alias $TMUX_CLI_BIN"
+    else
+        info "tmux     : manager or tb alias missing (run: pleb install)"
+    fi
     if desktop_enabled; then
         info "desktop  : enabled via ${KILIX_DESKTOP_PROVIDER:-auto}${KILIX_DESKTOP_NAME:+ ($KILIX_DESKTOP_NAME)}"
     else

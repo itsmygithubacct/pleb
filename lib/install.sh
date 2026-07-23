@@ -47,7 +47,7 @@ _install_missing_apt_packages() {
 ensure_system_deps() {
     local -a deps
     deps=(
-        git curl tar sudo network-manager build-essential
+        git curl tar sudo tmux network-manager build-essential
         lightdm xinit x11-xserver-utils x11-utils xterm
         libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
         fontconfig fonts-dejavu-core
@@ -151,6 +151,18 @@ install_kilix_temps() {
         || die "Kilix Temps installation failed"
     [ -x "$KILIX_TEMPS_BIN" ] && [ -f "$KILIX_TEMPS_LIBRARY" ] \
         || die "Kilix Temps install did not produce its executable and native library"
+}
+
+install_tmux_tui() {
+    local installer="$KILIX_DIR/scripts/install-tmux-tui.sh"
+    [ -f "$installer" ] && [ ! -L "$installer" ] && [ -x "$installer" ] \
+        || die "tmux-tui installer is missing or unsafe: $installer"
+    log "installing Kilix's pinned tmux manager and tmux-cli command"
+    TMUX_TUI_PREFIX="$HOME/.local" \
+        "$KILIX_DIR/kilix" tmux --install-only --with-tb \
+        || die "tmux-tui installation failed"
+    [ -x "$TMUX_TUI_BIN" ] && [ -x "$TMUX_CLI_BIN" ] \
+        || die "tmux-tui install did not produce tmux-tui and tb commands"
 }
 
 # ensure_engine — make sure kilix has a runnable kitty; if not, fetch the
@@ -499,6 +511,7 @@ do_install() {
     ensure_system_deps
     ensure_kilix   # fresh-clone kilix + set up an engine if not already present
     install_kilix_temps
+    install_tmux_tui
     if [ ! -f "$KILIX_DIR/kilix-settings" ] \
             || [ -L "$KILIX_DIR/kilix-settings" ]; then
         die "missing or unsafe Kilix settings TUI: $KILIX_DIR/kilix-settings"
@@ -524,6 +537,12 @@ do_install() {
 
     log "linking kilix-temps command -> $KILIX_TEMPS_LINK"
     link_command "$KILIX_TEMPS_BIN" "$KILIX_TEMPS_LINK" "kilix-temps"
+
+    log "linking tmux-tui command -> $TMUX_TUI_LINK"
+    link_command "$TMUX_TUI_BIN" "$TMUX_TUI_LINK" "tmux-tui"
+
+    log "linking tmux-cli command alias -> $TMUX_CLI_LINK"
+    link_command "$TMUX_CLI_BIN" "$TMUX_CLI_LINK" "tb"
 
     # and `pleb` itself, so `pleb update` / `pleb status` etc. work anywhere
     # (bin/pleb resolves its checkout through the symlink via readlink -f)
@@ -562,6 +581,18 @@ do_uninstall() {
             && [ "$(readlink "$KILIX_TEMPS_LINK")" = "$KILIX_TEMPS_BIN" ]; then
         log "removing kilix-temps command symlink $KILIX_TEMPS_LINK"
         run_root rm -f "$KILIX_TEMPS_LINK"
+        removed=1
+    fi
+    if [ -L "$TMUX_TUI_LINK" ] \
+            && [ "$(readlink "$TMUX_TUI_LINK")" = "$TMUX_TUI_BIN" ]; then
+        log "removing tmux-tui command symlink $TMUX_TUI_LINK"
+        run_root rm -f "$TMUX_TUI_LINK"
+        removed=1
+    fi
+    if [ -L "$TMUX_CLI_LINK" ] \
+            && [ "$(readlink "$TMUX_CLI_LINK")" = "$TMUX_CLI_BIN" ]; then
+        log "removing tb command symlink $TMUX_CLI_LINK"
+        run_root rm -f "$TMUX_CLI_LINK"
         removed=1
     fi
     # likewise the pleb command symlink, only if it points at our checkout
