@@ -52,9 +52,11 @@ revalidated even when an engine is already runnable. For automation, set
 `KILIX_PREBUILT_VERSION` and `KILIX_PREBUILT_SHA256` together; Plebian-OS
 manifests always supply a verified pair.
 
-`pleb install` also symlinks `kilix` and `kilix-settings` onto your `PATH`
-(`/usr/local/bin` by default), so `kilix desktop`, `kilix settings`, and friends
-work from anywhere out of the box.
+`pleb install` also builds Kilix's exact, transitively pinned Kilix Temps
+source/graphics closure and symlinks `kilix`, `kilix-settings`, and
+`kilix-temps` onto your `PATH` (`/usr/local/bin` by default). The dashboard is
+therefore ready when the optional thermometer or either desktop Start menu is
+first used, rather than relying on a pre-existing developer checkout.
 
 For a standalone install, Pleb validates and copies the approved Plebian
 wallpaper to
@@ -74,12 +76,13 @@ therefore retain their kittens-fire wallpaper default.
 ## Requirements
 
 - A **LightDM**-based Linux desktop with **Xorg** (`startx`/`xinit`).
-- **git**, **curl**, **tar** (to clone kilix and fetch its prebuilt engine).
+- **git**, **curl**, **tar**, and a C build toolchain (to clone Kilix, build the
+  small soft-raster library used by Kilix Temps, and fetch the terminal engine).
 - `sudo` for `install` / `autologin` (system files only).
 - On Debian/Ubuntu, `pleb install` installs Pleb's runtime packages with apt,
-  including NetworkManager's `nmtui` for the top-bar network/Wi-Fi widget,
-  `pulsemixer` for its volume widget, and the FluidSynth/SoundFont runtime used
-  by kilix-amp MIDI playback.
+  including `build-essential`, NetworkManager's `nmtui` for the top-bar
+  network/Wi-Fi widget, `pulsemixer` for its volume widget, and the
+  FluidSynth/SoundFont runtime used by kilix-amp MIDI playback.
   Before a fork build, `pleb update` runs Kilix's own complete cross-distro
   dependency verifier and installer (including the `libxxhash` pkg-config
   module). Set `PLEB_SKIP_DEPS=1` to prevent package-manager changes; an update
@@ -108,7 +111,7 @@ log in. To go back, log out and pick your usual session again.
 |---|---|
 | `pleb doctor` | Check the engine, X tools, and greeter are ready. |
 | `pleb test [opts]` | Launch the session in a **throwaway** X server (see below). |
-| `pleb install` | Clone kilix (if missing) + engine, put `kilix` on `PATH`, add "Pleb" to the LightDM session menu. *(sudo)* |
+| `pleb install` | Clone Kilix + engine, build the pinned Kilix Temps closure, put their commands on `PATH`, and add "Pleb" to LightDM. *(sudo)* |
 | `pleb uninstall` | Remove both, and any autologin config. *(sudo)* |
 | `pleb autologin on [user]` | Boot straight into Pleb — no greeter (kiosk). *(sudo)* |
 | `pleb autologin off` | Revert to the normal greeter. *(sudo)* |
@@ -234,13 +237,15 @@ pleb update --no-restart # update only; leave LightDM alone
 
 `pleb update` fast-forwards or pins `~/gpu_terminal/kilix`, updates the optional
 `~/gpu_terminal/kilix-95`
-desktop checkout when the selected provider needs it, installs the configured Go
-toolchain when necessary, and rebuilds the fork. It only offers to restart
+desktop checkout when the selected provider needs it, reconciles the Kilix-pinned
+thermal dashboard and graphics libraries, installs the configured Go toolchain
+when necessary, and rebuilds the fork. It only offers to restart
 LightDM when Pleb is configured as the active kiosk/autologin session. Updates
 are serialized with an XDG-state lock and refuse any checkout with tracked or
 untracked local changes. Before changing either checkout, Pleb snapshots both
-component positions, the fork engine, and its build stamp. Any component or
-build failure restores that coherent pre-update state. Updates never
+component positions, the dashboard executable/native library, the fork engine,
+and their build stamps. Any component or build failure restores that coherent
+pre-update state. Updates never
 force-update: if a branch cannot
 fast-forward, the command stops and tells you. A configured `KILIX_REF` or
 `KILIX95_REF` must be a full 40-character commit SHA, is fetched from `origin`,

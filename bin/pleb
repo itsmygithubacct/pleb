@@ -54,6 +54,11 @@ cmd_status() {
     fi
     if [ -L "$KILIX_LINK" ]; then info "kilix cmd: $KILIX_LINK -> $(readlink "$KILIX_LINK")"
     else info "kilix cmd: not linked (run: pleb install)"; fi
+    if [ -x "$KILIX_TEMPS_BIN" ] && [ -f "$KILIX_TEMPS_LIBRARY" ]; then
+        info "temps    : installed at $KILIX_TEMPS_BIN"
+    else
+        info "temps    : missing (run: pleb install)"
+    fi
     if desktop_enabled; then
         info "desktop  : enabled via ${KILIX_DESKTOP_PROVIDER:-auto}${KILIX_DESKTOP_NAME:+ ($KILIX_DESKTOP_NAME)}"
     else
@@ -86,6 +91,11 @@ cmd_doctor() {
     for t in Xorg startx xset xsetroot; do
         if command -v "$t" >/dev/null 2>&1; then info "[ok]  $t"; else info "[!!]  missing: $t"; ok=0; fi
     done
+    if [ -x "$KILIX_TEMPS_BIN" ] && [ -f "$KILIX_TEMPS_LIBRARY" ]; then
+        info "[ok]  Kilix Temps graphical dashboard"
+    else
+        info "[!!]  Kilix Temps is not installed — run: pleb install"; ok=0
+    fi
     if command -v Xephyr >/dev/null 2>&1; then info "[ok]  Xephyr (nested testing)"
     else info "[--]  Xephyr absent — 'pleb test' will use a spare VT instead"; fi
     if [ -d /usr/share/xsessions ]; then info "[ok]  /usr/share/xsessions exists"

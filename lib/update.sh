@@ -494,6 +494,9 @@ _update_transaction_rollback() {
     _restore_kilix_engine_generation || failed=1
     _restore_update_path "$stamp" fork-stamp file || failed=1
     _restore_update_path "$legacy_stamp" legacy-fork-stamp file || failed=1
+    _restore_update_path "$KILIX_TEMPS_BIN" kilix-temps-bin file || failed=1
+    _restore_update_path "$KILIX_TEMPS_LIBRARY" kilix-temps-library file || failed=1
+    _restore_update_path "$KILIX_TEMPS_STAMP" kilix-temps-stamp file || failed=1
 
     if [ "$failed" = 0 ]; then
         log "restored the pre-update component commits and fork engine"
@@ -576,6 +579,9 @@ _update_transaction_begin() {
     _snapshot_kilix_engine_generation
     _snapshot_update_path "$stamp" fork-stamp
     _snapshot_update_path "$legacy_stamp" legacy-fork-stamp
+    _snapshot_update_path "$KILIX_TEMPS_BIN" kilix-temps-bin
+    _snapshot_update_path "$KILIX_TEMPS_LIBRARY" kilix-temps-library
+    _snapshot_update_path "$KILIX_TEMPS_STAMP" kilix-temps-stamp
     _UPDATE_TXN_ACTIVE=1
     _begin_kilix_engine_mutation
     rm -f -- "$legacy_stamp" \
@@ -1064,6 +1070,11 @@ do_update() {
     # Bring the provider to its requested commit before building the engine. If
     # either component or the build fails, the EXIT transaction restores both.
     _update_kilix95 || die "kilix 95 update failed"
+
+    # The selected Kilix commit transitively pins the dashboard and its three
+    # graphical dependencies. Reconcile that closure inside the same rollback
+    # transaction as the engine/provider update.
+    install_kilix_temps
 
     if _kilix_fork_enabled; then
         if _kilix_fork_needs_rebuild; then
