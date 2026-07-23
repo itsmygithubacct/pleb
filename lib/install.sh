@@ -47,7 +47,7 @@ _install_missing_apt_packages() {
 ensure_system_deps() {
     local -a deps
     deps=(
-        git curl tar sudo network-manager
+        git curl tar sudo network-manager build-essential
         lightdm xinit x11-xserver-utils x11-utils xterm
         libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
         fontconfig fonts-dejavu-core
@@ -140,6 +140,17 @@ ensure_kilix95() {
         require_clean_checkout "$KILIX95_DIR" "kilix 95"
         checkout_fetched_ref "$KILIX95_DIR" "$KILIX95_REF" "kilix 95"
     fi
+}
+
+install_kilix_temps() {
+    local installer="$KILIX_DIR/scripts/install-kilix-temps.sh"
+    [ -f "$installer" ] && [ ! -L "$installer" ] && [ -x "$installer" ] \
+        || die "Kilix Temps installer is missing or unsafe: $installer"
+    log "installing Kilix's pinned graphical thermal dashboard"
+    KILIX_TEMPS_PREFIX="$HOME/.local" "$KILIX_DIR/kilix" temps --install-only \
+        || die "Kilix Temps installation failed"
+    [ -x "$KILIX_TEMPS_BIN" ] && [ -f "$KILIX_TEMPS_LIBRARY" ] \
+        || die "Kilix Temps install did not produce its executable and native library"
 }
 
 # ensure_engine — make sure kilix has a runnable kitty; if not, fetch the
@@ -487,6 +498,7 @@ do_install() {
 
     ensure_system_deps
     ensure_kilix   # fresh-clone kilix + set up an engine if not already present
+    install_kilix_temps
     if [ ! -f "$KILIX_DIR/kilix-settings" ] \
             || [ -L "$KILIX_DIR/kilix-settings" ]; then
         die "missing or unsafe Kilix settings TUI: $KILIX_DIR/kilix-settings"
@@ -509,6 +521,9 @@ do_install() {
 
     log "linking kilix-settings command -> $KILIX_SETTINGS_LINK"
     link_command "$KILIX_DIR/kilix-settings" "$KILIX_SETTINGS_LINK" "kilix-settings"
+
+    log "linking kilix-temps command -> $KILIX_TEMPS_LINK"
+    link_command "$KILIX_TEMPS_BIN" "$KILIX_TEMPS_LINK" "kilix-temps"
 
     # and `pleb` itself, so `pleb update` / `pleb status` etc. work anywhere
     # (bin/pleb resolves its checkout through the symlink via readlink -f)
@@ -541,6 +556,12 @@ do_uninstall() {
             && [ "$(readlink "$KILIX_SETTINGS_LINK")" = "$KILIX_DIR/kilix-settings" ]; then
         log "removing kilix-settings command symlink $KILIX_SETTINGS_LINK"
         run_root rm -f "$KILIX_SETTINGS_LINK"
+        removed=1
+    fi
+    if [ -L "$KILIX_TEMPS_LINK" ] \
+            && [ "$(readlink "$KILIX_TEMPS_LINK")" = "$KILIX_TEMPS_BIN" ]; then
+        log "removing kilix-temps command symlink $KILIX_TEMPS_LINK"
+        run_root rm -f "$KILIX_TEMPS_LINK"
         removed=1
     fi
     # likewise the pleb command symlink, only if it points at our checkout

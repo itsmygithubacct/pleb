@@ -197,8 +197,22 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("KILIX_SETTINGS_LINK", common)
         self.assertIn("network-manager", install)
         self.assertIn("pulsemixer", install)
+        self.assertIn("build-essential", install)
         self.assertIn('python3 "$KILIX_DIR/kilix-settings" --ensure', install)
         self.assertIn('link_command "$KILIX_DIR/kilix-settings"', install)
+        self.assertIn('"$KILIX_DIR/kilix" temps --install-only', install)
+        self.assertIn('link_command "$KILIX_TEMPS_BIN"', install)
+        self.assertIn("KILIX_TEMPS_LIBRARY", common)
+        self.assertIn("KILIX_TEMPS_STAMP", common)
+        update = (ROOT / "lib" / "update.sh").read_text()
+        managed_paths = (
+            ("KILIX_TEMPS_BIN", "kilix-temps-bin"),
+            ("KILIX_TEMPS_LIBRARY", "kilix-temps-library"),
+            ("KILIX_TEMPS_STAMP", "kilix-temps-stamp"),
+        )
+        for variable, key in managed_paths:
+            self.assertIn(f'_snapshot_update_path "${variable}" {key}', update)
+            self.assertIn(f'_restore_update_path "${variable}" {key} file', update)
         self.assertIn("thermometer", readme)
         self.assertIn("pleb settings --set temperature=on", readme)
         self.assertIn("kilix-temps", readme)
