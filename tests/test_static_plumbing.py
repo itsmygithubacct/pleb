@@ -157,6 +157,7 @@ class PlebPlumbingTests(unittest.TestCase):
     def test_recovery_doc_has_stable_install_and_help_contract(self):
         common = (ROOT / "lib" / "common.sh").read_text()
         install = (ROOT / "lib" / "install.sh").read_text()
+        readme = (ROOT / "README.md").read_text()
         recovery = (ROOT / "docs" / "RECOVERY.md").read_text()
         changelog = (ROOT / "CHANGELOG.md").read_text()
         stable = "/usr/local/share/doc/pleb/RECOVERY.md"
@@ -189,6 +190,7 @@ class PlebPlumbingTests(unittest.TestCase):
         cli = (ROOT / "bin" / "pleb").read_text()
         common = (ROOT / "lib" / "common.sh").read_text()
         install = (ROOT / "lib" / "install.sh").read_text()
+        readme = (ROOT / "README.md").read_text()
         self.assertIn("settings)   cmd_settings", cli)
         self.assertIn("$KILIX_DIR/kilix-settings", cli)
         self.assertIn("$GPU_TERMINAL_HOME/settings.conf", common)
@@ -197,6 +199,9 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("pulsemixer", install)
         self.assertIn('python3 "$KILIX_DIR/kilix-settings" --ensure', install)
         self.assertIn('link_command "$KILIX_DIR/kilix-settings"', install)
+        self.assertIn("thermometer", readme)
+        self.assertIn("pleb settings --set temperature=on", readme)
+        self.assertIn("kilix-temps", readme)
 
     def test_session_disables_x_keyboard_bell(self):
         text = (ROOT / "bin" / "pleb-session").read_text()
