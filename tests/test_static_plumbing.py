@@ -204,11 +204,20 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn('link_command "$KILIX_TEMPS_BIN"', install)
         self.assertIn("KILIX_TEMPS_LIBRARY", common)
         self.assertIn("KILIX_TEMPS_STAMP", common)
+        self.assertIn("tmux", install)
+        self.assertIn('"$KILIX_DIR/kilix" tmux --install-only --with-tb', install)
+        self.assertIn('link_command "$TMUX_TUI_BIN"', install)
+        self.assertIn('link_command "$TMUX_CLI_BIN"', install)
+        self.assertIn("TMUX_TUI_LINK", common)
+        self.assertIn("TMUX_CLI_LINK", common)
         update = (ROOT / "lib" / "update.sh").read_text()
         managed_paths = (
             ("KILIX_TEMPS_BIN", "kilix-temps-bin"),
             ("KILIX_TEMPS_LIBRARY", "kilix-temps-library"),
             ("KILIX_TEMPS_STAMP", "kilix-temps-stamp"),
+            ("TMUX_TUI_BIN", "tmux-tui-bin"),
+            ("TMUX_CLI_BIN", "tmux-cli-bin"),
+            ("TMUX_TUI_STAMP", "tmux-tui-stamp"),
         )
         for variable, key in managed_paths:
             self.assertIn(f'_snapshot_update_path "${variable}" {key}', update)
@@ -216,6 +225,8 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("thermometer", readme)
         self.assertIn("pleb settings --set temperature=on", readme)
         self.assertIn("kilix-temps", readme)
+        self.assertIn("tmux-tui", readme)
+        self.assertIn("`tb.py` as `tb`", readme)
 
     def test_session_disables_x_keyboard_bell(self):
         text = (ROOT / "bin" / "pleb-session").read_text()
