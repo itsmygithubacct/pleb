@@ -124,8 +124,12 @@ the specific file operations, so you'll be prompted once.
 
 `pleb settings` and Kilix 95's Settings menu edit the same non-executable
 `~/.local/gpu_terminal/settings.conf`. It is the source of truth for the
-volume, network, calendar, date/time, battery, font-size, four-way split,
-maximize, and close controls; changes are reflected by running Kilix windows.
+thermometer, volume, network, calendar, date/time, battery, font-size, four-way
+split, maximize, and close controls; changes are reflected by running Kilix
+windows. The thermometer defaults to off; enable **Thermal status** in the TUI
+or run `pleb settings --set temperature=on`. It colors the hottest readable
+sensor green/yellow/red and opens a sibling or installed `kilix-temps` in a new
+tab when clicked.
 
 ## Testing without risking your desktop
 
