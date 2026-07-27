@@ -121,6 +121,21 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn('"$KILIX_DIR/kilix" --build || die "kilix fork build failed"', text)
         self.assertNotIn("fork build failed — keeping the previous engine binary", text)
 
+    def test_pinned_pty_manager_is_installed_and_transactional(self):
+        common = (ROOT / "lib" / "common.sh").read_text()
+        install = (ROOT / "lib" / "install.sh").read_text()
+        update = (ROOT / "lib" / "update.sh").read_text()
+        self.assertIn("KILIX_PTY_BROKER_BUILD=", common)
+        self.assertIn("install_pty_broker()", install)
+        self.assertIn('"$KILIX_DIR/kilix" pty --install-only', install)
+        self.assertIn("third_party/kitty-pty-broker", install)
+        self.assertIn('${PLEB_DEFER_PTY_BROKER:-0}', install)
+        self.assertIn(
+            "third_party/kitty-pty-broker kilix-pty-broker", update)
+        self.assertIn(
+            '"$KILIX_PTY_BROKER_BUILD" kilix-pty-broker-build', update)
+        self.assertIn("install_pty_broker", update)
+
     def test_update_restart_uses_transient_systemd_unit(self):
         text = (ROOT / "lib" / "update.sh").read_text()
         self.assertIn("systemd-run", text)

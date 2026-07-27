@@ -165,6 +165,33 @@ install_tmux_tui() {
         || die "tmux-tui install did not produce tmux-tui and tb commands"
 }
 
+install_pty_broker() {
+    local source="$KILIX_DIR/third_party/kitty-pty-broker"
+    local builder="$KILIX_DIR/scripts/build-pty-broker.sh"
+    local mode
+    mode="$(git -C "$KILIX_DIR" ls-files --stage -- \
+        third_party/kitty-pty-broker 2>/dev/null | awk 'NR == 1 { print $1 }')"
+    if [ "$mode" != 160000 ]; then
+        if [ "${PLEB_DEFER_PTY_BROKER:-0}" = 1 ]; then
+            log "current Kilix predates the pinned PTY broker; deferring until its component update"
+            return 0
+        fi
+        die "Kilix does not pin the kitty-pty-broker submodule"
+    fi
+    log "initializing Kilix's pinned persistent PTY broker"
+    git -C "$KILIX_DIR" submodule update --init --recursive -- \
+        third_party/kitty-pty-broker \
+        || die "kitty-pty-broker submodule update failed"
+    [ -d "$source" ] && [ ! -L "$source" ] \
+        || die "kitty-pty-broker source is missing or unsafe: $source"
+    [ -f "$builder" ] && [ ! -L "$builder" ] && [ -x "$builder" ] \
+        || die "kitty-pty-broker builder is missing or unsafe: $builder"
+    "$KILIX_DIR/kilix" pty --install-only \
+        || die "kitty-pty-broker build failed"
+    [ -x "$KILIX_PTY_BROKER_BIN" ] && [ ! -L "$KILIX_PTY_BROKER_BIN" ] \
+        || die "kitty-pty-broker build did not produce its executable"
+}
+
 # ensure_engine — make sure kilix has a runnable kitty; if not, fetch the
 # prebuilt one (needs only git/curl/tar). The fork (buttons) needs Go >= 1.26.
 ensure_engine() {
@@ -510,6 +537,7 @@ do_install() {
 
     ensure_system_deps
     ensure_kilix   # fresh-clone kilix + set up an engine if not already present
+    install_pty_broker
     install_kilix_temps
     install_tmux_tui
     if [ ! -f "$KILIX_DIR/kilix-settings" ] \

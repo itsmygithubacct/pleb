@@ -156,6 +156,11 @@ TMUX_CLI_BIN="$HOME/.local/bin/tb"
 TMUX_TUI_STAMP="$KILIX_STATE_DIRECTORY/tmux-tui-install.refs"
 TMUX_TUI_LINK="${TMUX_TUI_LINK:-/usr/local/bin/tmux-tui}"
 TMUX_CLI_LINK="${TMUX_CLI_LINK:-/usr/local/bin/tb}"
+# Kilix owns the pinned broker source and its private native build. Pleb exposes
+# the manager through the already-published `kilix pty` command instead of a raw
+# broker link whose default runtime could diverge from the active Kilix session.
+KILIX_PTY_BROKER_BUILD="$KILIX_BUILD_DIRECTORY/libraries/kitty-pty-broker"
+KILIX_PTY_BROKER_BIN="$KILIX_PTY_BROKER_BUILD/kitty-pty-broker"
 # Stable, user-readable documentation path consumed by the Kilix-95 Help menu.
 PLEB_RECOVERY_DOC_DST="${PLEB_RECOVERY_DOC_DST:-/usr/local/share/doc/pleb/RECOVERY.md}"
 
@@ -186,7 +191,7 @@ KILIX95_REF="${KILIX95_REF:-}"         # optional full commit SHA
 KILIX95_ALLOW_MUTABLE_REF="${KILIX95_ALLOW_MUTABLE_REF:-0}"
 KILIX95_ALLOW_UNPINNED_INSTALL="${KILIX95_ALLOW_UNPINNED_INSTALL:-0}"
 export KILIX_DIR KILIX_DEFAULT KILIX95_DIR KILIX_TEMPS_BIN
-export TMUX_TUI_BIN TMUX_CLI_BIN
+export TMUX_TUI_BIN TMUX_CLI_BIN KILIX_PTY_BROKER_BUILD KILIX_PTY_BROKER_BIN
 
 # --- pretty output -----------------------------------------------------------
 if [ -t 1 ]; then

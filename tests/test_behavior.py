@@ -879,6 +879,37 @@ class PlebBehaviorTests(unittest.TestCase):
             self.assertIn("PLEB_SKIP_DEPS=1", skipped.stderr)
             self.assertIn("libxxhash", skipped.stdout + skipped.stderr)
 
+    def test_outer_upgrade_can_defer_broker_until_kilix_is_updated(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            kilix = tmp / "kilix"
+            subprocess.run(
+                ["git", "init", "-q", "-b", "main", str(kilix)],
+                check=True,
+            )
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    textwrap.dedent(
+                        f"""
+                        set -euo pipefail
+                        PLEB_ROOT={ROOT!s}
+                        KILIX_DIR={kilix!s}
+                        PLEB_DEFER_PTY_BROKER=1
+                        . "$PLEB_ROOT/lib/common.sh"
+                        . "$PLEB_ROOT/lib/install.sh"
+                        install_pty_broker
+                        """
+                    ),
+                ],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("deferring until its component update", result.stdout)
+
     def test_failed_update_transaction_restores_both_checkouts_and_fork_engine(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
@@ -921,6 +952,8 @@ class PlebBehaviorTests(unittest.TestCase):
             two_commit_repo(presenter_source)
             content_source = tmp / "content-source"
             two_commit_repo(content_source)
+            broker_source = tmp / "broker-source"
+            two_commit_repo(broker_source)
             build = tmp / "kilix-storage" / "build"
             generations = build / "generations"
             old_current_generation = generations / "build.OldCurrent"
@@ -939,6 +972,9 @@ class PlebBehaviorTests(unittest.TestCase):
             write_executable(kitten, "#!/bin/sh\necho old-kitten\n")
             (current / "source-id").write_text("old\n")
             (old_previous_generation / "sentinel").write_text("older-generation\n")
+            broker_build = build / "libraries/kitty-pty-broker"
+            broker_build.mkdir(parents=True)
+            (broker_build / "marker").write_text("old-broker\n")
             current_identity = (os.lstat(current).st_dev, os.lstat(current).st_ino)
             previous_identity = (os.lstat(previous).st_dev, os.lstat(previous).st_ino)
             state = tmp / ".local/gpu_terminal/pleb/state"
@@ -971,6 +1007,8 @@ class PlebBehaviorTests(unittest.TestCase):
                     {presenter_source!s} third_party/kitty-frame-presenter >/dev/null
                 git -c protocol.file.allow=always -C "$KILIX_DIR" submodule add \
                     {content_source!s} third_party/kilix-content >/dev/null
+                git -c protocol.file.allow=always -C "$KILIX_DIR" submodule add \
+                    {broker_source!s} third_party/kitty-pty-broker >/dev/null
                 git -C "$KILIX_DIR/src" reset --hard {src_after!s} >/dev/null
                 git -C "$KILIX95_DIR" reset --hard {kilix95_after!s} >/dev/null
                 mv {current!s} {previous!s}
@@ -980,6 +1018,7 @@ class PlebBehaviorTests(unittest.TestCase):
                 printf '%s\n' new-fork >{fork!s}
                 printf '%s\n' new-kitten >{kitten!s}
                 printf '%s\n' new-stamp >{stamp!s}
+                printf '%s\n' new-broker >{broker_build / 'marker'!s}
                 exit 73
                 """
             )
@@ -1034,6 +1073,12 @@ class PlebBehaviorTests(unittest.TestCase):
             )
             self.assertFalse(
                 (kilix / "third_party/kilix-content/payload").exists()
+            )
+            self.assertFalse(
+                (kilix / "third_party/kitty-pty-broker/payload").exists()
+            )
+            self.assertEqual(
+                (broker_build / "marker").read_text(), "old-broker\n"
             )
             self.assertEqual(
                 subprocess.check_output(

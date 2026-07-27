@@ -469,6 +469,8 @@ _update_transaction_rollback() {
         third_party/kitty-frame-presenter kilix-presenter || failed=1
     _deinit_new_kilix_submodule \
         third_party/kilix-content kilix-content || failed=1
+    _deinit_new_kilix_submodule \
+        third_party/kitty-pty-broker kilix-pty-broker || failed=1
     _restore_checkout_position "$KILIX_DIR" kilix || failed=1
     if [ "$(cat "$_UPDATE_TXN_DIR/kilix-src.initialized" 2>/dev/null || echo 0)" = 1 ] \
         && [ -f "$_UPDATE_TXN_DIR/kilix-src.head" ]; then
@@ -486,6 +488,12 @@ _update_transaction_rollback() {
             "$KILIX_DIR/third_party/kilix-content" \
             kilix-content || failed=1
     fi
+    if [ "$(cat "$_UPDATE_TXN_DIR/kilix-pty-broker.initialized" 2>/dev/null || echo 0)" = 1 ] \
+        && [ -f "$_UPDATE_TXN_DIR/kilix-pty-broker.head" ]; then
+        _restore_checkout_position \
+            "$KILIX_DIR/third_party/kitty-pty-broker" \
+            kilix-pty-broker || failed=1
+    fi
     if [ "$(cat "$_UPDATE_TXN_DIR/kilix95.existed" 2>/dev/null || echo 1)" = 0 ]; then
         rm -rf -- "$KILIX95_DIR" || failed=1
     elif [ -f "$_UPDATE_TXN_DIR/kilix95.head" ]; then
@@ -500,6 +508,8 @@ _update_transaction_rollback() {
     _restore_update_path "$TMUX_TUI_BIN" tmux-tui-bin file || failed=1
     _restore_update_path "$TMUX_CLI_BIN" tmux-cli-bin file || failed=1
     _restore_update_path "$TMUX_TUI_STAMP" tmux-tui-stamp file || failed=1
+    _restore_update_path \
+        "$KILIX_PTY_BROKER_BUILD" kilix-pty-broker-build || failed=1
 
     if [ "$failed" = 0 ]; then
         log "restored the pre-update component commits and fork engine"
@@ -569,6 +579,14 @@ _update_transaction_begin() {
     else
         printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix-content.initialized"
     fi
+    if git -C "$KILIX_DIR/third_party/kitty-pty-broker" \
+            rev-parse --verify HEAD >/dev/null 2>&1; then
+        printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix-pty-broker.initialized"
+        _record_checkout_position \
+            "$KILIX_DIR/third_party/kitty-pty-broker" kilix-pty-broker
+    else
+        printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix-pty-broker.initialized"
+    fi
     if [ -e "$KILIX95_DIR" ] || [ -L "$KILIX95_DIR" ]; then
         printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix95.existed"
         if [ -d "$KILIX95_DIR/.git" ]; then
@@ -588,6 +606,8 @@ _update_transaction_begin() {
     _snapshot_update_path "$TMUX_TUI_BIN" tmux-tui-bin
     _snapshot_update_path "$TMUX_CLI_BIN" tmux-cli-bin
     _snapshot_update_path "$TMUX_TUI_STAMP" tmux-tui-stamp
+    _snapshot_update_path \
+        "$KILIX_PTY_BROKER_BUILD" kilix-pty-broker-build
     _UPDATE_TXN_ACTIVE=1
     _begin_kilix_engine_mutation
     rm -f -- "$legacy_stamp" \
@@ -1082,6 +1102,7 @@ do_update() {
     # transaction as the engine/provider update.
     install_kilix_temps
     install_tmux_tui
+    install_pty_broker
 
     if _kilix_fork_enabled; then
         if _kilix_fork_needs_rebuild; then
