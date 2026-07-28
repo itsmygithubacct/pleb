@@ -20,7 +20,23 @@
 #   KILIX             path to the kilix launcher   (default: $KILIX_DIR/kilix)
 #   PLEB_KILIX_ARGS   extra args passed to kilix   (default: native fullscreen
 #                     when a WM is present; no-WM sessions use screen-fill)
-#   PLEB_WM           window manager to run first  (default: none; e.g. "openbox")
+#   PLEB_WM           window-manager policy        (default: auto)
+#                     auto    prefer Pleb-managed Openbox; fall back to the
+#                             no-WM screen-fill path if it is unavailable
+#                     openbox require Pleb-managed Openbox; a missing binary,
+#                             unreadable profile or startup timeout is a
+#                             failure, not a silent downgrade
+#                     none    run no window manager (single fullscreen client)
+#                     off     same as none
+#                     <cmd>   custom WM command, parsed as an argument vector
+#                             and held to the same readiness requirement
+#   PLEB_OPENBOX_CONFIG  Openbox profile to use
+#                     (default: /usr/local/share/pleb/openbox/rc.xml, falling
+#                     back to the checkout's share/openbox/rc.xml)
+#   PLEB_WM_TIMEOUT   seconds to wait for the WM to own the display (default: 5)
+#   KILIX_RUN_ALIASES if =1, GUI commands are aliased to `kilix run` (in-tab);
+#                     if =0 they open native windows. Defaults to 0 when a
+#                     window manager is present, otherwise left to kilix
 #   PLEB_NO_FILL      if =1, skip the no-WM screen-fill sizing (default: off)
 #   PLEB_BG           root window solid colour     (default: #101010)
 #   PLEB_LOG          session log file (default: ~/.local/gpu_terminal/pleb/state/session.log)
@@ -43,10 +59,13 @@
 #   KILIX95_ALLOW_UNPINNED_INSTALL allow an automatic clone without a ref
 #
 # Fullscreen note: kitty's --start-as=fullscreen uses _NET_WM_STATE_FULLSCREEN,
-# which only works when a window manager is running. This kiosk runs no WM by
-# default, so when none is detected we instead size the kitty window to the
-# whole screen in pixels (borderless at 0,0 == effectively fullscreen). Set
-# PLEB_WM=openbox (or any EWMH WM) to get native fullscreen + F11 instead.
+# which only works when a window manager is running. Pleb normally runs Openbox
+# for exactly that reason, so kilix gets native fullscreen (and F11), and native
+# application windows — browsers, dialogs — can be focused, raised, closed and
+# reached with Alt-Tab. When no WM is running (PLEB_WM=none, or auto with
+# Openbox unavailable) we instead size the kitty window to the whole screen in
+# pixels (borderless at 0,0 == effectively fullscreen); in that recovery mode a
+# second top-level client can end up permanently hidden behind kilix.
 set -u
 [ "$(id -u)" != 0 ] || { echo "pleb-session refuses to run as root" >&2; exit 1; }
 umask 077
@@ -68,7 +87,7 @@ if [[ ! ${PLEB_ENV_USER+x} ]]; then
     fi
 fi
 
-_pleb_vars="GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_REF KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
+_pleb_vars="GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_REF KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
 declare -A _pleb_had _pleb_saved
 for _pleb_v in $_pleb_vars; do
     if [[ ${!_pleb_v+x} ]]; then
@@ -330,6 +349,23 @@ else
     PLEB_KILIX_ARGS=""
     _PLEB_KILIX_ARGS_DEFAULT=1
 fi
+PLEB_WM="${PLEB_WM:-auto}"
+if [[ ${PLEB_OPENBOX_CONFIG+x} ]]; then
+    _PLEB_OPENBOX_CONFIG_DEFAULT=0
+else
+    PLEB_OPENBOX_CONFIG="/usr/local/share/pleb/openbox/rc.xml"
+    _PLEB_OPENBOX_CONFIG_DEFAULT=1
+fi
+PLEB_WM_TIMEOUT="${PLEB_WM_TIMEOUT:-5}"
+case "$PLEB_WM_TIMEOUT" in
+    ''|*[!0-9]*|0) PLEB_WM_TIMEOUT=5 ;;
+esac
+if [[ ${KILIX_RUN_ALIASES+x} ]]; then
+    _PLEB_RUN_ALIASES_DEFAULT=0
+else
+    KILIX_RUN_ALIASES=""
+    _PLEB_RUN_ALIASES_DEFAULT=1
+fi
 PLEB_BG="${PLEB_BG:-#101010}"
 PLEB_LOG="${PLEB_LOG:-$PLEB_STATE_HOME/session.log}"
 PLEB_RESPAWN="${PLEB_RESPAWN:-0}"
@@ -434,23 +470,162 @@ if [ ! -x "$KILIX" ]; then
     exit 1
 fi
 
-# --- optional window manager -------------------------------------------------
-# If asked for a WM, start it in the background before kilix so kitty's native
-# fullscreen (and F11) work. Give it a moment to own the display.
-if [ -n "${PLEB_WM:-}" ]; then
-    read -r -a PLEB_WM_ARGV <<< "$PLEB_WM"
-    if command -v "${PLEB_WM_ARGV[0]}" >/dev/null 2>&1; then
-        echo "--- starting WM: $PLEB_WM ---"
-        "${PLEB_WM_ARGV[@]}" &
-        sleep 0.5
-    else
-        echo "WARN: PLEB_WM='$PLEB_WM' not found; continuing without it" >&2
+# --- window manager ----------------------------------------------------------
+# Pleb runs a real EWMH window manager so that native application windows —
+# browsers, dialogs, anything not drawn inside kilix — can be focused, raised,
+# closed and reached with Alt-Tab. Without one, the fullscreen kilix window
+# simply covers every other client forever, and a browser can be alive, focused
+# and permanently invisible.
+#
+# An EWMH window manager that is ALREADY running is adopted, never replaced and
+# never killed: `pleb session` on an existing desktop, and `pleb test --xephyr`
+# on a managed host, must not disturb the user's real desktop.
+#
+# Openbox is started bare, with Pleb's own profile. Never openbox-session (it
+# runs the user's or the system's autostart, dragging in panels, applets and
+# XDG autostart entries), and never --replace (there is nothing to replace on a
+# fresh display, and on a managed one we adopt instead).
+
+PLEB_EX_CONFIG=78          # the session could not be configured as required
+
+# The full _NET_SUPPORTING_WM_CHECK handshake: the root window points at a child
+# window, and that child must point at ITSELF. A stale root property left behind
+# by a WM that died fails the second half — which a bare "is the property set?"
+# test would happily accept. Echoes the check window id.
+_pleb_wm_window() {
+    local root child root_n child_n
+    command -v xprop >/dev/null 2>&1 || return 1
+    root="$(xprop -root -notype _NET_SUPPORTING_WM_CHECK 2>/dev/null)" || return 1
+    case "$root" in *'# 0x'*) ;; *) return 1 ;; esac
+    root="${root##*# }"
+    child="$(xprop -id "$root" -notype _NET_SUPPORTING_WM_CHECK 2>/dev/null)" || return 1
+    case "$child" in *'# 0x'*) ;; *) return 1 ;; esac
+    child="${child##*# }"
+    # Compare numerically: 0x400003 and 0x0400003 are the same window.
+    root_n="$(printf '%d' "$root" 2>/dev/null)"  || return 1
+    child_n="$(printf '%d' "$child" 2>/dev/null)" || return 1
+    [ "$root_n" = "$child_n" ] || return 1
+    printf '%s\n' "$root"
+}
+
+# Human-readable name of the WM owning $1, for the log. Best effort.
+_pleb_wm_name() {
+    local out
+    out="$(xprop -id "$1" -notype _NET_WM_NAME 2>/dev/null)" || return 1
+    case "$out" in *'"'*) ;; *) return 1 ;; esac
+    out="${out#*\"}"
+    printf '%s\n' "${out%\"*}"
+}
+
+HAVE_WM=0
+PLEB_WM_OWNED=0
+PLEB_WM_PID=""
+PLEB_WM_ACTIVE=""
+
+PLEB_WM_ACTIVE="$(_pleb_wm_window)" || PLEB_WM_ACTIVE=""
+if [ -n "$PLEB_WM_ACTIVE" ]; then
+    HAVE_WM=1
+    echo "--- adopting running WM: $(_pleb_wm_name "$PLEB_WM_ACTIVE" || echo unknown)" \
+         "(window $PLEB_WM_ACTIVE); pleb does not own it ---"
+else
+    # Decide what, if anything, to start.
+    PLEB_WM_ARGV=()
+    _pleb_wm_required=0
+    case "$PLEB_WM" in
+        none|off)
+            echo "--- PLEB_WM=$PLEB_WM: running no window manager ---"
+            ;;
+        auto|openbox)
+            [ "$PLEB_WM" = openbox ] && _pleb_wm_required=1
+            # An explicitly configured profile must exist; the default may fall
+            # back to the checkout so an uninstalled tree can still be tested.
+            if [ "$_PLEB_OPENBOX_CONFIG_DEFAULT" = 1 ] && [ ! -r "$PLEB_OPENBOX_CONFIG" ]; then
+                _pleb_self="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+                _pleb_alt="$(dirname "$(dirname "$_pleb_self")")/share/openbox/rc.xml"
+                [ -r "$_pleb_alt" ] && PLEB_OPENBOX_CONFIG="$_pleb_alt"
+                unset _pleb_self _pleb_alt
+            fi
+            PLEB_WM_ARGV=(openbox --config-file "$PLEB_OPENBOX_CONFIG" --sm-disable)
+            ;;
+        *)
+            # Custom WM escape hatch: parse as an argument vector.
+            read -r -a PLEB_WM_ARGV <<< "$PLEB_WM"
+            _pleb_wm_required=1
+            ;;
+    esac
+
+    # Why each of these is fatal in a required mode: silently continuing would
+    # recreate exactly the hidden-window failure this integration exists to fix.
+    _pleb_wm_fail=""
+    if [ "${#PLEB_WM_ARGV[@]}" -gt 0 ]; then
+        if ! command -v "${PLEB_WM_ARGV[0]}" >/dev/null 2>&1; then
+            _pleb_wm_fail="window manager not installed: ${PLEB_WM_ARGV[0]}"
+        elif [ "${PLEB_WM_ARGV[0]}" = openbox ] \
+            && { [ ! -f "$PLEB_OPENBOX_CONFIG" ] || [ ! -r "$PLEB_OPENBOX_CONFIG" ]; }; then
+            _pleb_wm_fail="openbox profile missing or unreadable: $PLEB_OPENBOX_CONFIG"
+        elif ! command -v xprop >/dev/null 2>&1; then
+            _pleb_wm_fail="xprop missing; cannot verify the window manager started"
+        fi
     fi
+
+    if [ "${#PLEB_WM_ARGV[@]}" -gt 0 ] && [ -z "$_pleb_wm_fail" ]; then
+        printf -- '--- starting WM:'
+        printf ' %q' "${PLEB_WM_ARGV[@]}"
+        printf ' ---\n'
+        "${PLEB_WM_ARGV[@]}" &
+        PLEB_WM_PID=$!
+        PLEB_WM_OWNED=1
+
+        # Poll the complete readiness check. Watch the process on every
+        # iteration too, so a WM that cannot open the display fails in
+        # milliseconds instead of waiting out the whole timeout.
+        _pleb_wm_ticks=$((PLEB_WM_TIMEOUT * 10))
+        while [ "$_pleb_wm_ticks" -gt 0 ]; do
+            if ! kill -0 "$PLEB_WM_PID" 2>/dev/null; then
+                _pleb_wm_fail="window manager exited during startup"
+                break
+            fi
+            PLEB_WM_ACTIVE="$(_pleb_wm_window)" || PLEB_WM_ACTIVE=""
+            [ -n "$PLEB_WM_ACTIVE" ] && break
+            sleep 0.1
+            _pleb_wm_ticks=$((_pleb_wm_ticks - 1))
+        done
+        if [ -z "$PLEB_WM_ACTIVE" ] && [ -z "$_pleb_wm_fail" ]; then
+            _pleb_wm_fail="window manager did not own the display within ${PLEB_WM_TIMEOUT}s"
+        fi
+        if [ -n "$PLEB_WM_ACTIVE" ]; then
+            HAVE_WM=1
+            echo "--- WM ready: $(_pleb_wm_name "$PLEB_WM_ACTIVE" || echo unknown)" \
+                 "pid=$PLEB_WM_PID window=$PLEB_WM_ACTIVE config=$PLEB_OPENBOX_CONFIG ---"
+        else
+            # Do not leave a half-started WM behind.
+            kill "$PLEB_WM_PID" 2>/dev/null || true
+            wait "$PLEB_WM_PID" 2>/dev/null || true
+            PLEB_WM_PID=""
+            PLEB_WM_OWNED=0
+        fi
+        unset _pleb_wm_ticks
+    fi
+
+    if [ -n "$_pleb_wm_fail" ]; then
+        if [ "$_pleb_wm_required" = 1 ]; then
+            echo "FATAL: PLEB_WM=$PLEB_WM but $_pleb_wm_fail" >&2
+            # don't strand the user on a black screen — drop to a terminal if we can
+            if command -v xterm >/dev/null 2>&1; then
+                xterm -geometry 100x30 -e sh -c \
+                    'printf "%s\n\n" "pleb: window manager failed to start; see $1"; exec "${SHELL:-/bin/sh}"' sh "$PLEB_LOG" \
+                    || true
+            fi
+            exit "$PLEB_EX_CONFIG"
+        fi
+        echo "WARN: $_pleb_wm_fail; falling back to the no-WM screen-fill session" >&2
+    fi
+    unset _pleb_wm_fail _pleb_wm_required
 fi
 
 # --- fullscreen strategy -----------------------------------------------------
-# A WM is present if the root window advertises _NET_SUPPORTING_WM_CHECK.
-_have_wm() { xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q '0x'; }
+# Decided only now that the WM state is final: native EWMH fullscreen when a
+# window manager is present, fixed screen-fill geometry when not — never both.
 
 # Screen size in "WxH" (xdpyinfo first, xrandr fallback), else empty.
 _screen_wh() {
@@ -459,8 +634,6 @@ _screen_wh() {
 }
 
 FILL_ARGS=()
-HAVE_WM=0
-_have_wm && HAVE_WM=1
 if [ "${PLEB_NO_FILL:-0}" != 1 ] && [ "$HAVE_WM" != 1 ]; then
     wh="$(_screen_wh)"
     w="${wh%x*}"; h="${wh#*x}"
@@ -480,6 +653,22 @@ if [ "$_PLEB_KILIX_ARGS_DEFAULT" = 1 ]; then
 else
     read -r -a KILIX_ARGV <<< "$PLEB_KILIX_ARGS"
 fi
+
+# --- GUI command policy ------------------------------------------------------
+# kilix's shell profile aliases Chromium, Firefox, xterm and friends to
+# `kilix run <app>`, which renders each app on its own private Xvfb inside a
+# kilix tab. Those windows are not host X11 top-level windows, so Openbox cannot
+# manage them and they never appear in Alt-Tab. With a window manager present
+# the useful default is the opposite: plain GUI commands open native windows,
+# and `kilix run` stays the explicit way to put an app inside a tab. Without a
+# WM the old behaviour is still the better one, so leave it to kilix.
+# An explicit value — from the environment or session.env — always wins.
+if [ "$_PLEB_RUN_ALIASES_DEFAULT" = 1 ]; then
+    [ "$HAVE_WM" = 1 ] && KILIX_RUN_ALIASES=0
+fi
+export KILIX_RUN_ALIASES
+echo "--- wm=${PLEB_WM} active=$(if [ "$HAVE_WM" = 1 ]; then _pleb_wm_name "$PLEB_WM_ACTIVE" || echo unknown; else echo none; fi)" \
+     "owned=$PLEB_WM_OWNED gui=$([ "${KILIX_RUN_ALIASES:-}" = 0 ] && echo native || echo 'kilix run') ---"
 
 # --- optional: boot straight into the configured kilix desktop ----------------
 # The desktop isn't a standalone X client — it renders inside a kilix/kitty
@@ -540,10 +729,68 @@ if _pleb_desktop_enabled; then
                   "KILIX95_REF=$KILIX95_REF"
                   "KILIX95_ALLOW_MUTABLE_REF=$KILIX95_ALLOW_MUTABLE_REF"
                   "KILIX95_ALLOW_UNPINNED_INSTALL=$KILIX95_ALLOW_UNPINNED_INSTALL"
+                  "KILIX_RUN_ALIASES=$KILIX_RUN_ALIASES"
                   "$KILIX" desktop)
 fi
 
 # --- hand off to kilix -------------------------------------------------------
+# When Pleb started the window manager it has to STAY ALIVE to supervise it: a
+# WM that dies mid-session leaves every native client unmanaged, unfocusable and
+# unraisable, which is worse than ending the session — LightDM can build a clean
+# one. So a WM exit is fatal in both soft and hard-kiosk modes.
+#
+# When Pleb did NOT start a WM (PLEB_WM=none, or an existing desktop's WM was
+# adopted) the original hand-off is kept exactly as it was: soft mode `exec`s
+# kilix, so the session process IS kitty, its exit status is the session status,
+# and `pleb test --check` can still kill it surgically by $!.
+
+PLEB_KILIX_PID=""
+
+# Kill only what this instance started. An adopted WM belongs to someone else's
+# desktop and must survive us.
+_pleb_cleanup() {
+    local rc=$?          # preserve the status the session is exiting with
+    trap - EXIT HUP INT TERM
+    if [ -n "$PLEB_KILIX_PID" ] && kill -0 "$PLEB_KILIX_PID" 2>/dev/null; then
+        kill "$PLEB_KILIX_PID" 2>/dev/null || true
+        wait "$PLEB_KILIX_PID" 2>/dev/null || true
+    fi
+    if [ "$PLEB_WM_OWNED" = 1 ] && [ -n "$PLEB_WM_PID" ] \
+        && kill -0 "$PLEB_WM_PID" 2>/dev/null; then
+        echo "--- stopping pleb-owned WM (pid $PLEB_WM_PID) ---"
+        kill "$PLEB_WM_PID" 2>/dev/null || true
+        wait "$PLEB_WM_PID" 2>/dev/null || true
+    fi
+    return "$rc"
+}
+
+# Run kilix in the background and wait for it, watching the Pleb-owned WM too.
+# Sets PLEB_KILIX_RC. Returns 0 if kilix exited on its own, 1 if the WM died
+# first.
+_pleb_run_kilix_supervised() {
+    "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}" &
+    PLEB_KILIX_PID=$!
+    while :; do
+        if ! kill -0 "$PLEB_KILIX_PID" 2>/dev/null; then
+            wait "$PLEB_KILIX_PID"
+            PLEB_KILIX_RC=$?
+            PLEB_KILIX_PID=""
+            return 0
+        fi
+        if ! kill -0 "$PLEB_WM_PID" 2>/dev/null; then
+            return 1
+        fi
+        sleep 0.5
+    done
+}
+
+if [ "$PLEB_WM_OWNED" = 1 ]; then
+    trap '_pleb_cleanup' EXIT
+    trap '_pleb_cleanup; exit 129' HUP
+    trap '_pleb_cleanup; exit 130' INT
+    trap '_pleb_cleanup; exit 143' TERM
+fi
+
 if [ "$PLEB_RESPAWN" = 1 ]; then
     # kiosk: keep a kilix alive for the life of the X session
     crashes=0
@@ -553,8 +800,16 @@ if [ "$PLEB_RESPAWN" = 1 ]; then
         printf -- '--- launching'
         printf ' %q' "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
         printf ' (%s) ---\n' "$(date)"
-        "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
-        rc=$?
+        if [ "$PLEB_WM_OWNED" = 1 ]; then
+            if ! _pleb_run_kilix_supervised; then
+                echo "FATAL: window manager (pid $PLEB_WM_PID) exited; ending the session" >&2
+                exit "$PLEB_EX_CONFIG"
+            fi
+            rc=$PLEB_KILIX_RC
+        else
+            "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
+            rc=$?
+        fi
         runtime=$(($(date +%s) - start))
         echo "kilix exited rc=$rc after ${runtime}s"
         if [ "$runtime" -lt 10 ]; then
@@ -575,6 +830,17 @@ if [ "$PLEB_RESPAWN" = 1 ]; then
         echo "--- respawning in ${delay}s ---"
         sleep "$delay"
     done
+elif [ "$PLEB_WM_OWNED" = 1 ]; then
+    # Supervised: this shell must outlive kilix so it can stop the WM it started.
+    printf -- '--- launching'
+    printf ' %q' "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
+    printf ' ---\n'
+    if ! _pleb_run_kilix_supervised; then
+        echo "FATAL: window manager (pid $PLEB_WM_PID) exited; ending the session" >&2
+        exit "$PLEB_EX_CONFIG"
+    fi
+    echo "--- kilix exited rc=$PLEB_KILIX_RC; ending session ---"
+    exit "$PLEB_KILIX_RC"
 else
     printf -- '--- exec'
     printf ' %q' "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"

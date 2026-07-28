@@ -3,7 +3,8 @@
 **Pleb** turns [`kilix`](https://github.com/itsmygithubacct/kilix) (a Tilix-styled
 [kitty](https://sw.kovidgoyal.net/kitty/) fork) into a **full desktop session**:
 you log in and get a single fullscreen kilix as the entire "desktop" — no panel,
-no window manager, just the terminal. Rather than building a whole custom OS to
+no menus, just the terminal, with a minimal Openbox underneath so browsers and
+other GUI apps still get real, Alt-Tab-able windows. Rather than building a whole custom OS to
 do that, Pleb adds **"Pleb" as one more choosable session** at your existing
 LightDM login screen, so your normal desktop session is left untouched. The
 session integration is removable; cloned checkouts and packages installed as
@@ -121,11 +122,19 @@ log in. To go back, log out and pick your usual session again.
 | `pleb update [-y] [--no-restart\|--restart]` | Update clean checkouts, rebuild the fork, and optionally restart an active kiosk. |
 | `pleb status` | Show the effective persisted engine / desktop / install / autologin / kiosk state. |
 | `pleb screen-size ...` | Show, increase, decrease, reset, or set Kilix terminal scale. |
-| `pleb settings` | Toggle Kilix's top-bar widgets and clickable pane-title buttons. |
+| `pleb settings` | Toggle Kilix's top-bar widgets, pane-title buttons, and session logging. |
 | `pleb session` | Exec the session now, against the current `$DISPLAY`. |
 
 `install`, `uninstall`, and `autologin` need root; the CLI calls `sudo` only for
 the specific file operations, so you'll be prompted once.
+
+**Session logging is on by default.** Every pane's output is recorded by the
+PTY broker to `~/.local/gpu_terminal/kilix/state/transcripts/<session>.log`
+(`0600`, one bounded 8 MiB log per pane, kitty graphics payloads elided).
+`pleb status` reports the current policy and how many logs exist; `kilix
+transcript` lists and prints them. Turn it off with
+`pleb settings --set transcript=off`, or in the Session logging section of the
+settings TUI.
 
 `pleb settings` and Kilix 95's Settings menu edit the same non-executable
 `~/.local/gpu_terminal/settings.conf`. It is the source of truth for the
@@ -156,14 +165,31 @@ pleb test --vt 9 --check --secs 8
 - `--check` is what CI/verification uses: it confirms kilix comes up, prints a
   PASS/FAIL plus log tails, then cleans everything up.
 
-## How fullscreen works (and the no-WM detail)
+## How fullscreen works (and the no-WM recovery detail)
 
 kitty's `--start-as=fullscreen` relies on `_NET_WM_STATE_FULLSCREEN`, which only
-works when a **window manager** is running. Pleb runs **no WM** by default, so
-`pleb-session` detects that there's no WM and instead sizes the kitty window to
-the whole screen in pixels — a borderless window at `0,0`
-that fills the display. Verified: on a 1280×800 screen the window comes up
-`1280x800+0+0`.
+works when a **window manager** is running. Pleb therefore runs **Openbox**,
+started bare with Pleb's own profile, and kilix gets real native fullscreen.
+
+That is also what makes ordinary GUI applications usable. Without a WM nothing
+owns focus, raising or stacking, so a fullscreen kilix simply covers every other
+client: a browser could be running, focused and permanently invisible. With
+Openbox you get `Alt-Tab`, `Alt-Shift-Tab`, window decorations and `Alt-F4`,
+and a browser raised over kilix.
+
+Pleb's Openbox is deliberately minimal — one desktop, no root menu, no panel,
+no launcher or screenshot keys, and no rule pinning kilix `above` anything. The
+profile lives at `share/openbox/rc.xml` and installs to
+`/usr/local/share/pleb/openbox/rc.xml`.
+
+If Openbox is unavailable, `PLEB_WM=auto` (the default) falls back to the older
+no-WM path: `pleb-session` sizes the kitty window to the whole screen in pixels
+— a borderless window at `0,0` that fills the display. Verified: on a 1280×800
+screen the window comes up `1280x800+0+0`. In that recovery mode a second
+top-level window can still end up hidden behind kilix.
+
+An EWMH window manager that is already running is always adopted, never
+replaced — running `pleb session` on an existing desktop will not disturb it.
 
 To make the fullscreen terminal feel larger or fit more rows/columns, adjust
 Kilix's `font_size`:
@@ -175,14 +201,37 @@ pleb screen-size reset
 pleb screen-size set 13
 ```
 
-If you'd rather have a real WM (native fullscreen, `F11`, multi-monitor):
+### Native windows versus kilix tabs
+
+With a window manager present, plain GUI commands open **native** windows that
+Openbox manages, and `kilix run` stays the explicit way to render an app inside
+a kilix tab on its own private Xvfb:
 
 ```sh
-PLEB_WM=openbox pleb test        # or matchbox-window-manager, evilwm, etc.
+chromium https://example.com            # native Openbox window, in Alt-Tab
+kilix run chromium https://example.com  # rendered inside a kilix tab
 ```
 
-Then install with the same env, or set it permanently by editing the installed
-`/usr/local/bin/pleb-session` (or exporting `PLEB_WM` in the session).
+`KILIX_RUN_ALIASES` controls this: it defaults to `0` (native) when a WM is
+present, and is left to kilix's own default when there is none. Set it to `1`
+to send GUI commands back into kilix tabs.
+
+### Choosing the window manager
+
+```sh
+PLEB_WM=openbox pleb test    # require Pleb-managed Openbox
+PLEB_WM=none pleb test       # no WM: the single-client screen-fill session
+PLEB_WM=auto pleb test       # default: Openbox when available, else no WM
+```
+
+`PLEB_WM=openbox` is strict — a missing package, an unreadable profile or a
+startup timeout fails the session rather than silently downgrading to the
+hidden-window behaviour. A custom command (`PLEB_WM='evilwm -s'`) is still
+supported and is held to the same readiness check.
+
+Persist a setting in the session environment — `/etc/pleb/session.env` for the
+whole machine, or your user `session.env` — rather than editing the installed
+`/usr/local/bin/pleb-session`, which `pleb install` overwrites.
 
 ## Kiosk autologin
 
@@ -302,6 +351,7 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `KILIX_CACHE_HOME` | `$KILIX_STORAGE_HOME/cache` | Kilix disposable cache. |
 | `KILIX_SESSION_HOME` | `$KILIX_STORAGE_HOME/session` | Kilix live-session scratch space. |
 | `KILIX_DATA_HOME` | `$KILIX_STORAGE_HOME/data` | Bundled Kilix desktop data and state. |
+| `KILIX_TRANSCRIPT_DIR` | `$KILIX_STATE_DIRECTORY/transcripts` | Per-pane session logs, mode `0700`/`0600`. |
 | `KILIX_BUILD_DIRECTORY` | `$KILIX_STORAGE_HOME/build` | Generated Kilix fork builds. |
 | `KILIX_PREBUILT_HOME` | `$KILIX_STORAGE_HOME/prebuilt/kitty.app` | Downloaded, verified Kilix engine bundle path. |
 | `KILIX95_STORAGE_HOME` | `$GPU_TERMINAL_HOME/kilix-95` | Kilix 95 writable-data root. |
@@ -324,7 +374,10 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `PLEBIAN_OS_KILIX_GO_SHA256_ARM64` | *(none)* | Trusted SHA-256 for the pinned Linux arm64 Go archive. |
 | `PLEB_SKIP_DEPS` | `0` | If `1`, skip package installation during `pleb install`/`update`; update still verifies and fails if prerequisites are missing. |
 | `PLEB_KILIX_ARGS` | auto | Args passed to kilix; unset means native fullscreen with a WM, screen-fill sizing without one. |
-| `PLEB_WM` | *(none)* | Window manager to run before kilix (enables native fullscreen). |
+| `PLEB_WM` | `auto` | Window-manager policy: `auto`, `openbox` (required), `none`/`off`, or a custom command. |
+| `PLEB_OPENBOX_CONFIG` | `/usr/local/share/pleb/openbox/rc.xml` | Openbox profile Pleb starts Openbox with. |
+| `PLEB_WM_TIMEOUT` | `5` | Seconds to wait for the window manager to own the display. |
+| `KILIX_RUN_ALIASES` | *(derived)* | `0` opens GUI commands as native windows, `1` sends them to `kilix run`. Defaults to `0` when a WM is present. |
 | `PLEB_NO_FILL` | `0` | Skip the no-WM screen-fill sizing. |
 | `PLEB_BG` | `#101010` | Root-window solid colour. |
 | `PLEB_RESPAWN` | `0` | If `1`, relaunch kilix when it exits (hard kiosk). |

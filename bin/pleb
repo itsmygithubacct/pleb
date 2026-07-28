@@ -35,6 +35,32 @@ PLEB_ROOT="$(cd "$(dirname "$_self")/.." && pwd)"
 # print the leading comment block (line 2 until the first non-comment line)
 usage() { awk 'NR>1 && /^#/ {sub(/^# ?/,""); print; next} NR>1 {exit}' "${BASH_SOURCE[0]}"; }
 
+# The root window points at a check window that must point back at itself; a
+# root property left behind by a dead WM fails that test. Ids are compared
+# numerically because 0x400003 and 0x0400003 are the same window. This mirrors
+# the detection in bin/pleb-session, which is intentionally self-contained and
+# cannot source the checkout.
+wm_check_window() {
+    local root child
+    command -v xprop >/dev/null 2>&1 || return 1
+    root="$(xprop -root -notype _NET_SUPPORTING_WM_CHECK 2>/dev/null | awk '/# / {print $NF; exit}')"
+    [ -n "$root" ] || return 1
+    child="$(xprop -id "$root" -notype _NET_SUPPORTING_WM_CHECK 2>/dev/null | awk '/# / {print $NF; exit}')"
+    [ -n "$child" ] || return 1
+    [ "$(printf '%d' "$root" 2>/dev/null)" = "$(printf '%d' "$child" 2>/dev/null)" ] || return 1
+    printf '%s\n' "$root"
+}
+
+# name the live WM advertises on that window ("Openbox", "Xfwm4", …)
+wm_check_name() {
+    local win name
+    win="$(wm_check_window)" || return 1
+    name="$(xprop -id "$win" -notype _NET_WM_NAME 2>/dev/null \
+                | sed -n 's/^_NET_WM_NAME = "\(.*\)"$/\1/p')"
+    [ -n "$name" ] || return 1
+    printf '%s\n' "$name"
+}
+
 cmd_status() {
     log "Pleb kiosk desktop — status"
     local eng="$KILIX_DEFAULT"
@@ -45,8 +71,41 @@ cmd_status() {
     fi
     if [ -f "$XSESSION_DST" ]; then info "session  : installed ($XSESSION_DST)"
     else info "session  : not installed  (run: pleb install)"; fi
-    if [ -x "$SESSION_BIN_DST" ]; then info "launcher : $SESSION_BIN_DST"
+    if [ -x "$SESSION_BIN_DST" ] && ! cmp -s "$PLEB_BIN_SRC" "$SESSION_BIN_DST"; then
+        info "launcher : $SESSION_BIN_DST  (STALE: differs from $PLEB_BIN_SRC — run: pleb install)"
+    elif [ -x "$SESSION_BIN_DST" ]; then info "launcher : $SESSION_BIN_DST"
     else info "launcher : not installed"; fi
+    local wm_mode wm_desc wm_native openbox_bin wm_name
+    wm_mode="${PLEB_WM:-auto}"
+    openbox_bin="$(command -v openbox 2>/dev/null || true)"
+    case "$wm_mode" in
+        auto)     wm_desc="auto (openbox when available, else no WM)"; wm_native=1
+                  [ -n "$openbox_bin" ] || wm_native=0 ;;
+        openbox)  wm_desc="openbox (required)"; wm_native=1 ;;
+        none|off) wm_desc="$wm_mode (kilix sizes itself to the screen)"; wm_native=0 ;;
+        *)        wm_desc="custom: $wm_mode"; wm_native=1 ;;
+    esac
+    info "wm       : $wm_desc"
+    if [ -n "$openbox_bin" ]; then info "openbox  : $openbox_bin"
+    else info "openbox  : not installed  (run: pleb install)"; fi
+    if [ ! -f "$OPENBOX_CONFIG_DST" ]; then
+        info "wm config: not installed  (run: pleb install)"
+    elif cmp -s "$OPENBOX_CONFIG_SRC" "$OPENBOX_CONFIG_DST"; then
+        info "wm config: $OPENBOX_CONFIG_DST  (matches checkout)"
+    else
+        info "wm config: $OPENBOX_CONFIG_DST  (STALE: differs from $OPENBOX_CONFIG_SRC)"
+    fi
+    if [ -z "${DISPLAY:-}" ]; then info "active wm: unknown (no DISPLAY here)"
+    elif wm_name="$(wm_check_name)"; then info "active wm: $wm_name  (on $DISPLAY)"
+    elif command -v xprop >/dev/null 2>&1 && xprop -root -notype _NET_SUPPORTING_WM_CHECK >/dev/null 2>&1; then
+        info "active wm: none on $DISPLAY"
+    else info "active wm: unknown ($DISPLAY unreadable)"; fi
+    case "${KILIX_RUN_ALIASES:-}" in
+        1|yes|true|on)  info "gui apps : kilix run, in a kilix tab  (KILIX_RUN_ALIASES=$KILIX_RUN_ALIASES)" ;;
+        0|no|false|off) info "gui apps : native windows  (KILIX_RUN_ALIASES=$KILIX_RUN_ALIASES)" ;;
+        *) if [ "$wm_native" = 1 ]; then info "gui apps : native windows (the session WM manages them)"
+           else info "gui apps : kilix run, in a kilix tab (no WM to manage them)"; fi ;;
+    esac
     if [ -x "$KILIX_SETTINGS_LINK" ]; then
         info "settings : $GPU_TERMINAL_SETTINGS_FILE  [$KILIX_SETTINGS_LINK]"
     else
@@ -74,6 +133,34 @@ cmd_status() {
     else
         info "kilix 95 : optional desktop not installed"
     fi
+    local logs_dir logs_state logs_count
+    logs_dir="${KILIX_TRANSCRIPT_DIR:-$KILIX_STATE_DIRECTORY/transcripts}"
+    logs_state="$(
+        python3 -c "
+import sys
+sys.path.insert(0, '$KILIX_DIR/config')
+from kilix_sdk import settings
+print('%s, %s, %s per pane' % (
+    'on' if settings.transcript_enabled() else 'off',
+    settings.transcript_graphics(),
+    settings.load().get(settings.TRANSCRIPT_LIMIT_KEY,
+                        settings.TRANSCRIPT_LIMIT_DEFAULT)))
+" 2>/dev/null
+    )" || logs_state=""
+    if [ -n "$logs_state" ]; then
+        # The directory is created on the first Kilix launch, so its absence is
+        # normal rather than an error worth failing status over.
+        logs_count=0
+        if [ -d "$logs_dir" ]; then
+            logs_count="$(
+                find "$logs_dir" -maxdepth 1 -type f -name '*.log' 2>/dev/null \
+                    | wc -l || true
+            )"
+        fi
+        info "logs     : $logs_state; $logs_count recorded in $logs_dir"
+    else
+        info "logs     : unknown (shared settings unreadable)"
+    fi
     if [ -f "$AUTOLOGIN_CONF" ]; then
         info "autologin: ON  -> $(grep -sE '^autologin-user=' "$AUTOLOGIN_CONF" | cut -d= -f2)"
     else
@@ -93,9 +180,61 @@ cmd_doctor() {
     else
         info "[!!]  kilix engine not runnable at $KILIX_DEFAULT — run: $KILIX_DIR/bootstrap.sh"; ok=0
     fi
-    for t in Xorg startx xset xsetroot; do
+    for t in Xorg startx xset xsetroot xprop; do
         if command -v "$t" >/dev/null 2>&1; then info "[ok]  $t"; else info "[!!]  missing: $t"; ok=0; fi
     done
+    local wm_mode wm_name
+    wm_mode="${PLEB_WM:-auto}"
+    case "$wm_mode" in
+        none|off)
+            info "[--]  PLEB_WM=$wm_mode — the session runs without a window manager" ;;
+        auto)
+            if command -v openbox >/dev/null 2>&1; then info "[ok]  openbox: $(command -v openbox)"
+            else info "[--]  openbox absent — the session falls back to the no-WM fixed geometry"; fi ;;
+        openbox)
+            if command -v openbox >/dev/null 2>&1; then info "[ok]  openbox: $(command -v openbox)"
+            else info "[!!]  PLEB_WM=openbox but openbox is not installed — run: pleb install"; ok=0; fi ;;
+        *)
+            # PLEB_WM is a command vector here; an all-whitespace value parses to
+            # an empty array, so check the length before indexing it.
+            local -a wm_argv=()
+            read -r -a wm_argv <<< "$wm_mode" || true
+            if [ "${#wm_argv[@]}" -gt 0 ] && command -v "${wm_argv[0]}" >/dev/null 2>&1; then
+                info "[ok]  window manager: $(command -v "${wm_argv[0]}")  (PLEB_WM='$wm_mode')"
+            else
+                info "[!!]  PLEB_WM='$wm_mode' is not runnable — install it or set PLEB_WM=none"; ok=0
+            fi ;;
+    esac
+    if [ -f "$OPENBOX_CONFIG_DST" ]; then
+        info "[ok]  openbox profile installed: $OPENBOX_CONFIG_DST"
+        if cmp -s "$OPENBOX_CONFIG_SRC" "$OPENBOX_CONFIG_DST"; then
+            info "[ok]  openbox profile matches $OPENBOX_CONFIG_SRC"
+        else
+            info "[!!]  openbox profile differs from $OPENBOX_CONFIG_SRC — run: pleb install"; ok=0
+        fi
+    else
+        info "[!!]  openbox profile not installed at $OPENBOX_CONFIG_DST — run: pleb install"; ok=0
+    fi
+    if [ ! -x "$SESSION_BIN_DST" ]; then
+        info "[--]  session launcher not installed at $SESSION_BIN_DST"
+    elif cmp -s "$PLEB_BIN_SRC" "$SESSION_BIN_DST"; then
+        info "[ok]  installed session launcher matches $PLEB_BIN_SRC"
+    else
+        info "[!!]  installed session launcher $SESSION_BIN_DST is stale (differs from $PLEB_BIN_SRC) — run: pleb install"; ok=0
+    fi
+    if [ -n "${DISPLAY:-}" ]; then
+        if ! command -v xprop >/dev/null 2>&1; then
+            info "[--]  no xprop — cannot read the EWMH state of $DISPLAY"
+        elif ! xprop -root -notype _NET_SUPPORTING_WM_CHECK >/dev/null 2>&1; then
+            info "[--]  DISPLAY=$DISPLAY is not reachable — skipped the live WM check"
+        elif wm_name="$(wm_check_name)"; then
+            info "[ok]  EWMH window manager on $DISPLAY: $wm_name"
+        elif wm_check_window >/dev/null 2>&1; then
+            info "[--]  $DISPLAY advertises a WM check window with no _NET_WM_NAME"
+        else
+            info "[--]  no valid EWMH window manager on $DISPLAY (pleb starts its own)"
+        fi
+    fi
     if [ -x "$KILIX_TEMPS_BIN" ] && [ -f "$KILIX_TEMPS_LIBRARY" ]; then
         info "[ok]  Kilix Temps graphical dashboard"
     else

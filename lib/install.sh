@@ -48,7 +48,7 @@ ensure_system_deps() {
     local -a deps
     deps=(
         git curl tar sudo tmux network-manager build-essential
-        lightdm xinit x11-xserver-utils x11-utils xterm
+        lightdm xinit x11-xserver-utils x11-utils xterm openbox
         libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
         fontconfig fonts-dejavu-core
         python3-pil python3-xlib python3-websockets
@@ -524,12 +524,30 @@ install_recovery_document() {
         "$PLEB_RECOVERY_DOC_SRC" "$PLEB_RECOVERY_DOC_DST"
 }
 
+validate_openbox_profile() {
+    if [ ! -f "$OPENBOX_CONFIG_SRC" ] || [ -L "$OPENBOX_CONFIG_SRC" ]; then
+        die "missing or unsafe Pleb Openbox profile: $OPENBOX_CONFIG_SRC"
+    fi
+}
+
+install_openbox_profile() {
+    validate_openbox_profile
+    case "$OPENBOX_CONFIG_DST" in
+        /*) ;;
+        *) die "OPENBOX_CONFIG_DST must be absolute: $OPENBOX_CONFIG_DST" ;;
+    esac
+    log "installing Pleb Openbox profile -> $OPENBOX_CONFIG_DST"
+    run_root install -D -m 0644 -- \
+        "$OPENBOX_CONFIG_SRC" "$OPENBOX_CONFIG_DST"
+}
+
 # do_install — ensure kilix is present, copy pleb-session to /usr/local/bin, and
 # drop the xsession entry so LightDM lists "Pleb" as a choosable session.
 do_install() {
     [ -f "$PLEB_BIN_SRC" ]    || die "missing $PLEB_BIN_SRC"
     [ -f "$PLEB_DESKTOP_IN" ] || die "missing $PLEB_DESKTOP_IN"
     validate_recovery_document
+    validate_openbox_profile
 
     # This is required for both standalone and Plebian-OS-managed installs.
     # Managed installs skip artwork publication, never storage privacy.
@@ -549,6 +567,10 @@ do_install() {
     ensure_kilix95 # optional: external Kilix 95 when the selected provider needs it
     install_standalone_pleb_wallpaper
     install_recovery_document
+    # before the launcher: an installed pleb-session that points at an absent
+    # profile is a hard session failure under PLEB_WM=openbox, and do_install
+    # has no rollback, so ordering is the staging mechanism.
+    install_openbox_profile
 
     log "installing session launcher -> $SESSION_BIN_DST"
     run_root install -D -m 0755 "$PLEB_BIN_SRC" "$SESSION_BIN_DST"
@@ -586,13 +608,29 @@ do_install() {
 # caches/state, and packages installed as dependencies are intentionally kept.
 do_uninstall() {
     local removed=0
-    for f in "$XSESSION_DST" "$SESSION_BIN_DST" "$PLEB_RECOVERY_DOC_DST"; do
+    for f in "$XSESSION_DST" "$SESSION_BIN_DST" "$PLEB_RECOVERY_DOC_DST" \
+            "$OPENBOX_CONFIG_DST"; do
         if [ -e "$f" ] || [ -L "$f" ]; then
             log "removing $f"
             run_root rm -f "$f"
             removed=1
         fi
     done
+    # prune the Pleb-owned Openbox directories, leaf first, and only at the exact
+    # paths install_openbox_profile creates: a customized OPENBOX_CONFIG_DST is
+    # left alone entirely. Each one must still be a real, root-owned, empty
+    # directory, and `rmdir` is never recursive, so nothing else is removed.
+    if [ "$OPENBOX_CONFIG_DST" = /usr/local/share/pleb/openbox/rc.xml ]; then
+        for d in /usr/local/share/pleb/openbox /usr/local/share/pleb; do
+            [ -d "$d" ] && [ ! -L "$d" ] \
+                && [ "$(stat -c '%u' "$d" 2>/dev/null)" = 0 ] \
+                && [ -z "$(ls -A -- "$d" 2>/dev/null)" ] || continue
+            log "removing empty $d"
+            if run_root rmdir -- "$d"; then
+                removed=1
+            fi
+        done
+    fi
     # remove the kilix command symlink, but only if it points at our checkout
     if [ -L "$KILIX_LINK" ] && [ "$(readlink "$KILIX_LINK")" = "$KILIX_DIR/kilix" ]; then
         log "removing kilix command symlink $KILIX_LINK"

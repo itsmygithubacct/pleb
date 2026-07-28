@@ -1,7 +1,10 @@
+import atexit
+import functools
 import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -35,6 +38,52 @@ def clean_env(home: Path) -> dict[str, str]:
         }
     )
     return env
+
+
+@functools.lru_cache(maxsize=1)
+def kilix_state_library() -> str | None:
+    """Resolve the native ``libkilix-state`` a directly launched Kilix-95 needs.
+
+    Kilix-95 loads Kilix's pinned state library while importing ``main``, so a
+    test that launches the provider directly must hand it one. `clean_env`
+    deliberately scrubs every ``KILIX*`` key, and the provider is given a
+    throwaway storage root, so nothing built for the developer's own session is
+    reachable — the library has to be resolved explicitly.
+
+    Mirrors Kilix-95's own ``tests/run.py``: honor an existing
+    ``KILIX_STATE_LIBRARY``, else build one into a temporary storage root with
+    Kilix's helper. Returns ``None`` when no sibling Kilix checkout or no build
+    toolchain is available, which the caller reports as a skip — Pleb's suite
+    must stay usable on a machine that has never built Kilix.
+    """
+
+    existing = os.environ.get("KILIX_STATE_LIBRARY")
+    if existing and os.path.isfile(existing):
+        return existing
+
+    kilix_home = ROOT.parent / "kilix"
+    helper = kilix_home / "scripts/build-state-library.sh"
+    if not helper.is_file():
+        return None
+
+    sandbox = tempfile.mkdtemp(prefix="pleb-native-state-")
+    atexit.register(shutil.rmtree, sandbox, ignore_errors=True)
+    storage = os.path.join(sandbox, "storage")
+    env = dict(
+        os.environ,
+        KILIX_HOME=str(kilix_home),
+        KILIX_STORAGE_HOME=storage,
+        KILIX_BUILD_DIRECTORY=os.path.join(storage, "build"),
+    )
+    try:
+        result = subprocess.run(
+            [str(helper), "--print-path"],
+            capture_output=True, text=True, check=True, env=env, timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    path = result.stdout.strip()
+    return path if path and os.path.isfile(path) else None
 
 
 def load_validator_module():
@@ -379,6 +428,13 @@ install_pleb_artwork_bundle
         "sibling Kilix-95 checkout is unavailable",
     )
     def test_direct_xp_provider_keeps_its_kittens_wallpaper_after_pleb_install(self):
+        state_library = kilix_state_library()
+        if state_library is None:
+            self.skipTest(
+                "Kilix's native state library is unavailable (no sibling Kilix "
+                "checkout or no build toolchain); Kilix-95 cannot be launched "
+                "directly without it"
+            )
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             env = self.artwork_env(tmp, "external")
@@ -393,6 +449,9 @@ install_pleb_artwork_bundle
             direct_env = env.copy()
             direct_env.pop("KILIX_DESKTOP_DIR", None)
             direct_env["KILIX_DESKTOP_FLAVOR"] = "xp"
+            # The provider loads this while importing `main`; everything else
+            # about its environment stays the throwaway one built above.
+            direct_env["KILIX_STATE_LIBRARY"] = state_library
             actual_kilix95 = ROOT.parent / "kilix-95"
             direct = subprocess.run(
                 [
