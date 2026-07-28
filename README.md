@@ -128,6 +128,10 @@ log in. To go back, log out and pick your usual session again.
 `install`, `uninstall`, and `autologin` need root; the CLI calls `sudo` only for
 the specific file operations, so you'll be prompted once.
 
+Set `PLEB_DESKTOP=1 KILIX_DESKTOP_PROVIDER=cap` to boot into the optional
+Kilix Cap mansion. Kilix downloads its pinned source and builds it locally on
+the first launch; the default Kilix 95 provider remains available alongside it.
+
 **Session logging is on by default.** Every pane's output is recorded by the
 PTY broker to `~/.local/gpu_terminal/kilix/state/transcripts/<session>.log`
 (`0600`, one bounded 8 MiB log per pane, kitty graphics payloads elided).
@@ -382,9 +386,15 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `PLEB_BG` | `#101010` | Root-window solid colour. |
 | `PLEB_RESPAWN` | `0` | If `1`, relaunch kilix when it exits (hard kiosk). |
 | `PLEB_DESKTOP` | `0` | If truthy, boot directly into `kilix desktop`; `0` gives a plain shell. |
-| `KILIX_DESKTOP_PROVIDER` | `auto` | Prefer a compatible installed external provider, else bundled; or force `builtin`, `external`, `command`, or `none`. |
+| `KILIX_DESKTOP_PROVIDER` | `auto` | Prefer a compatible installed external provider, else bundled; or force `builtin`, `external`, `cap`, `command`, or `none`. |
 | `KILIX_DESKTOP_COMMAND` | *(none)* | Shell command run by `kilix desktop` when provider is `command`. |
 | `KILIX_DESKTOP_NAME` | `desktop` | Label/tab title for custom desktop providers. |
+| `KILIX_CAP_AUTO_INSTALL` | `1` | Lets Kilix download and build Kilix Cap on first launch. |
+| `KILIX_CAP_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix-cap` | Kilix Cap source checkout. |
+| `KILIX_CAP_REPO` | `https://github.com/itsmygithubacct/kilix-cap.git` | Reviewed Kilix Cap source remote. |
+| `KILIX_CAP_REF` | *(Kilix-pinned commit)* | Optional exact Kilix Cap commit override. |
+| `KILIX_CAP_TRUST_EXISTING_CHECKOUT` | `0` | Trust a nonstandard existing Cap checkout only when explicitly enabled. |
+| `KILIX_CAP_ALLOW_MUTABLE_REF` | `0` | Trust a mutable Cap tag/branch only when explicitly enabled. |
 | `KILIX95_AUTO_INSTALL` | `1` | Lets `kilix desktop` clone external Kilix 95 when needed. |
 | `KILIX95_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix-95` | External Kilix 95 checkout used for desktop sessions. |
 | `KILIX95_REPO` | `https://github.com/itsmygithubacct/kilix-95.git` | Repo cloned when Kilix 95 is needed. |
