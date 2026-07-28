@@ -133,6 +133,15 @@ cmd_status() {
     else
         info "kilix 95 : optional desktop not installed"
     fi
+    if git -C "$KILIX_CAP_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        if [ -x "$KILIX_CAP_DIR/bin/kilix-cap" ]; then
+            info "kilix cap: installed and built at $KILIX_CAP_DIR"
+        else
+            info "kilix cap: source at $KILIX_CAP_DIR (builds on first launch)"
+        fi
+    else
+        info "kilix cap: optional desktop downloads on first launch"
+    fi
     local logs_dir logs_state logs_count
     logs_dir="${KILIX_TRANSCRIPT_DIR:-$KILIX_STATE_DIRECTORY/transcripts}"
     logs_state="$(

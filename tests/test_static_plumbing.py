@@ -22,6 +22,18 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("KILIX_DESKTOP_COMMAND=$KILIX_DESKTOP_COMMAND", text)
         self.assertIn("KILIX_DESKTOP_NAME=$KILIX_DESKTOP_NAME", text)
         self.assertIn("KILIX_DESKTOP_FLAVOR=$KILIX_DESKTOP_FLAVOR", text)
+        self.assertIn("KILIX_CAP_AUTO_INSTALL=$KILIX_CAP_AUTO_INSTALL", text)
+        self.assertIn("KILIX_CAP_DIR=$KILIX_CAP_DIR", text)
+        self.assertIn("KILIX_CAP_REPO=$KILIX_CAP_REPO", text)
+        self.assertIn("KILIX_CAP_REF=$KILIX_CAP_REF", text)
+        self.assertIn(
+            "KILIX_CAP_TRUST_EXISTING_CHECKOUT=$KILIX_CAP_TRUST_EXISTING_CHECKOUT",
+            text,
+        )
+        self.assertIn(
+            "KILIX_CAP_ALLOW_MUTABLE_REF=$KILIX_CAP_ALLOW_MUTABLE_REF",
+            text,
+        )
         self.assertIn("KILIX_REF=$KILIX_REF", text)
         self.assertIn("KILIX_ALLOW_MUTABLE_REF=$KILIX_ALLOW_MUTABLE_REF", text)
         self.assertIn("KILIX95_REF=$KILIX95_REF", text)
@@ -66,6 +78,7 @@ class PlebPlumbingTests(unittest.TestCase):
         checks = [
             ("external", "kilix95_required"),
             ("command", "! kilix95_required"),
+            ("cap", "! kilix95_required"),
             ("none", "! kilix95_required"),
             ("builtin", "! kilix95_required"),
         ]

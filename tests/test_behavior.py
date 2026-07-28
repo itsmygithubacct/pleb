@@ -153,7 +153,7 @@ class PlebBehaviorTests(unittest.TestCase):
                 printf '%s\n' "$GPU_TERMINAL_SOURCE_HOME" "$GPU_TERMINAL_HOME" \
                     "$PLEB_STORAGE_HOME" "$PLEB_STATE_HOME" "$PLEB_DATA_HOME" \
                     "$KILIX_DIR" "$KILIX_DATA_HOME" "$KILIX_BUILD_DIRECTORY" "$KILIX_PREBUILT_HOME" \
-                    "$KILIX95_DIR" "$KILIX95_DATA_HOME" "$KILIX_DESKTOP_DIR"
+                    "$KILIX95_DIR" "$KILIX_CAP_DIR" "$KILIX95_DATA_HOME" "$KILIX_DESKTOP_DIR"
                 """
             )
             env = clean_env(tmp)
@@ -178,6 +178,7 @@ class PlebBehaviorTests(unittest.TestCase):
                     str(data / "kilix/build"),
                     str(data / "kilix/prebuilt/kitty.app"),
                     str(source / "kilix-95"),
+                    str(source / "kilix-cap"),
                     str(data / "kilix-95/data"),
                     str(data / "pleb/data/desktop"),
                 ],
@@ -281,7 +282,7 @@ class PlebBehaviorTests(unittest.TestCase):
                 f"\"$KILIX95_CACHE_HOME\" \"$KILIX95_SESSION_HOME\" "
                 f"\"$KILIX95_DATA_HOME\" "
                 f"\"$KILIX_DESKTOP_DIR\" "
-                f"\"$KILIX_DIR\" \"$KILIX95_DIR\" >{observed!s}\n",
+                f"\"$KILIX_DIR\" \"$KILIX95_DIR\" \"$KILIX_CAP_DIR\" >{observed!s}\n",
             )
             config = tmp / ".local/gpu_terminal/pleb/config/session.env"
             config.parent.mkdir(parents=True)
@@ -325,6 +326,7 @@ class PlebBehaviorTests(unittest.TestCase):
                     str(data / "pleb/data/desktop"),
                     str(source / "kilix"),
                     str(source / "kilix-95"),
+                    str(source / "kilix-cap"),
                 ],
             )
             session_log = data / "pleb/state/session.log"

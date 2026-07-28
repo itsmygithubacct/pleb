@@ -47,7 +47,7 @@ _install_missing_apt_packages() {
 ensure_system_deps() {
     local -a deps
     deps=(
-        git curl tar sudo tmux network-manager build-essential
+        git curl tar sudo tmux network-manager build-essential zlib1g-dev
         lightdm xinit x11-xserver-utils x11-utils xterm openbox
         libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
         fontconfig fonts-dejavu-core
@@ -405,7 +405,7 @@ _pleb_desktop_state_dir() {
             else
                 return 1
             fi ;;
-        none|off|disabled|command|custom)
+        none|off|disabled|command|custom|cap|kilix-cap|mansion)
             return 1 ;;
         *)
             die "unknown KILIX_DESKTOP_PROVIDER=${KILIX_DESKTOP_PROVIDER:-}" ;;

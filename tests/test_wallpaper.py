@@ -504,8 +504,8 @@ install_pleb_artwork_bundle
                 (Path(env["PLEB_DATA_HOME"]) / "desktop/.state.json").is_file()
             )
 
-    def test_custom_or_disabled_provider_installs_artwork_without_state(self):
-        for provider in ("command", "none"):
+    def test_non_wallpaper_provider_installs_artwork_without_state(self):
+        for provider in ("command", "cap", "none"):
             with self.subTest(provider=provider), tempfile.TemporaryDirectory() as td:
                 tmp = Path(td)
                 env = self.artwork_env(tmp, provider)
