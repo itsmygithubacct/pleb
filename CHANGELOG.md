@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.1.5 — unreleased
+
+Version numbers 0.1.3 and 0.1.4 were never coordinated stack releases; Pleb goes
+0.1.2 → 0.1.5 alongside Plebian-OS, Kilix, and Kilix-95. See Plebian-OS
+RELEASING.md.
+
+- Install the shared clickable-chrome settings file at
+  `~/.local/gpu_terminal/settings.conf` and symlink `kilix-settings` onto
+  `PATH`, so `pleb settings`, `kilix settings`, and Kilix-95's Settings app all
+  edit one file.
+- Install `pulsemixer` for the top-bar volume widget, and document the thermal
+  widget's integration with the shared settings contract.
+- Build and install Kilix's exact pinned Kilix Temps dashboard and graphics
+  closure during `pleb install`, so the page-strip thermometer resolves without
+  a pre-existing developer checkout.
+- Install Kilix's pinned `tmux-tui`/`tmux-cli` closure and publish Tmux Manager
+  plus tmux-cli's `tb.py` as `tb` on `PATH`.
+- Install the pinned persistent PTY session manager used for crash-persistent
+  panes.
+- Report Kilix's default-on session logging in `pleb status` — current policy
+  plus how many pane transcripts exist — and accept `KILIX_TRANSCRIPT_DIR` in
+  the persisted session environment.
+- Snapshot and restore the content and presenter submodules — and any newly
+  added Kilix submodule — during update rollback, so a failed update no longer
+  leaves a partially advanced submodule state.
+- Run a Pleb-managed **Openbox** window manager, so native application windows
+  can be focused, raised, closed and reached with `Alt-Tab`. Previously a
+  fullscreen kilix covered every other client permanently: a browser could be
+  running and focused but invisible. Adds `openbox` to Pleb's runtime
+  dependencies and installs a reduced, Pleb-owned profile at
+  `/usr/local/share/pleb/openbox/rc.xml` (one desktop, no root menu, no panel,
+  no launcher or screenshot keys, and no rule pinning kilix above other
+  windows).
+- Replace the best-effort `PLEB_WM` hook with a real lifecycle: the full
+  `_NET_SUPPORTING_WM_CHECK` handshake — including validating that the check
+  window points at itself, so a stale property from a dead WM is not mistaken
+  for a live one — bounded readiness polling that also watches the WM process,
+  and joint supervision of the WM and kilix. `PLEB_WM=openbox` now fails the
+  session instead of silently downgrading, and a window manager that dies is
+  fatal rather than leaving unmanaged clients behind. An already-running EWMH
+  window manager is adopted, never replaced or killed.
+- Default GUI commands to native windows when a window manager is present, via
+  the new `KILIX_RUN_ALIASES` session variable; `kilix run <app>` remains the
+  explicit way to render an application inside a kilix tab.
+- Report the window-manager mode, Openbox availability, profile drift and
+  active WM in `pleb status`, and check them in `pleb doctor` — which now also
+  flags an installed `pleb-session` or Openbox profile that differs from the
+  checkout, the drift that silently broke a deployed box.
+
 ## 0.1.2 — 2026-07-15
 
 - Use `~/.local/gpu_terminal/sources` as the shared source-checkout root and

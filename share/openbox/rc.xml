@@ -1,0 +1,445 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  Pleb's managed Openbox configuration.
+
+  Pleb runs bare openbox with an explicit "config-file" argument pointing at
+  this file, plus "sm-disable", so the session's
+  window-manager behaviour is identical on every install, regardless of what
+  the distribution or the user's ~/.config/openbox happens to contain. Do not
+  edit the installed copy at /usr/local/share/pleb/openbox/rc.xml — it is
+  overwritten by `pleb install`. Edit share/openbox/rc.xml in the checkout and
+  reinstall.
+
+  Pleb is a kiosk-ish desktop, not a general desktop environment. This profile
+  is deliberately reduced to the surface Pleb needs:
+
+    - one desktop, and no way to switch desktops (keys or scroll wheel)
+    - focusNew, click-to-focus, click-to-raise
+    - Alt-Tab / Alt-Shift-Tab window cycling, ending in Focus + Raise + Unshade
+    - Alt-F4 close; normal decorations and title-bar controls
+    - no root-window menu, no launcher keys, no screenshot keys, no dock use
+    - no per-application rules
+
+  In particular there is NO rule forcing Kilix to the 'above' layer. Kilix asks
+  for _NET_WM_STATE_FULLSCREEN itself (kitty's "start-as=fullscreen"); leaving it
+  on the normal layer is what lets an Alt-Tab-selected browser window raise
+  above it. See the Non-goals in the Pleb README.
+
+  ===========================================================================
+  Derived from the default rc.xml shipped with Openbox 3.6.1
+  (/etc/xdg/openbox/rc.xml), reduced as described above.
+
+  Openbox is Copyright (c) 2003        Ben Jansens
+                          2003         Derek Foreman
+                          2003-2011    Dana Jansens
+                          2006-2011    Mikael Magnusson
+  and is licensed GPL-2+. This file, as a derivative of Openbox's default
+  configuration, is likewise available under the GNU General Public License,
+  version 2 or (at your option) any later version — not under the MIT license
+  that covers the rest of Pleb. See <https://openbox.org/>.
+  ===========================================================================
+-->
+
+<openbox_config xmlns="http://openbox.org/3.4/rc"
+		xmlns:xi="http://www.w3.org/2001/XInclude">
+
+<resistance>
+  <strength>10</strength>
+  <screen_edge_strength>20</screen_edge_strength>
+</resistance>
+
+<focus>
+  <!-- Focus new windows as they appear: a browser launched from a Kilix shell
+       must come to the front rather than opening behind the fullscreen
+       terminal. -->
+  <focusNew>yes</focusNew>
+  <!-- Click to focus, not focus-follows-mouse. -->
+  <followMouse>no</followMouse>
+  <focusLast>yes</focusLast>
+  <underMouse>no</underMouse>
+  <focusDelay>200</focusDelay>
+  <raiseOnFocus>no</raiseOnFocus>
+</focus>
+
+<placement>
+  <policy>Smart</policy>
+  <center>yes</center>
+  <!-- Place new windows on the primary monitor. -->
+  <monitor>Primary</monitor>
+  <primaryMonitor>1</primaryMonitor>
+</placement>
+
+<theme>
+  <name>Clearlooks</name>
+  <!-- N icon, L label, I iconify, M maximize, C close. No shade or
+       omnipresent buttons: shading is incidental here and there is only one
+       desktop. -->
+  <titleLayout>NLIMC</titleLayout>
+  <keepBorder>yes</keepBorder>
+  <animateIconify>yes</animateIconify>
+  <font place="ActiveWindow">
+    <name>sans</name>
+    <size>8</size>
+    <weight>bold</weight>
+    <slant>normal</slant>
+  </font>
+  <font place="InactiveWindow">
+    <name>sans</name>
+    <size>8</size>
+    <weight>bold</weight>
+    <slant>normal</slant>
+  </font>
+  <font place="MenuHeader">
+    <name>sans</name>
+    <size>9</size>
+    <weight>normal</weight>
+    <slant>normal</slant>
+  </font>
+  <font place="MenuItem">
+    <name>sans</name>
+    <size>9</size>
+    <weight>normal</weight>
+    <slant>normal</slant>
+  </font>
+  <font place="ActiveOnScreenDisplay">
+    <name>sans</name>
+    <size>9</size>
+    <weight>bold</weight>
+    <slant>normal</slant>
+  </font>
+  <font place="InactiveOnScreenDisplay">
+    <name>sans</name>
+    <size>9</size>
+    <weight>bold</weight>
+    <slant>normal</slant>
+  </font>
+</theme>
+
+<desktops>
+  <!-- Exactly one desktop. Pleb has no pager and no desktop-switching
+       bindings, so a second desktop would only be reachable by accident. -->
+  <number>1</number>
+  <firstdesk>1</firstdesk>
+  <names>
+  </names>
+  <!-- 0 disables the desktop-switch popup entirely. -->
+  <popupTime>0</popupTime>
+</desktops>
+
+<resize>
+  <drawContents>yes</drawContents>
+  <popupShow>Nonpixel</popupShow>
+  <popupPosition>Center</popupPosition>
+  <popupFixedPosition>
+    <x>10</x>
+    <y>10</y>
+  </popupFixedPosition>
+</resize>
+
+<margins>
+  <top>0</top>
+  <bottom>0</bottom>
+  <left>0</left>
+  <right>0</right>
+</margins>
+
+<!-- Pleb ships no dock app. These are Openbox's inert defaults, kept so the
+     dock does not fall back to anything surprising if one ever appears. -->
+<dock>
+  <position>TopLeft</position>
+  <floatingX>0</floatingX>
+  <floatingY>0</floatingY>
+  <noStrut>no</noStrut>
+  <stacking>Above</stacking>
+  <direction>Vertical</direction>
+  <autoHide>no</autoHide>
+  <hideDelay>300</hideDelay>
+  <showDelay>300</showDelay>
+  <moveButton>Middle</moveButton>
+</dock>
+
+<keyboard>
+  <chainQuitKey>C-g</chainQuitKey>
+
+  <!-- Window cycling. This is the whole point of running a WM under Pleb:
+       Alt-Tab must move focus between the fullscreen Kilix window and any
+       native application window, and raise the selection above Kilix. -->
+  <keybind key="A-Tab">
+    <action name="NextWindow">
+      <finalactions>
+        <action name="Focus"/>
+        <action name="Raise"/>
+        <action name="Unshade"/>
+      </finalactions>
+    </action>
+  </keybind>
+  <keybind key="A-S-Tab">
+    <action name="PreviousWindow">
+      <finalactions>
+        <action name="Focus"/>
+        <action name="Raise"/>
+        <action name="Unshade"/>
+      </finalactions>
+    </action>
+  </keybind>
+
+  <!-- Close the focused window. -->
+  <keybind key="A-F4">
+    <action name="Close"/>
+  </keybind>
+
+  <!-- Deliberately absent: desktop switching (C-A-Arrow, W-F1..F4),
+       ToggleShowDesktop, directional cycling, application launchers (W-e),
+       and the Print/scrot screenshot binding. -->
+</keyboard>
+
+<mouse>
+  <dragThreshold>1</dragThreshold>
+  <doubleClickTime>500</doubleClickTime>
+  <!-- 0 disables screen-edge desktop warping while dragging a window. There
+       is only one desktop, so warping has nowhere to go. -->
+  <screenEdgeWarpTime>0</screenEdgeWarpTime>
+  <screenEdgeWarpMouse>false</screenEdgeWarpMouse>
+
+  <context name="Frame">
+    <mousebind button="A-Left" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+    </mousebind>
+    <mousebind button="A-Left" action="Click">
+      <action name="Unshade"/>
+    </mousebind>
+    <mousebind button="A-Left" action="Drag">
+      <action name="Move"/>
+    </mousebind>
+
+    <mousebind button="A-Right" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+      <action name="Unshade"/>
+    </mousebind>
+    <mousebind button="A-Right" action="Drag">
+      <action name="Resize"/>
+    </mousebind>
+
+    <mousebind button="A-Middle" action="Press">
+      <action name="Lower"/>
+      <action name="FocusToBottom"/>
+      <action name="Unfocus"/>
+    </mousebind>
+  </context>
+
+  <context name="Titlebar">
+    <mousebind button="Left" action="Drag">
+      <action name="Move"/>
+    </mousebind>
+    <mousebind button="Left" action="DoubleClick">
+      <action name="ToggleMaximize"/>
+    </mousebind>
+
+    <mousebind button="Up" action="Click">
+      <action name="if">
+        <shaded>no</shaded>
+        <then>
+          <action name="Shade"/>
+          <action name="FocusToBottom"/>
+          <action name="Unfocus"/>
+          <action name="Lower"/>
+        </then>
+      </action>
+    </mousebind>
+    <mousebind button="Down" action="Click">
+      <action name="if">
+        <shaded>yes</shaded>
+        <then>
+          <action name="Unshade"/>
+          <action name="Raise"/>
+        </then>
+      </action>
+    </mousebind>
+  </context>
+
+  <context name="Titlebar Top Right Bottom Left TLCorner TRCorner BRCorner BLCorner">
+    <mousebind button="Left" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+      <action name="Unshade"/>
+    </mousebind>
+
+    <mousebind button="Middle" action="Press">
+      <action name="Lower"/>
+      <action name="FocusToBottom"/>
+      <action name="Unfocus"/>
+    </mousebind>
+
+    <!-- The per-window (client) menu, reached from the window's own frame.
+         This is not the root-window menu, which Pleb does not bind at all. -->
+    <mousebind button="Right" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+      <action name="ShowMenu"><menu>client-menu</menu></action>
+    </mousebind>
+  </context>
+
+  <context name="Top">
+    <mousebind button="Left" action="Drag">
+      <action name="Resize"><edge>top</edge></action>
+    </mousebind>
+  </context>
+
+  <context name="Left">
+    <mousebind button="Left" action="Drag">
+      <action name="Resize"><edge>left</edge></action>
+    </mousebind>
+  </context>
+
+  <context name="Right">
+    <mousebind button="Left" action="Drag">
+      <action name="Resize"><edge>right</edge></action>
+    </mousebind>
+  </context>
+
+  <context name="Bottom">
+    <mousebind button="Left" action="Drag">
+      <action name="Resize"><edge>bottom</edge></action>
+    </mousebind>
+
+    <mousebind button="Right" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+      <action name="ShowMenu"><menu>client-menu</menu></action>
+    </mousebind>
+  </context>
+
+  <context name="TRCorner BRCorner TLCorner BLCorner">
+    <mousebind button="Left" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+      <action name="Unshade"/>
+    </mousebind>
+    <mousebind button="Left" action="Drag">
+      <action name="Resize"/>
+    </mousebind>
+  </context>
+
+  <!-- Clicking anywhere in a client focuses and raises it. -->
+  <context name="Client">
+    <mousebind button="Left" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+    </mousebind>
+    <mousebind button="Middle" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+    </mousebind>
+    <mousebind button="Right" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+    </mousebind>
+  </context>
+
+  <context name="Icon">
+    <mousebind button="Left" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+      <action name="Unshade"/>
+      <action name="ShowMenu"><menu>client-menu</menu></action>
+    </mousebind>
+    <mousebind button="Right" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+      <action name="ShowMenu"><menu>client-menu</menu></action>
+    </mousebind>
+  </context>
+
+  <context name="Iconify">
+    <mousebind button="Left" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+    </mousebind>
+    <mousebind button="Left" action="Click">
+      <action name="Iconify"/>
+    </mousebind>
+  </context>
+
+  <context name="Maximize">
+    <mousebind button="Left" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+      <action name="Unshade"/>
+    </mousebind>
+    <mousebind button="Middle" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+      <action name="Unshade"/>
+    </mousebind>
+    <mousebind button="Right" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+      <action name="Unshade"/>
+    </mousebind>
+    <mousebind button="Left" action="Click">
+      <action name="ToggleMaximize"/>
+    </mousebind>
+    <mousebind button="Middle" action="Click">
+      <action name="ToggleMaximize"><direction>vertical</direction></action>
+    </mousebind>
+    <mousebind button="Right" action="Click">
+      <action name="ToggleMaximize"><direction>horizontal</direction></action>
+    </mousebind>
+  </context>
+
+  <context name="Close">
+    <mousebind button="Left" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+      <action name="Unshade"/>
+    </mousebind>
+    <mousebind button="Left" action="Click">
+      <action name="Close"/>
+    </mousebind>
+  </context>
+
+  <context name="Desktop">
+    <mousebind button="Left" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+    </mousebind>
+    <mousebind button="Right" action="Press">
+      <action name="Focus"/>
+      <action name="Raise"/>
+    </mousebind>
+  </context>
+
+  <!-- Deliberately absent: the "Root" context (which normally binds the
+       root-window menu and the combined client-list menu), the "MoveResize"
+       context (desktop switching while dragging), and every scroll-wheel
+       GoToDesktop / SendToDesktop binding. -->
+</mouse>
+
+<menu>
+  <!-- No <file> is listed and no ShowMenu action anywhere in this profile
+       opens root-menu, so Pleb has no root-window menu. Only the per-window
+       client-menu, which Openbox builds internally, is reachable. -->
+  <hideDelay>200</hideDelay>
+  <middle>no</middle>
+  <submenuShowDelay>100</submenuShowDelay>
+  <submenuHideDelay>400</submenuHideDelay>
+  <showIcons>yes</showIcons>
+  <manageDesktops>no</manageDesktops>
+</menu>
+
+<applications>
+  <!-- Intentionally empty.
+
+       Kilix is NOT pinned here. It requests _NET_WM_STATE_FULLSCREEN itself
+       via kitty's "start-as=fullscreen", and Openbox honours that through the
+       normal EWMH path: undecorated, screen-filling, and restored to normal
+       geometry when fullscreen is removed. Adding <layer>above</layer> for
+       Kilix would reintroduce exactly the bug this integration fixes — a
+       browser window that is focused but permanently hidden behind the
+       terminal. -->
+</applications>
+
+</openbox_config>
