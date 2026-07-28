@@ -53,6 +53,7 @@ ensure_system_deps() {
         fontconfig fonts-dejavu-core
         python3-pil python3-xlib python3-websockets
         pulseaudio pulseaudio-utils pulsemixer alsa-utils ffmpeg xauth zenity
+        zstd
         dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
         fluidsynth fluid-soundfont-gm
     )

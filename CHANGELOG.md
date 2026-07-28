@@ -19,6 +19,7 @@ RELEASING.md.
   plus tmux-cli's `tb.py` as `tb` on `PATH`.
 - Install the pinned persistent PTY session manager used for crash-persistent
   panes.
+- Install `zstd`, which Kilix uses to archive older pane transcripts.
 - Report Kilix's default-on session logging in `pleb status` — current policy
   plus how many pane transcripts exist — and accept `KILIX_TRANSCRIPT_DIR` in
   the persisted session environment.
