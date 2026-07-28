@@ -145,16 +145,17 @@ cmd_status() {
     local logs_dir logs_state logs_count
     logs_dir="${KILIX_TRANSCRIPT_DIR:-$KILIX_STATE_DIRECTORY/transcripts}"
     logs_state="$(
-        python3 -c "
+        KILIX_CONFIG_DIR="$KILIX_DIR/config" python3 -c '
+import os
 import sys
-sys.path.insert(0, '$KILIX_DIR/config')
+sys.path.insert(0, os.environ["KILIX_CONFIG_DIR"])
 from kilix_sdk import settings
-print('%s, %s, %s per pane' % (
-    'on' if settings.transcript_enabled() else 'off',
+print("%s, %s, %s per pane" % (
+    "on" if settings.transcript_enabled() else "off",
     settings.transcript_graphics(),
     settings.load().get(settings.TRANSCRIPT_LIMIT_KEY,
                         settings.TRANSCRIPT_LIMIT_DEFAULT)))
-" 2>/dev/null
+' 2>/dev/null
     )" || logs_state=""
     if [ -n "$logs_state" ]; then
         # The directory is created on the first Kilix launch, so its absence is
@@ -189,12 +190,13 @@ print('%s, %s, %s per pane' % (
             voice_library="libvosk missing"
         fi
         voice_model="$(
-            python3 -c "
+            KILIX_CONFIG_DIR="$KILIX_DIR/config" python3 -c '
+import os
 import sys
-sys.path.insert(0, '$KILIX_DIR/config')
+sys.path.insert(0, os.environ["KILIX_CONFIG_DIR"])
 from kilix_sdk import settings
 print(settings.stt_model())
-" 2>/dev/null
+' 2>/dev/null
         )" || voice_model=""
         if [ -n "$voice_model" ] && [ -d "$KILIX_DATA_HOME/voice/models/$voice_model" ]; then
             voice_model="model $voice_model ok"

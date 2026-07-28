@@ -2,6 +2,7 @@ import fcntl
 import hashlib
 import io
 import os
+import signal
 import stat
 import subprocess
 import tarfile
@@ -461,6 +462,70 @@ class PlebBehaviorTests(unittest.TestCase):
             self.assertIn("desktop  : plain kilix shell", overridden.stdout)
             self.assertIn("kiosk    : soft", overridden.stdout)
 
+    def test_status_treats_kilix_config_path_as_data(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            kilix = tmp / "kilix'checkout"
+            package = kilix / "config/kilix_sdk"
+            package.mkdir(parents=True)
+            (package / "__init__.py").write_text("")
+            (package / "settings.py").write_text(
+                "TRANSCRIPT_LIMIT_KEY = 'limit'\n"
+                "TRANSCRIPT_LIMIT_DEFAULT = 'default'\n"
+                "def transcript_enabled(): return True\n"
+                "def transcript_graphics(): return 'scrubbed'\n"
+                "def load(): return {'limit': '8 MiB'}\n"
+                "def stt_model(): return 'model-en'\n"
+            )
+            engine = tmp / "fake-kilix"
+            write_executable(
+                engine,
+                textwrap.dedent(
+                    """\
+                    #!/bin/sh
+                    case "${1:-}" in
+                        --which) echo /engine/from/quoted-path-test ;;
+                        voice) echo 'voice: read-aloud on, dictation on' ;;
+                    esac
+                    """
+                ),
+            )
+            write_executable(tmp / "espeak-ng", "#!/bin/sh\nexit 0\n")
+            data = tmp / "data"
+            (data / "voice/lib/current").mkdir(parents=True)
+            (data / "voice/lib/current/libvosk.so").touch()
+            (data / "voice/models/model-en").mkdir(parents=True)
+
+            env = clean_env(tmp)
+            env.update(
+                {
+                    "AUTOLOGIN_CONF": str(tmp / "autologin.conf"),
+                    "KILIX": str(engine),
+                    "KILIX_DATA_HOME": str(data),
+                    "KILIX_DIR": str(kilix),
+                    "KILIX_LINK": str(tmp / "kilix-link"),
+                    "PATH": f"{tmp}{os.pathsep}{env['PATH']}",
+                    "SESSION_BIN_DST": str(tmp / "pleb-session"),
+                    "XSESSION_DST": str(tmp / "pleb.desktop"),
+                }
+            )
+            result = subprocess.run(
+                [str(ROOT / "bin/pleb"), "status"],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self.assertIn(
+                "logs     : on, scrubbed, 8 MiB per pane", result.stdout
+            )
+            self.assertIn(
+                "voice    : read-aloud on, dictation on; synthesizer ok, "
+                "libvosk ok, model model-en ok",
+                result.stdout,
+            )
+
     def test_session_truthy_respawn_values_match_kiosk_status_semantics(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
@@ -468,29 +533,52 @@ class PlebBehaviorTests(unittest.TestCase):
             count = tmp / "launch-count"
             write_executable(
                 kilix,
-                f"#!/bin/sh\nprintf 'launch\\n' >>{count!s}\nexit 1\n",
+                (
+                    f"#!/bin/sh\nprintf 'launch\\n' >>{count!s}\n"
+                    f"[ \"$(wc -l <{count!s})\" -lt 2 ] "
+                    '|| kill -TERM "$PPID"\n'
+                    "exit 1\n"
+                ),
             )
+            for command in (
+                "dbus-update-activation-environment",
+                "xprop",
+                "xset",
+                "xsetroot",
+            ):
+                write_executable(tmp / command, "#!/bin/sh\nexit 0\n")
             env = clean_env(tmp)
+            env["PATH"] = f"{tmp}{os.pathsep}{env['PATH']}"
             env.update(
                 {
+                    # Avoid starting or contacting a D-Bus daemon merely to
+                    # test the shell's respawn loop.
+                    "DBUS_SESSION_BUS_ADDRESS": (
+                        f"unix:path={tmp / 'missing-session-bus'}"
+                    ),
                     "DISPLAY": ":999",
                     "KILIX": str(kilix),
                     "PLEB_LOG": str(tmp / "session.log"),
                     "PLEB_NO_FILL": "1",
                     "PLEB_RESPAWN": "true",
+                    # This test exercises the Kilix respawn policy, not window
+                    # manager discovery.  On hosts with Openbox installed, the
+                    # default auto policy can spend its full five-second
+                    # readiness timeout probing the deliberately absent
+                    # display before Kilix is launched.
+                    "PLEB_WM": "none",
                 }
             )
             result = subprocess.run(
-                # The first crash backs off for two seconds. Leave enough
-                # startup margin for this assertion on a busy parallel CI host.
-                ["timeout", "4.5", str(ROOT / "bin/pleb-session")],
+                [str(ROOT / "bin/pleb-session")],
                 cwd=ROOT,
                 env=env,
                 text=True,
                 capture_output=True,
+                timeout=15,
             )
-            self.assertEqual(result.returncode, 124)
-            self.assertGreaterEqual(count.read_text().count("launch"), 2)
+            self.assertEqual(result.returncode, -signal.SIGTERM)
+            self.assertEqual(count.read_text().count("launch"), 2)
 
             count.unlink()
             env["PLEB_RESPAWN"] = "off"
