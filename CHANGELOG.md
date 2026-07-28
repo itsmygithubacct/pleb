@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.6 — unreleased
+
+Voice work lands on top of the pending 0.1.5 coordinated release; 0.1.5's pin
+closure is cut first and is not modified here.
+
+- Install `espeak-ng` for Kilix's read-aloud widget, and attempt the optional
+  `mbrola` quality tier separately: `mbrola` is Debian contrib and its voice
+  databases are non-free, so a machine with neither component enabled installs
+  the default engine and reports the tier as unavailable instead of failing the
+  install. Capture needs no new package — `pulseaudio-utils` was already
+  installed for the volume widget.
+- Install Kilix's pinned Kilix Voice closure during `pleb install` and publish
+  `kilix-tts` and `kilix-stt` on `PATH`. Unlike every other component install
+  this one is allowed to fail: a closure that cannot install dictation is
+  retried for read-aloud alone, and a closure that cannot install at all dims
+  the two widgets rather than stopping the install. `PLEB_INSTALL_VOICE_MODEL=0`
+  installs read-aloud without the speech library and acoustic model.
+- Report voice in `pleb status` — widgets, engines, daemon state from Kilix,
+  plus whether the synthesizer, speech library and selected model are actually
+  present — alongside the existing session-logging line.
+- Document recovery for "no speech / no microphone" in `docs/RECOVERY.md`,
+  including that the microphone is click-to-talk and never submits what it
+  hears.
+
 ## 0.1.5 — unreleased
 
 Version numbers 0.1.3 and 0.1.4 were never coordinated stack releases; Pleb goes

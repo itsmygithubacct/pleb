@@ -170,6 +170,41 @@ print('%s, %s, %s per pane' % (
     else
         info "logs     : unknown (shared settings unreadable)"
     fi
+    local voice_state voice_speech voice_library voice_model
+    # Kilix owns the widget settings and the daemon probe, so ask it for those
+    # instead of keeping a second reader of either here. What it does not report
+    # is whether the packages and pinned downloads Pleb provisioned actually
+    # landed — the difference between a working widget and a dimmed one.
+    voice_state="$("$KILIX_DEFAULT" voice status 2>/dev/null | sed -n 's/^voice: //p')" \
+        || voice_state=""
+    if [ -n "$voice_state" ]; then
+        if command -v espeak-ng >/dev/null 2>&1 || command -v espeak >/dev/null 2>&1; then
+            voice_speech="synthesizer ok"
+        else
+            voice_speech="synthesizer missing"
+        fi
+        if [ -f "$KILIX_DATA_HOME/voice/lib/current/libvosk.so" ]; then
+            voice_library="libvosk ok"
+        else
+            voice_library="libvosk missing"
+        fi
+        voice_model="$(
+            python3 -c "
+import sys
+sys.path.insert(0, '$KILIX_DIR/config')
+from kilix_sdk import settings
+print(settings.stt_model())
+" 2>/dev/null
+        )" || voice_model=""
+        if [ -n "$voice_model" ] && [ -d "$KILIX_DATA_HOME/voice/models/$voice_model" ]; then
+            voice_model="model $voice_model ok"
+        else
+            voice_model="model ${voice_model:-unknown} missing"
+        fi
+        info "voice    : $voice_state; $voice_speech, $voice_library, $voice_model"
+    else
+        info "voice    : unknown (this Kilix has no voice command)"
+    fi
     if [ -f "$AUTOLOGIN_CONF" ]; then
         info "autologin: ON  -> $(grep -sE '^autologin-user=' "$AUTOLOGIN_CONF" | cut -d= -f2)"
     else
