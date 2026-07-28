@@ -157,6 +157,15 @@ TMUX_CLI_BIN="$HOME/.local/bin/tb"
 TMUX_TUI_STAMP="$KILIX_STATE_DIRECTORY/tmux-tui-install.refs"
 TMUX_TUI_LINK="${TMUX_TUI_LINK:-/usr/local/bin/tmux-tui}"
 TMUX_CLI_LINK="${TMUX_CLI_LINK:-/usr/local/bin/tb}"
+# Kilix installs its pinned read-aloud/dictation closure under the same user
+# prefix; both TUIs come out of one install, alongside the arbiter daemon the
+# tab-bar widgets talk to. Unlike the closures above, voice is allowed to be
+# absent — see install_kilix_voice — so these paths are checked before they are
+# published rather than asserted afterwards.
+KILIX_VOICE_TTS_BIN="$HOME/.local/bin/kilix-tts"
+KILIX_VOICE_STT_BIN="$HOME/.local/bin/kilix-stt"
+KILIX_VOICE_TTS_LINK="${KILIX_VOICE_TTS_LINK:-/usr/local/bin/kilix-tts}"
+KILIX_VOICE_STT_LINK="${KILIX_VOICE_STT_LINK:-/usr/local/bin/kilix-stt}"
 # Kilix owns the pinned broker source and its private native build. Pleb exposes
 # the manager through the already-published `kilix pty` command instead of a raw
 # broker link whose default runtime could diverge from the active Kilix session.

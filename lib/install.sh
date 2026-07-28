@@ -53,11 +53,20 @@ ensure_system_deps() {
         fontconfig fonts-dejavu-core
         python3-pil python3-xlib python3-websockets
         pulseaudio pulseaudio-utils pulsemixer alsa-utils ffmpeg xauth zenity
-        zstd
+        zstd espeak-ng
         dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
         fluidsynth fluid-soundfont-gm
     )
     _install_missing_apt_packages "Pleb runtime dependencies" "${deps[@]}"
+    # Read-aloud's optional quality tier: `mbrola` is contrib and its voice
+    # databases are non-free, so a stock Debian with neither component enabled
+    # cannot resolve them — and one unresolvable name fails the whole apt-get
+    # transaction. Kept out of the required set and tolerated here, because
+    # espeak-ng alone is the default engine and Kilix falls back to it when an
+    # mbrola voice is missing. Capture needs no new package: pulseaudio-utils
+    # (parec/pacat) is already installed for the volume widget.
+    _install_missing_apt_packages "read-aloud mbrola voices" mbrola mbrola-us1 \
+        || warn "mbrola voices unavailable (enable Debian's contrib and non-free components to install them); read-aloud uses espeak-ng"
 }
 
 ensure_kilix_build_deps() {
@@ -164,6 +173,34 @@ install_tmux_tui() {
         || die "tmux-tui installation failed"
     [ -x "$TMUX_TUI_BIN" ] && [ -x "$TMUX_CLI_BIN" ] \
         || die "tmux-tui install did not produce tmux-tui and tb commands"
+}
+
+# install_kilix_voice — install Kilix's pinned read-aloud/dictation closure.
+# The only component install here that is allowed to fail: kilix-voice is pinned
+# by a commit that may not be published yet, dictation additionally needs a
+# verified libvosk and a 41 MB acoustic model, and neither is worth a session.
+# A missing engine dims the two tab-bar widgets and nothing else, so this
+# reports what is unavailable and returns success. Read-aloud needs neither the
+# library nor the model, so a closure that cannot install dictation is retried
+# without it rather than abandoned.
+install_kilix_voice() {
+    local installer="$KILIX_DIR/scripts/install-kilix-voice.sh"
+    if [ ! -f "$installer" ] || [ -L "$installer" ] || [ ! -x "$installer" ]; then
+        warn "Kilix Voice installer is missing or unsafe: $installer"
+        warn "read-aloud and dictation stay unavailable; the rest of Kilix is unaffected"
+        return 0
+    fi
+    log "installing Kilix's pinned read-aloud and dictation closure"
+    if [ "${PLEB_INSTALL_VOICE_MODEL:-1}" != 1 ]; then
+        log "PLEB_INSTALL_VOICE_MODEL=0: skipping the speech library and model"
+    elif KILIX_VOICE_PREFIX="$HOME/.local" "$KILIX_DIR/kilix" voice install; then
+        return 0
+    else
+        warn "the pinned speech library or model is unavailable; dictation stays off"
+    fi
+    KILIX_VOICE_PREFIX="$HOME/.local" \
+        "$KILIX_DIR/kilix" voice install --without-dictation \
+        || warn "Kilix Voice installation failed; run 'kilix voice doctor' for the reason"
 }
 
 install_pty_broker() {
@@ -559,6 +596,7 @@ do_install() {
     install_pty_broker
     install_kilix_temps
     install_tmux_tui
+    install_kilix_voice
     if [ ! -f "$KILIX_DIR/kilix-settings" ] \
             || [ -L "$KILIX_DIR/kilix-settings" ]; then
         die "missing or unsafe Kilix settings TUI: $KILIX_DIR/kilix-settings"
@@ -594,6 +632,19 @@ do_install() {
 
     log "linking tmux-cli command alias -> $TMUX_CLI_LINK"
     link_command "$TMUX_CLI_BIN" "$TMUX_CLI_LINK" "tb"
+
+    # One closure installs both TUIs, so either both are there or neither is; a
+    # link to an absent target would only turn a dimmed widget into a broken
+    # command.
+    if [ -x "$KILIX_VOICE_TTS_BIN" ] && [ -x "$KILIX_VOICE_STT_BIN" ]; then
+        log "linking kilix-tts command -> $KILIX_VOICE_TTS_LINK"
+        link_command "$KILIX_VOICE_TTS_BIN" "$KILIX_VOICE_TTS_LINK" "kilix-tts"
+
+        log "linking kilix-stt command -> $KILIX_VOICE_STT_LINK"
+        link_command "$KILIX_VOICE_STT_BIN" "$KILIX_VOICE_STT_LINK" "kilix-stt"
+    else
+        warn "Kilix Voice is not installed; kilix-tts and kilix-stt stay off PATH"
+    fi
 
     # and `pleb` itself, so `pleb update` / `pleb status` etc. work anywhere
     # (bin/pleb resolves its checkout through the symlink via readlink -f)
@@ -660,6 +711,18 @@ do_uninstall() {
             && [ "$(readlink "$TMUX_CLI_LINK")" = "$TMUX_CLI_BIN" ]; then
         log "removing tb command symlink $TMUX_CLI_LINK"
         run_root rm -f "$TMUX_CLI_LINK"
+        removed=1
+    fi
+    if [ -L "$KILIX_VOICE_TTS_LINK" ] \
+            && [ "$(readlink "$KILIX_VOICE_TTS_LINK")" = "$KILIX_VOICE_TTS_BIN" ]; then
+        log "removing kilix-tts command symlink $KILIX_VOICE_TTS_LINK"
+        run_root rm -f "$KILIX_VOICE_TTS_LINK"
+        removed=1
+    fi
+    if [ -L "$KILIX_VOICE_STT_LINK" ] \
+            && [ "$(readlink "$KILIX_VOICE_STT_LINK")" = "$KILIX_VOICE_STT_BIN" ]; then
+        log "removing kilix-stt command symlink $KILIX_VOICE_STT_LINK"
+        run_root rm -f "$KILIX_VOICE_STT_LINK"
         removed=1
     fi
     # likewise the pleb command symlink, only if it points at our checkout
