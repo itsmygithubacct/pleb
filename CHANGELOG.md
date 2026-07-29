@@ -2,8 +2,10 @@
 
 ## 0.1.6 — unreleased
 
-Voice work lands on top of the pending 0.1.5 coordinated release; 0.1.5's pin
-closure is cut first and is not modified here.
+Version numbers 0.1.3, 0.1.4, and 0.1.5 were never coordinated stack releases;
+Pleb goes 0.1.2 → 0.1.6 alongside Plebian-OS, Kilix, and Kilix-95. 0.1.5 was
+prepared but never built, accepted, or tagged, so its entries are folded in here
+rather than left under a number nothing ships. See Plebian-OS RELEASING.md.
 
 - Install `espeak-ng` for Kilix's read-aloud widget, and attempt the optional
   `mbrola` quality tier separately: `mbrola` is Debian contrib and its voice
@@ -23,12 +25,6 @@ closure is cut first and is not modified here.
 - Document recovery for "no speech / no microphone" in `docs/RECOVERY.md`,
   including that the microphone is click-to-talk and never submits what it
   hears.
-
-## 0.1.5 — unreleased
-
-Version numbers 0.1.3 and 0.1.4 were never coordinated stack releases; Pleb goes
-0.1.2 → 0.1.5 alongside Plebian-OS, Kilix, and Kilix-95. See Plebian-OS
-RELEASING.md.
 
 - Install the shared clickable-chrome settings file at
   `~/.local/gpu_terminal/settings.conf` and symlink `kilix-settings` onto
