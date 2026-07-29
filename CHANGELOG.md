@@ -7,6 +7,9 @@ Pleb goes 0.1.2 → 0.1.6 alongside Plebian-OS, Kilix, and Kilix-95. 0.1.5 was
 prepared but never built, accepted, or tagged, so its entries are folded in here
 rather than left under a number nothing ships. See Plebian-OS RELEASING.md.
 
+- Support **Kilix Cap desktop sessions**: the session layer accepts `cap` as a
+  desktop provider and passes its `KILIX_CAP_*` configuration through, so a Pleb
+  session can run Kilix Cap in place of external Kilix 95.
 - Install `espeak-ng` for Kilix's read-aloud widget, and attempt the optional
   `mbrola` quality tier separately: `mbrola` is Debian contrib and its voice
   databases are non-free, so a machine with neither component enabled installs
