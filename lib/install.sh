@@ -434,7 +434,7 @@ install_pleb_artwork_bundle() {
 _pleb_desktop_state_dir() {
     local state_dir data_root
     case "${KILIX_DESKTOP_PROVIDER:-auto}" in
-        builtin|external) ;;
+        builtin|external|xp|kilix-xp) ;;
         auto)
             if [ -f "$KILIX95_DIR/main.py" ]; then
                 :
@@ -443,7 +443,7 @@ _pleb_desktop_state_dir() {
             else
                 return 1
             fi ;;
-        none|off|disabled|command|custom|cap|kilix-cap|mansion)
+        none|off|disabled|command|custom|cap|kilix-cap|mansion|tui|kilix-tui)
             return 1 ;;
         *)
             die "unknown KILIX_DESKTOP_PROVIDER=${KILIX_DESKTOP_PROVIDER:-}" ;;
