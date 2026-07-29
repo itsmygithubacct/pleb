@@ -152,15 +152,16 @@ ensure_kilix95() {
     fi
 }
 
-install_kilix_temps() {
-    local installer="$KILIX_DIR/scripts/install-kilix-temps.sh"
+install_kilix_tui_utils() {
+    local installer="$KILIX_DIR/scripts/install-kilix-tui-utils.sh"
     [ -f "$installer" ] && [ ! -L "$installer" ] && [ -x "$installer" ] \
-        || die "Kilix Temps installer is missing or unsafe: $installer"
-    log "installing Kilix's pinned graphical thermal dashboard"
-    KILIX_TEMPS_PREFIX="$HOME/.local" "$KILIX_DIR/kilix" temps --install-only \
-        || die "Kilix Temps installation failed"
-    [ -x "$KILIX_TEMPS_BIN" ] && [ -f "$KILIX_TEMPS_LIBRARY" ] \
-        || die "Kilix Temps install did not produce its executable and native library"
+        || die "kilix-tui-utils installer is missing or unsafe: $installer"
+    log "installing Kilix's unified terminal utilities"
+    KILIX_TUI_UTILS_PREFIX="$HOME/.local" \
+        "$installer" --print-path >/dev/null \
+        || die "kilix-tui-utils installation failed"
+    [ -x "$KILIX_TEMPS_BIN" ] && [ -x "$KILIX_MEMORY_BIN" ] \
+        || die "kilix-tui-utils did not produce Temps and Memory commands"
 }
 
 install_tmux_tui() {
@@ -594,7 +595,7 @@ do_install() {
     ensure_system_deps
     ensure_kilix   # fresh-clone kilix + set up an engine if not already present
     install_pty_broker
-    install_kilix_temps
+    install_kilix_tui_utils
     install_tmux_tui
     install_kilix_voice
     if [ ! -f "$KILIX_DIR/kilix-settings" ] \

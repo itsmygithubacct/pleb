@@ -144,11 +144,10 @@ KILIX_LINK="${KILIX_LINK:-/usr/local/bin/kilix}"
 PLEB_LINK="${PLEB_LINK:-/usr/local/bin/pleb}"
 # Shared status-widget and pane-button TUI supplied by the Kilix checkout.
 KILIX_SETTINGS_LINK="${KILIX_SETTINGS_LINK:-/usr/local/bin/kilix-settings}"
-# Kilix installs its pinned thermal dashboard under the invoking user's local
-# prefix; Pleb publishes a stable system command for desktop/login PATHs.
+# kilix-tui-utils installs both dashboards under the invoking user's local
+# prefix; Pleb publishes the thermal command for desktop/login PATHs.
 KILIX_TEMPS_BIN="$HOME/.local/bin/kilix-temps"
-KILIX_TEMPS_LIBRARY="$HOME/.local/lib/kilix-temps/libsoft-raster.so"
-KILIX_TEMPS_STAMP="$KILIX_STATE_DIRECTORY/kilix-temps-install.refs"
+KILIX_MEMORY_BIN="$HOME/.local/bin/kilix-memory"
 KILIX_TEMPS_LINK="${KILIX_TEMPS_LINK:-/usr/local/bin/kilix-temps}"
 # Kilix installs its pinned tmux-tui/tmux-cli source closure under the same
 # user prefix. Pleb publishes both commands for login shells and system menus.
@@ -223,7 +222,8 @@ KILIX95_BRANCH="${KILIX95_BRANCH:-}"   # empty = the repo's default branch
 KILIX95_REF="${KILIX95_REF:-}"         # optional full commit SHA
 KILIX95_ALLOW_MUTABLE_REF="${KILIX95_ALLOW_MUTABLE_REF:-0}"
 KILIX95_ALLOW_UNPINNED_INSTALL="${KILIX95_ALLOW_UNPINNED_INSTALL:-0}"
-export KILIX_DIR KILIX_DEFAULT KILIX95_DIR KILIX_CAP_DIR KILIX_TUI_UTILS_DIR KILIX_TEMPS_BIN
+export KILIX_DIR KILIX_DEFAULT KILIX95_DIR KILIX_CAP_DIR KILIX_TUI_UTILS_DIR
+export KILIX_TEMPS_BIN KILIX_MEMORY_BIN
 export TMUX_TUI_BIN TMUX_CLI_BIN KILIX_PTY_BROKER_BUILD KILIX_PTY_BROKER_BIN
 
 # --- pretty output -----------------------------------------------------------

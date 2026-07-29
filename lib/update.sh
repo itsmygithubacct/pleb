@@ -503,8 +503,7 @@ _update_transaction_rollback() {
     _restore_update_path "$stamp" fork-stamp file || failed=1
     _restore_update_path "$legacy_stamp" legacy-fork-stamp file || failed=1
     _restore_update_path "$KILIX_TEMPS_BIN" kilix-temps-bin file || failed=1
-    _restore_update_path "$KILIX_TEMPS_LIBRARY" kilix-temps-library file || failed=1
-    _restore_update_path "$KILIX_TEMPS_STAMP" kilix-temps-stamp file || failed=1
+    _restore_update_path "$KILIX_MEMORY_BIN" kilix-memory-bin file || failed=1
     _restore_update_path "$TMUX_TUI_BIN" tmux-tui-bin file || failed=1
     _restore_update_path "$TMUX_CLI_BIN" tmux-cli-bin file || failed=1
     _restore_update_path "$TMUX_TUI_STAMP" tmux-tui-stamp file || failed=1
@@ -601,8 +600,7 @@ _update_transaction_begin() {
     _snapshot_update_path "$stamp" fork-stamp
     _snapshot_update_path "$legacy_stamp" legacy-fork-stamp
     _snapshot_update_path "$KILIX_TEMPS_BIN" kilix-temps-bin
-    _snapshot_update_path "$KILIX_TEMPS_LIBRARY" kilix-temps-library
-    _snapshot_update_path "$KILIX_TEMPS_STAMP" kilix-temps-stamp
+    _snapshot_update_path "$KILIX_MEMORY_BIN" kilix-memory-bin
     _snapshot_update_path "$TMUX_TUI_BIN" tmux-tui-bin
     _snapshot_update_path "$TMUX_CLI_BIN" tmux-cli-bin
     _snapshot_update_path "$TMUX_TUI_STAMP" tmux-tui-stamp
@@ -1097,10 +1095,9 @@ do_update() {
     # either component or the build fails, the EXIT transaction restores both.
     _update_kilix95 || die "kilix 95 update failed"
 
-    # The selected Kilix commit transitively pins the dashboard and its three
-    # graphical dependencies. Reconcile that closure inside the same rollback
-    # transaction as the engine/provider update.
-    install_kilix_temps
+    # The selected Kilix commit transitively pins the unified utility checkout.
+    # Reconcile its launchers inside the engine/provider update transaction.
+    install_kilix_tui_utils
     install_tmux_tui
     install_pty_broker
 

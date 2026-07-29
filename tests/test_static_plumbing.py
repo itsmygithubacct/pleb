@@ -228,10 +228,11 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("build-essential", install)
         self.assertIn('python3 "$KILIX_DIR/kilix-settings" --ensure', install)
         self.assertIn('link_command "$KILIX_DIR/kilix-settings"', install)
-        self.assertIn('"$KILIX_DIR/kilix" temps --install-only', install)
+        self.assertIn('"$installer" --print-path', install)
         self.assertIn('link_command "$KILIX_TEMPS_BIN"', install)
-        self.assertIn("KILIX_TEMPS_LIBRARY", common)
-        self.assertIn("KILIX_TEMPS_STAMP", common)
+        self.assertIn("KILIX_MEMORY_BIN", common)
+        self.assertNotIn("KILIX_TEMPS_LIBRARY", common)
+        self.assertNotIn("KILIX_TEMPS_STAMP", common)
         self.assertIn("tmux", install)
         self.assertIn('"$KILIX_DIR/kilix" tmux --install-only --with-tb', install)
         self.assertIn('link_command "$TMUX_TUI_BIN"', install)
@@ -241,8 +242,7 @@ class PlebPlumbingTests(unittest.TestCase):
         update = (ROOT / "lib" / "update.sh").read_text()
         managed_paths = (
             ("KILIX_TEMPS_BIN", "kilix-temps-bin"),
-            ("KILIX_TEMPS_LIBRARY", "kilix-temps-library"),
-            ("KILIX_TEMPS_STAMP", "kilix-temps-stamp"),
+            ("KILIX_MEMORY_BIN", "kilix-memory-bin"),
             ("TMUX_TUI_BIN", "tmux-tui-bin"),
             ("TMUX_CLI_BIN", "tmux-cli-bin"),
             ("TMUX_TUI_STAMP", "tmux-tui-stamp"),

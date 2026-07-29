@@ -113,10 +113,10 @@ cmd_status() {
     fi
     if [ -L "$KILIX_LINK" ]; then info "kilix cmd: $KILIX_LINK -> $(readlink "$KILIX_LINK")"
     else info "kilix cmd: not linked (run: pleb install)"; fi
-    if [ -x "$KILIX_TEMPS_BIN" ] && [ -f "$KILIX_TEMPS_LIBRARY" ]; then
-        info "temps    : installed at $KILIX_TEMPS_BIN"
+    if [ -x "$KILIX_TEMPS_BIN" ] && [ -x "$KILIX_MEMORY_BIN" ]; then
+        info "tools    : Temps and Memory installed from kilix-tui-utils"
     else
-        info "temps    : missing (run: pleb install)"
+        info "tools    : Temps or Memory missing (run: pleb install)"
     fi
     if [ -x "$TMUX_TUI_BIN" ] && [ -x "$TMUX_CLI_BIN" ]; then
         info "tmux     : manager $TMUX_TUI_BIN; cli alias $TMUX_CLI_BIN"
@@ -281,10 +281,10 @@ cmd_doctor() {
             info "[--]  no valid EWMH window manager on $DISPLAY (pleb starts its own)"
         fi
     fi
-    if [ -x "$KILIX_TEMPS_BIN" ] && [ -f "$KILIX_TEMPS_LIBRARY" ]; then
-        info "[ok]  Kilix Temps graphical dashboard"
+    if [ -x "$KILIX_TEMPS_BIN" ] && [ -x "$KILIX_MEMORY_BIN" ]; then
+        info "[ok]  Kilix Temps and Memory dashboards"
     else
-        info "[!!]  Kilix Temps is not installed — run: pleb install"; ok=0
+        info "[!!]  Kilix Temps or Memory is not installed — run: pleb install"; ok=0
     fi
     if command -v Xephyr >/dev/null 2>&1; then info "[ok]  Xephyr (nested testing)"
     else info "[--]  Xephyr absent — 'pleb test' will use a spare VT instead"; fi
