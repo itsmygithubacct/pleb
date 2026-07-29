@@ -54,12 +54,12 @@ revalidated even when an engine is already runnable. For automation, set
 manifests always supply a verified pair.
 
 `pleb install` also initializes and builds Kilix's pinned persistent PTY broker,
-then installs its exact, transitively pinned Kilix Temps and tmux-tui source
-closures. It symlinks `kilix`, `kilix-settings`, `kilix-temps`, `tmux-tui`, and
-tmux-cli's `tb.py` as `tb` onto your `PATH` (`/usr/local/bin` by default). The
-`kilix pty` session manager, dashboard, and Tmux Manager are therefore ready
-when either desktop Start menu first uses them, without relying on a
-pre-existing developer checkout.
+then installs the single pinned `kilix-tui-utils` checkout (including Temps and
+Memory) and the tmux-tui source closure. It symlinks `kilix`,
+`kilix-settings`, `kilix-temps`, `tmux-tui`, and tmux-cli's `tb.py` as `tb`
+onto your `PATH` (`/usr/local/bin` by default). The `kilix pty` session manager,
+dashboards, and Tmux Manager are therefore ready when either desktop Start menu
+first uses them, without relying on separate per-dashboard source caches.
 
 For a standalone install, Pleb validates and copies the approved Plebian
 wallpaper to
@@ -114,7 +114,7 @@ log in. To go back, log out and pick your usual session again.
 |---|---|
 | `pleb doctor` | Check the engine, X tools, and greeter are ready. |
 | `pleb test [opts]` | Launch the session in a **throwaway** X server (see below). |
-| `pleb install` | Clone Kilix + engine, build the pinned Kilix Temps closure, put their commands on `PATH`, and add "Pleb" to LightDM. *(sudo)* |
+| `pleb install` | Clone Kilix + engine, install pinned unified terminal utilities, put their commands on `PATH`, and add "Pleb" to LightDM. *(sudo)* |
 | `pleb uninstall` | Remove both, and any autologin config. *(sudo)* |
 | `pleb autologin on [user]` | Boot straight into Pleb — no greeter (kiosk). *(sudo)* |
 | `pleb autologin off` | Revert to the normal greeter. *(sudo)* |
@@ -146,8 +146,8 @@ thermometer, volume, network, calendar, date/time, battery, font-size, four-way
 split, maximize, and close controls; changes are reflected by running Kilix
 windows. The thermometer defaults to off; enable **Thermal status** in the TUI
 or run `pleb settings --set temperature=on`. It colors the hottest readable
-sensor green/yellow/red and opens a sibling or installed `kilix-temps` in a new
-tab when clicked.
+sensor green/yellow/red and opens the installed or unified-source
+`kilix-temps` in a new tab when clicked.
 
 ## Testing without risking your desktop
 
