@@ -178,8 +178,8 @@ class PlebBehaviorTests(unittest.TestCase):
                     str(data / "kilix/data"),
                     str(data / "kilix/build"),
                     str(data / "kilix/prebuilt/kitty.app"),
-                    str(source / "kilix-95"),
-                    str(source / "kilix-cap"),
+                    str(source / "kilix-desktops" / "kilix-95"),
+                    str(source / "kilix-desktops" / "kilix-cap"),
                     str(data / "kilix-95/data"),
                     str(data / "pleb/data/desktop"),
                 ],
@@ -326,8 +326,8 @@ class PlebBehaviorTests(unittest.TestCase):
                     str(data / "kilix-95/data"),
                     str(data / "pleb/data/desktop"),
                     str(source / "kilix"),
-                    str(source / "kilix-95"),
-                    str(source / "kilix-cap"),
+                    str(source / "kilix-desktops" / "kilix-95"),
+                    str(source / "kilix-desktops" / "kilix-cap"),
                 ],
             )
             session_log = data / "pleb/state/session.log"

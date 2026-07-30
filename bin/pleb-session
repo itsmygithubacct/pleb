@@ -59,7 +59,7 @@
 #   KILIX_TUI_UTILS_REF  optional full kilix-tui-utils commit SHA
 #   KILIX95_AUTO_INSTALL   allow `kilix desktop` to clone external Kilix 95
 #   KILIX95_DIR       external Kilix 95 checkout
-#                     (default: $HOME/.local/gpu_terminal/sources/kilix-95)
+#                     (default: $HOME/.local/gpu_terminal/sources/kilix-desktops/kilix-95)
 #   KILIX95_REPO      external Kilix 95 repo URL
 #   KILIX95_BRANCH    optional Kilix 95 branch
 #   KILIX95_REF       optional full Kilix 95 commit SHA
@@ -387,24 +387,44 @@ KILIX_DESKTOP_COMMAND="${KILIX_DESKTOP_COMMAND:-}"
 KILIX_DESKTOP_NAME="${KILIX_DESKTOP_NAME:-desktop}"
 KILIX_DESKTOP_FLAVOR="${KILIX_DESKTOP_FLAVOR:-}"
 KILIX_CAP_AUTO_INSTALL="${KILIX_CAP_AUTO_INSTALL:-1}"
-KILIX_CAP_DIR="${KILIX_CAP_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-cap}"
+KILIX_CAP_DIR="${KILIX_CAP_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-cap}"
 KILIX_CAP_REPO="${KILIX_CAP_REPO:-https://github.com/itsmygithubacct/kilix-cap.git}"
 KILIX_CAP_REF="${KILIX_CAP_REF:-}"
 KILIX_CAP_TRUST_EXISTING_CHECKOUT="${KILIX_CAP_TRUST_EXISTING_CHECKOUT:-0}"
 KILIX_CAP_ALLOW_MUTABLE_REF="${KILIX_CAP_ALLOW_MUTABLE_REF:-0}"
 KILIX_TUI_UTILS_AUTO_INSTALL="${KILIX_TUI_UTILS_AUTO_INSTALL:-1}"
-KILIX_TUI_UTILS_DIR="${KILIX_TUI_UTILS_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-tui-utils}"
+KILIX_TUI_UTILS_DIR="${KILIX_TUI_UTILS_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-tui-utils}"
 KILIX_TUI_UTILS_REPO="${KILIX_TUI_UTILS_REPO:-https://github.com/itsmygithubacct/kilix-tui-utils.git}"
 KILIX_TUI_UTILS_REF="${KILIX_TUI_UTILS_REF:-}"
 KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT="${KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT:-0}"
 KILIX_TUI_UTILS_ALLOW_MUTABLE_REF="${KILIX_TUI_UTILS_ALLOW_MUTABLE_REF:-0}"
 KILIX95_AUTO_INSTALL="${KILIX95_AUTO_INSTALL:-1}"
-KILIX95_DIR="${KILIX95_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-95}"
+KILIX95_DIR="${KILIX95_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-95}"
 KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
 KILIX95_BRANCH="${KILIX95_BRANCH:-}"
 KILIX95_REF="${KILIX95_REF:-}"
 KILIX95_ALLOW_MUTABLE_REF="${KILIX95_ALLOW_MUTABLE_REF:-0}"
 KILIX95_ALLOW_UNPINNED_INSTALL="${KILIX95_ALLOW_UNPINNED_INSTALL:-0}"
+
+# An already-running login manager may retain the former workspace defaults.
+# Re-home only an exact path that disappeared in the move.
+_pleb_rehome_legacy_desktop_dir() {
+    local variable="$1" legacy="$2" canonical="$3" value
+    value="${!variable:-}"
+    if [ "$value" = "$legacy" ] && [ ! -e "$legacy" ] && [ ! -L "$legacy" ]; then
+        printf -v "$variable" '%s' "$canonical"
+    fi
+}
+_pleb_rehome_legacy_desktop_dir \
+    KILIX95_DIR "$GPU_TERMINAL_SOURCE_HOME/kilix-95" \
+    "$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-95"
+_pleb_rehome_legacy_desktop_dir \
+    KILIX_CAP_DIR "$GPU_TERMINAL_SOURCE_HOME/kilix-cap" \
+    "$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-cap"
+_pleb_rehome_legacy_desktop_dir \
+    KILIX_TUI_UTILS_DIR "$GPU_TERMINAL_SOURCE_HOME/kilix-tui-utils" \
+    "$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-tui-utils"
+unset -f _pleb_rehome_legacy_desktop_dir
 export KILIX_DIR KILIX KILIX95_DIR KILIX_CAP_DIR KILIX_TUI_UTILS_DIR
 
 # --- logging -----------------------------------------------------------------

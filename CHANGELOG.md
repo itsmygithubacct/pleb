@@ -10,6 +10,14 @@ rather than left under a number nothing ships. See Plebian-OS RELEASING.md.
 - Support **Kilix Cap desktop sessions**: the session layer accepts `cap` as a
   desktop provider and passes its `KILIX_CAP_*` configuration through, so a Pleb
   session can run Kilix Cap in place of external Kilix 95.
+- Support **Kilix TUI desktop sessions**: the session layer accepts `tui`,
+  carries the `KILIX_TUI_UTILS_*` source/pin contract into Kilix, and installs
+  the pinned unified checkout so the text-native desktop is ready on first
+  selection. Kilix TUI is an optional Kilix-pinned desktop, not an additional
+  coordinated release-core repository.
+- Treat the `xp` and `kilix-xp` session-provider aliases as requiring the
+  external Kilix 95 checkout during standalone installation, matching the
+  launcher's existing XP selection behavior.
 - Install `espeak-ng` for Kilix's read-aloud widget, and attempt the optional
   `mbrola` quality tier separately: `mbrola` is Debian contrib and its voice
   databases are non-free, so a machine with neither component enabled installs
