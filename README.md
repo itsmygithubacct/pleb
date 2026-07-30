@@ -133,10 +133,9 @@ the specific file operations, so you'll be prompted once.
 
 Set `PLEB_DESKTOP=1 KILIX_DESKTOP_PROVIDER=xp` to boot the Pleb login session
 into Kilix XP. Use `cap` for the optional Kilix Cap mansion or `tui` for the
-optional text-native Kilix TUI desktop. Kilix prepares each from its own
-immutable pin; the release-default Kilix 95 provider remains available
-alongside them. Kilix Land is also a full desktop, but until native `land`
-wiring is added it uses Kilix’s generic `command` provider as shown below.
+optional text-native Kilix TUI desktop, and `land` for the walkable Kilix Land
+desktop. Kilix prepares each from its own immutable pin; the release-default
+Kilix 95 provider remains available alongside them.
 
 For a persistent per-user XP login desktop, put these two lines in
 `~/.local/gpu_terminal/pleb/config/session.env`, run `pleb install` if
@@ -406,7 +405,7 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `PLEB_BG` | `#101010` | Root-window solid colour. |
 | `PLEB_RESPAWN` | `0` | If `1`, relaunch kilix when it exits (hard kiosk). |
 | `PLEB_DESKTOP` | `0` | If truthy, boot directly into `kilix desktop`; `0` gives a plain shell. |
-| `KILIX_DESKTOP_PROVIDER` | `auto` | Prefer a compatible installed external provider, else bundled; or force `builtin`, `external`, `xp`, `cap`, `tui`, `command`, or `none`. |
+| `KILIX_DESKTOP_PROVIDER` | `auto` | Prefer a compatible installed external provider, else bundled; or force `builtin`, `external`, `xp`, `cap`, `tui`, `land`, `command`, or `none`. |
 | `KILIX_DESKTOP_COMMAND` | *(none)* | Shell command run by `kilix desktop` when provider is `command`. |
 | `KILIX_DESKTOP_NAME` | `desktop` | Label/tab title for custom desktop providers. |
 | `KILIX_DESKTOP_FLAVOR` | *(provider default)* | First-run Kilix 95 appearance, `95` or `xp`; this does not enable a Pleb desktop session by itself. |
@@ -422,6 +421,16 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `KILIX_TUI_UTILS_REF` | *(Kilix-pinned commit)* | Optional exact Kilix TUI utilities commit override. |
 | `KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT` | `0` | Trust a nonstandard existing TUI checkout only when explicitly enabled. |
 | `KILIX_TUI_UTILS_ALLOW_MUTABLE_REF` | `0` | Trust a mutable TUI tag/branch only when explicitly enabled. |
+| `KILIX_LAND_DESKTOP_AUTO_INSTALL` | `1` | Lets Kilix download and build Kilix Land on first launch. |
+| `KILIX_LAND_DESKTOP_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-land-desktop` | Kilix Land source checkout and runtime asset root. |
+| `KILIX_LAND_DESKTOP_REPO` | `https://github.com/itsmygithubacct/kilix-land-desktop.git` | Reviewed Kilix Land source remote. |
+| `KILIX_LAND_DESKTOP_REF` | *(Kilix-pinned commit)* | Optional exact Kilix Land commit override. |
+| `KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT` | `0` | Trust a nonstandard existing Land checkout only when explicitly enabled. |
+| `KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF` | `0` | Trust a mutable Land tag/branch only when explicitly enabled. |
+| `KILIX_LAND_DESKTOP_ASSETS` | *(checkout root)* | Optional runtime asset-root override. |
+| `KILIX_LAND_DESKTOP_CONFIG_HOME` | *(XDG-derived)* | Optional absolute profile-store override. |
+| `KILIX_LAND_DESKTOP_EXTERNAL_APPS` | `1` | Set to `0` to disable launches from the walkable desktop. |
+| `KILIX_LAND_DESKTOP_AUDIO` | `1` | Set to `0` to mute the walkable desktop. |
 | `KILIX95_AUTO_INSTALL` | `1` | Lets `kilix desktop` clone external Kilix 95 when needed. |
 | `KILIX95_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-95` | External Kilix 95 checkout used for desktop sessions. |
 | `KILIX95_REPO` | `https://github.com/itsmygithubacct/kilix-95.git` | Repo cloned when Kilix 95 is needed. |
@@ -432,14 +441,12 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `PLEB_LOG` | `~/.local/gpu_terminal/pleb/state/session.log` | Session log. |
 
 Use `PLEB_DESKTOP=0` or `KILIX_DESKTOP_PROVIDER=none` for no desktop at all.
-For example, boot the current Kilix Land executable through the same Kilix
+For example, boot directly into Kilix Land through the same named provider
 facade:
 
 ```sh
 PLEB_DESKTOP=1 \
-KILIX_DESKTOP_PROVIDER=command \
-KILIX_DESKTOP_COMMAND='cd "$HOME/.local/gpu_terminal/sources/kilix-desktops/kilix-land-desktop" && exec ./kilix-land-desktop' \
-KILIX_DESKTOP_NAME='Kilix Land'
+KILIX_DESKTOP_PROVIDER=land
 ```
 
 ## Uninstall the session integration

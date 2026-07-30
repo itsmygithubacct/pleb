@@ -154,7 +154,8 @@ class PlebBehaviorTests(unittest.TestCase):
                 printf '%s\n' "$GPU_TERMINAL_SOURCE_HOME" "$GPU_TERMINAL_HOME" \
                     "$PLEB_STORAGE_HOME" "$PLEB_STATE_HOME" "$PLEB_DATA_HOME" \
                     "$KILIX_DIR" "$KILIX_DATA_HOME" "$KILIX_BUILD_DIRECTORY" "$KILIX_PREBUILT_HOME" \
-                    "$KILIX95_DIR" "$KILIX_CAP_DIR" "$KILIX95_DATA_HOME" "$KILIX_DESKTOP_DIR"
+                    "$KILIX95_DIR" "$KILIX_CAP_DIR" "$KILIX_TUI_UTILS_DIR" \
+                    "$KILIX_LAND_DESKTOP_DIR" "$KILIX95_DATA_HOME" "$KILIX_DESKTOP_DIR"
                 """
             )
             env = clean_env(tmp)
@@ -180,6 +181,8 @@ class PlebBehaviorTests(unittest.TestCase):
                     str(data / "kilix/prebuilt/kitty.app"),
                     str(source / "kilix-desktops" / "kilix-95"),
                     str(source / "kilix-desktops" / "kilix-cap"),
+                    str(source / "kilix-desktops" / "kilix-tui-utils"),
+                    str(source / "kilix-desktops" / "kilix-land-desktop"),
                     str(data / "kilix-95/data"),
                     str(data / "pleb/data/desktop"),
                 ],
@@ -262,6 +265,51 @@ class PlebBehaviorTests(unittest.TestCase):
                 observed.read_text().splitlines(),
                 [f"{name}={persisted[name]}" for name in COORDINATED_STORAGE_VARS],
             )
+
+    def test_explicit_land_provider_env_wins_over_persisted_values(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            names = (
+                "KILIX_LAND_DESKTOP_DIR",
+                "KILIX_LAND_DESKTOP_REPO",
+                "KILIX_LAND_DESKTOP_REF",
+                "KILIX_LAND_DESKTOP_ASSETS",
+                "KILIX_LAND_DESKTOP_CONFIG_HOME",
+                "KILIX_LAND_DESKTOP_EXTERNAL_APPS",
+                "KILIX_LAND_DESKTOP_AUDIO",
+            )
+            config = tmp / "session.env"
+            config.write_text(
+                "".join(f"{name}=persisted-{index}\n"
+                        for index, name in enumerate(names))
+            )
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_ROOT={ROOT!s}
+                . "$PLEB_ROOT/lib/common.sh"
+                for name in {" ".join(names)}; do
+                    printf '%s=%s\n' "$name" "${{!name}}"
+                done
+                """
+            )
+            env = clean_env(tmp)
+            env["PLEB_ENV_USER"] = str(config)
+            expected = []
+            for index, name in enumerate(names):
+                value = f"explicit-{index}"
+                env[name] = value
+                expected.append(f"{name}={value}")
+
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self.assertEqual(result.stdout.splitlines(), expected)
 
     def test_session_loads_and_exports_the_same_source_and_storage_contract(self):
         with tempfile.TemporaryDirectory() as td:
