@@ -198,7 +198,7 @@ KILIX_DESKTOP_NAME="${KILIX_DESKTOP_NAME:-desktop}"
 # Optional native Kilix Cap desktop. Kilix owns its first-use clone/build; Pleb
 # only carries these reviewed source-selection knobs into the login session.
 KILIX_CAP_AUTO_INSTALL="${KILIX_CAP_AUTO_INSTALL:-1}"
-KILIX_CAP_DIR="${KILIX_CAP_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-cap}"
+KILIX_CAP_DIR="${KILIX_CAP_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-cap}"
 KILIX_CAP_REPO="${KILIX_CAP_REPO:-https://github.com/itsmygithubacct/kilix-cap.git}"
 KILIX_CAP_REF="${KILIX_CAP_REF:-}"
 KILIX_CAP_TRUST_EXISTING_CHECKOUT="${KILIX_CAP_TRUST_EXISTING_CHECKOUT:-0}"
@@ -207,7 +207,7 @@ KILIX_CAP_ALLOW_MUTABLE_REF="${KILIX_CAP_ALLOW_MUTABLE_REF:-0}"
 # Optional Kilix TUI text desktop. Same arrangement as Cap: Kilix owns the
 # first-use clone/install; Pleb only carries the selection knobs.
 KILIX_TUI_UTILS_AUTO_INSTALL="${KILIX_TUI_UTILS_AUTO_INSTALL:-1}"
-KILIX_TUI_UTILS_DIR="${KILIX_TUI_UTILS_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-tui-utils}"
+KILIX_TUI_UTILS_DIR="${KILIX_TUI_UTILS_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-tui-utils}"
 KILIX_TUI_UTILS_REPO="${KILIX_TUI_UTILS_REPO:-https://github.com/itsmygithubacct/kilix-tui-utils.git}"
 KILIX_TUI_UTILS_REF="${KILIX_TUI_UTILS_REF:-}"
 KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT="${KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT:-0}"
@@ -216,12 +216,32 @@ KILIX_TUI_UTILS_ALLOW_MUTABLE_REF="${KILIX_TUI_UTILS_ALLOW_MUTABLE_REF:-0}"
 # Optional Kilix 95 desktop checkout. Plain Pleb shell sessions and custom
 # desktop commands do not require it; install/update touch it only when the
 # selected provider needs it or PLEB_INSTALL_KILIX95=1.
-KILIX95_DIR="${KILIX95_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-95}"
+KILIX95_DIR="${KILIX95_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-95}"
 KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
 KILIX95_BRANCH="${KILIX95_BRANCH:-}"   # empty = the repo's default branch
 KILIX95_REF="${KILIX95_REF:-}"         # optional full commit SHA
 KILIX95_ALLOW_MUTABLE_REF="${KILIX95_ALLOW_MUTABLE_REF:-0}"
 KILIX95_ALLOW_UNPINNED_INSTALL="${KILIX95_ALLOW_UNPINNED_INSTALL:-0}"
+
+# Carry old login environments across the workspace move without masking a
+# real checkout or overriding a custom provider path.
+_pleb_rehome_legacy_desktop_dir() {
+    local variable="$1" legacy="$2" canonical="$3" value
+    value="${!variable:-}"
+    if [ "$value" = "$legacy" ] && [ ! -e "$legacy" ] && [ ! -L "$legacy" ]; then
+        printf -v "$variable" '%s' "$canonical"
+    fi
+}
+_pleb_rehome_legacy_desktop_dir \
+    KILIX95_DIR "$GPU_TERMINAL_SOURCE_HOME/kilix-95" \
+    "$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-95"
+_pleb_rehome_legacy_desktop_dir \
+    KILIX_CAP_DIR "$GPU_TERMINAL_SOURCE_HOME/kilix-cap" \
+    "$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-cap"
+_pleb_rehome_legacy_desktop_dir \
+    KILIX_TUI_UTILS_DIR "$GPU_TERMINAL_SOURCE_HOME/kilix-tui-utils" \
+    "$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-tui-utils"
+unset -f _pleb_rehome_legacy_desktop_dir
 export KILIX_DIR KILIX_DEFAULT KILIX95_DIR KILIX_CAP_DIR KILIX_TUI_UTILS_DIR
 export KILIX_TEMPS_BIN KILIX_MEMORY_BIN
 export TMUX_TUI_BIN TMUX_CLI_BIN KILIX_PTY_BROKER_BUILD KILIX_PTY_BROKER_BIN
@@ -285,7 +305,7 @@ kilix95_required() {
     [ "${PLEB_INSTALL_KILIX95:-0}" = 1 ] && return 0
     desktop_enabled || return 1
     case "${KILIX_DESKTOP_PROVIDER:-auto}" in
-        external) return 0 ;;
+        external|xp|kilix-xp) return 0 ;;
         auto) [ ! -f "$KILIX_DIR/desktop/main.py" ] ;;
         *) return 1 ;;
     esac

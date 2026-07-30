@@ -424,8 +424,8 @@ install_pleb_artwork_bundle
                 )
 
     @unittest.skipUnless(
-        (ROOT.parent / "kilix-95/main.py").is_file(),
-        "sibling Kilix-95 checkout is unavailable",
+        (ROOT.parent / "kilix-desktops/kilix-95/main.py").is_file(),
+        "Kilix-95 desktop checkout is unavailable",
     )
     def test_direct_xp_provider_keeps_its_kittens_wallpaper_after_pleb_install(self):
         state_library = kilix_state_library()
@@ -452,7 +452,7 @@ install_pleb_artwork_bundle
             # The provider loads this while importing `main`; everything else
             # about its environment stays the throwaway one built above.
             direct_env["KILIX_STATE_LIBRARY"] = state_library
-            actual_kilix95 = ROOT.parent / "kilix-95"
+            actual_kilix95 = ROOT.parent / "kilix-desktops" / "kilix-95"
             direct = subprocess.run(
                 [
                     "python3",

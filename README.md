@@ -55,11 +55,13 @@ manifests always supply a verified pair.
 
 `pleb install` also initializes and builds Kilix's pinned persistent PTY broker,
 then installs the single pinned `kilix-tui-utils` checkout (including Temps and
-Memory) and the tmux-tui source closure. It symlinks `kilix`,
-`kilix-settings`, `kilix-temps`, `tmux-tui`, and tmux-cli's `tb.py` as `tb`
-onto your `PATH` (`/usr/local/bin` by default). The `kilix pty` session manager,
-dashboards, and Tmux Manager are therefore ready when either desktop Start menu
-first uses them, without relying on separate per-dashboard source caches.
+Memory) and the tmux-tui source closure. The unified installer publishes
+`kilix-tui` and its utility commands under `~/.local/bin`; Pleb also symlinks
+`kilix`, `kilix-settings`, `kilix-temps`, `tmux-tui`, and tmux-cli's `tb.py` as `tb`
+onto the system `PATH` (`/usr/local/bin` by default). The Kilix TUI
+desktop, `kilix pty` session manager, dashboards, and Tmux Manager are
+therefore ready when a desktop first uses them, without relying on separate
+per-dashboard source caches.
 
 For a standalone install, Pleb validates and copies the approved Plebian
 wallpaper to
@@ -68,7 +70,8 @@ attribution and GPL version 2 text below the adjacent `data/doc/` tree. Install
 atomically creates Pleb's isolated `$KILIX_DESKTOP_DIR/.state.json` only if it
 is absent—even when desktop launch is currently disabled, so enabling it later
 needs no reinstall. `KILIX_DESKTOP_DIR` defaults to
-`$PLEB_DATA_HOME/desktop` and is forwarded to either compatible provider;
+`$PLEB_DATA_HOME/desktop` and is forwarded to the external or bundled
+Kilix-95-compatible provider;
 provider-global `$KILIX_DATA_HOME/desktop` and `$KILIX95_DATA_HOME/desktop`
 state is never touched. Existing Pleb state—including a symlink or custom
 wallpaper—is never replaced. A Plebian-OS provisioned install passes
@@ -128,9 +131,26 @@ log in. To go back, log out and pick your usual session again.
 `install`, `uninstall`, and `autologin` need root; the CLI calls `sudo` only for
 the specific file operations, so you'll be prompted once.
 
-Set `PLEB_DESKTOP=1 KILIX_DESKTOP_PROVIDER=cap` to boot into the optional
-Kilix Cap mansion. Kilix downloads its pinned source and builds it locally on
-the first launch; the default Kilix 95 provider remains available alongside it.
+Set `PLEB_DESKTOP=1 KILIX_DESKTOP_PROVIDER=xp` to boot the Pleb login session
+into Kilix XP. Use `cap` for the optional Kilix Cap mansion or `tui` for the
+optional text-native Kilix TUI desktop. Kilix prepares each from its own
+immutable pin; the release-default Kilix 95 provider remains available
+alongside them. Kilix Land is also a full desktop, but until native `land`
+wiring is added it uses Kilix’s generic `command` provider as shown below.
+
+For a persistent per-user XP login desktop, put these two lines in
+`~/.local/gpu_terminal/pleb/config/session.env`, run `pleb install` if
+`pleb status` reports a stale launcher, then log out and select **Pleb**:
+
+```sh
+PLEB_DESKTOP=1
+KILIX_DESKTOP_PROVIDER=xp
+```
+
+`KILIX_DESKTOP_FLAVOR=xp` in Kilix’s runtime config only chooses the first-run
+look of a Kilix 95 provider that is already being launched. It does not enable
+the Pleb desktop session; `PLEB_DESKTOP=1` is the switch that replaces the
+plain fullscreen shell with `kilix desktop`.
 
 **Session logging is on by default.** Every pane's output is recorded by the
 PTY broker to `~/.local/gpu_terminal/kilix/state/transcripts/<session>.log`
@@ -291,7 +311,7 @@ pleb update --no-restart # update only; leave LightDM alone
 ```
 
 `pleb update` fast-forwards or pins `~/.local/gpu_terminal/sources/kilix`, updates the optional
-`~/.local/gpu_terminal/sources/kilix-95`
+`~/.local/gpu_terminal/sources/kilix-desktops/kilix-95`
 desktop checkout when the selected provider needs it, reconciles the Kilix-pinned
 thermal dashboard and graphics libraries, installs the configured Go toolchain
 when necessary, and rebuilds the fork. It only offers to restart
@@ -364,7 +384,7 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `KILIX95_CACHE_HOME` | `$KILIX95_STORAGE_HOME/cache` | Kilix 95 disposable cache. |
 | `KILIX95_SESSION_HOME` | `$KILIX95_STORAGE_HOME/session` | Kilix 95 live-session scratch space. |
 | `KILIX95_DATA_HOME` | `$KILIX95_STORAGE_HOME/data` | External Kilix-95 desktop data and state. |
-| `KILIX_DESKTOP_DIR` | `$PLEB_DATA_HOME/desktop` | Pleb-isolated desktop files and `.state.json`, forwarded to either provider. |
+| `KILIX_DESKTOP_DIR` | `$PLEB_DATA_HOME/desktop` | Pleb-isolated `.state.json` forwarded to the external or bundled Kilix-95-compatible provider. |
 | `KILIX_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix` | Kilix engine checkout. |
 | `KILIX` | `$KILIX_DIR/kilix` | Path to the kilix launcher. |
 | `KILIX_BRANCH` | *(repo default)* | Optional Kilix branch for install/update. |
@@ -386,17 +406,24 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `PLEB_BG` | `#101010` | Root-window solid colour. |
 | `PLEB_RESPAWN` | `0` | If `1`, relaunch kilix when it exits (hard kiosk). |
 | `PLEB_DESKTOP` | `0` | If truthy, boot directly into `kilix desktop`; `0` gives a plain shell. |
-| `KILIX_DESKTOP_PROVIDER` | `auto` | Prefer a compatible installed external provider, else bundled; or force `builtin`, `external`, `cap`, `command`, or `none`. |
+| `KILIX_DESKTOP_PROVIDER` | `auto` | Prefer a compatible installed external provider, else bundled; or force `builtin`, `external`, `xp`, `cap`, `tui`, `command`, or `none`. |
 | `KILIX_DESKTOP_COMMAND` | *(none)* | Shell command run by `kilix desktop` when provider is `command`. |
 | `KILIX_DESKTOP_NAME` | `desktop` | Label/tab title for custom desktop providers. |
+| `KILIX_DESKTOP_FLAVOR` | *(provider default)* | First-run Kilix 95 appearance, `95` or `xp`; this does not enable a Pleb desktop session by itself. |
 | `KILIX_CAP_AUTO_INSTALL` | `1` | Lets Kilix download and build Kilix Cap on first launch. |
-| `KILIX_CAP_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix-cap` | Kilix Cap source checkout. |
+| `KILIX_CAP_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-cap` | Kilix Cap source checkout. |
 | `KILIX_CAP_REPO` | `https://github.com/itsmygithubacct/kilix-cap.git` | Reviewed Kilix Cap source remote. |
 | `KILIX_CAP_REF` | *(Kilix-pinned commit)* | Optional exact Kilix Cap commit override. |
 | `KILIX_CAP_TRUST_EXISTING_CHECKOUT` | `0` | Trust a nonstandard existing Cap checkout only when explicitly enabled. |
 | `KILIX_CAP_ALLOW_MUTABLE_REF` | `0` | Trust a mutable Cap tag/branch only when explicitly enabled. |
+| `KILIX_TUI_UTILS_AUTO_INSTALL` | `1` | Lets Kilix download and install Kilix TUI and its utilities on first use. |
+| `KILIX_TUI_UTILS_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-tui-utils` | Checkout containing the Kilix TUI desktop and terminal utilities. |
+| `KILIX_TUI_UTILS_REPO` | `https://github.com/itsmygithubacct/kilix-tui-utils.git` | Reviewed Kilix TUI source remote. |
+| `KILIX_TUI_UTILS_REF` | *(Kilix-pinned commit)* | Optional exact Kilix TUI utilities commit override. |
+| `KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT` | `0` | Trust a nonstandard existing TUI checkout only when explicitly enabled. |
+| `KILIX_TUI_UTILS_ALLOW_MUTABLE_REF` | `0` | Trust a mutable TUI tag/branch only when explicitly enabled. |
 | `KILIX95_AUTO_INSTALL` | `1` | Lets `kilix desktop` clone external Kilix 95 when needed. |
-| `KILIX95_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix-95` | External Kilix 95 checkout used for desktop sessions. |
+| `KILIX95_DIR` | `$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-95` | External Kilix 95 checkout used for desktop sessions. |
 | `KILIX95_REPO` | `https://github.com/itsmygithubacct/kilix-95.git` | Repo cloned when Kilix 95 is needed. |
 | `KILIX95_BRANCH` | *(repo default)* | Optional Kilix 95 branch. |
 | `KILIX95_REF` | *(none)* | Optional exact Kilix 95 commit/tag. |
@@ -404,13 +431,15 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `KILIX95_ALLOW_UNPINNED_INSTALL` | `0` | Explicitly allow an automatic external-provider clone without `KILIX95_REF`. |
 | `PLEB_LOG` | `~/.local/gpu_terminal/pleb/state/session.log` | Session log. |
 
-Use `PLEB_DESKTOP=0` or `KILIX_DESKTOP_PROVIDER=none` for no desktop at all. To
-supply a different desktop through the same Kilix facade:
+Use `PLEB_DESKTOP=0` or `KILIX_DESKTOP_PROVIDER=none` for no desktop at all.
+For example, boot the current Kilix Land executable through the same Kilix
+facade:
 
 ```sh
 PLEB_DESKTOP=1 \
 KILIX_DESKTOP_PROVIDER=command \
-KILIX_DESKTOP_COMMAND='exec /path/to/desktop'
+KILIX_DESKTOP_COMMAND='cd "$HOME/.local/gpu_terminal/sources/kilix-desktops/kilix-land-desktop" && exec ./kilix-land-desktop' \
+KILIX_DESKTOP_NAME='Kilix Land'
 ```
 
 ## Uninstall the session integration
@@ -420,8 +449,8 @@ pleb autologin off      # if you enabled it
 pleb uninstall          # removes session integration and Pleb/Kilix command links
 ```
 
-`~/.local/gpu_terminal/sources/pleb`, `~/.local/gpu_terminal/sources/kilix`, optional
-`~/.local/gpu_terminal/sources/kilix-95`, `~/.local/gpu_terminal`, and packages installed as
+`~/.local/gpu_terminal/sources/pleb`, `~/.local/gpu_terminal/sources/kilix`, optional checkouts under
+`~/.local/gpu_terminal/sources/kilix-desktops`, `~/.local/gpu_terminal`, and packages installed as
 dependencies are left in place; remove them explicitly if you want them gone.
 
 ## Notes & limitations

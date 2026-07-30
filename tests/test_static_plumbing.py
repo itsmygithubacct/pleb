@@ -69,7 +69,8 @@ class PlebPlumbingTests(unittest.TestCase):
             self.assertIn('${GPU_TERMINAL_SOURCE_HOME:-$HOME/.local/gpu_terminal/sources}', text)
             self.assertIn('${GPU_TERMINAL_HOME:-$HOME/.local/gpu_terminal}', text)
             self.assertIn('$GPU_TERMINAL_SOURCE_HOME/kilix', text)
-            self.assertIn('$GPU_TERMINAL_SOURCE_HOME/kilix-95', text)
+            self.assertIn(
+                '$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-95', text)
         self.assertIn('chmod 0600 -- "$PLEB_LOG"', session)
         self.assertIn('mv -- "$PLEB_LOG" "$PLEB_LOG.1"', session)
         self.assertIn("`GPU_TERMINAL_SOURCE_HOME`", readme)
@@ -77,6 +78,8 @@ class PlebPlumbingTests(unittest.TestCase):
     def test_kilix95_requirement_follows_provider(self):
         checks = [
             ("external", "kilix95_required"),
+            ("xp", "kilix95_required"),
+            ("kilix-xp", "kilix95_required"),
             ("command", "! kilix95_required"),
             ("cap", "! kilix95_required"),
             ("none", "! kilix95_required"),
