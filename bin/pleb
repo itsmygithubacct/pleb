@@ -142,6 +142,22 @@ cmd_status() {
     else
         info "kilix cap: optional desktop downloads on first launch"
     fi
+    if [ -x "$HOME/.local/bin/kilix-tui" ]; then
+        info "kilix tui: installed at $HOME/.local/bin/kilix-tui"
+    elif git -C "$KILIX_TUI_UTILS_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        info "kilix tui: source at $KILIX_TUI_UTILS_DIR (installs on first launch)"
+    else
+        info "kilix tui: optional desktop downloads on first launch"
+    fi
+    if git -C "$KILIX_LAND_DESKTOP_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        if [ -x "$KILIX_LAND_DESKTOP_DIR/kilix-land-desktop" ]; then
+            info "kilix land: installed and built at $KILIX_LAND_DESKTOP_DIR"
+        else
+            info "kilix land: source at $KILIX_LAND_DESKTOP_DIR (builds on first launch)"
+        fi
+    else
+        info "kilix land: optional desktop downloads on first launch"
+    fi
     local logs_dir logs_state logs_count
     logs_dir="${KILIX_TRANSCRIPT_DIR:-$KILIX_STATE_DIRECTORY/transcripts}"
     logs_state="$(

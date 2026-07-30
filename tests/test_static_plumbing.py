@@ -34,6 +34,25 @@ class PlebPlumbingTests(unittest.TestCase):
             "KILIX_CAP_ALLOW_MUTABLE_REF=$KILIX_CAP_ALLOW_MUTABLE_REF",
             text,
         )
+        for name in (
+            "KILIX_TUI_UTILS_AUTO_INSTALL",
+            "KILIX_TUI_UTILS_DIR",
+            "KILIX_TUI_UTILS_REPO",
+            "KILIX_TUI_UTILS_REF",
+            "KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT",
+            "KILIX_TUI_UTILS_ALLOW_MUTABLE_REF",
+            "KILIX_LAND_DESKTOP_AUTO_INSTALL",
+            "KILIX_LAND_DESKTOP_DIR",
+            "KILIX_LAND_DESKTOP_REPO",
+            "KILIX_LAND_DESKTOP_REF",
+            "KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT",
+            "KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF",
+            "KILIX_LAND_DESKTOP_ASSETS",
+            "KILIX_LAND_DESKTOP_CONFIG_HOME",
+            "KILIX_LAND_DESKTOP_EXTERNAL_APPS",
+            "KILIX_LAND_DESKTOP_AUDIO",
+        ):
+            self.assertIn(f"{name}=${name}", text)
         self.assertIn("KILIX_REF=$KILIX_REF", text)
         self.assertIn("KILIX_ALLOW_MUTABLE_REF=$KILIX_ALLOW_MUTABLE_REF", text)
         self.assertIn("KILIX95_REF=$KILIX95_REF", text)
@@ -82,6 +101,8 @@ class PlebPlumbingTests(unittest.TestCase):
             ("kilix-xp", "kilix95_required"),
             ("command", "! kilix95_required"),
             ("cap", "! kilix95_required"),
+            ("tui", "! kilix95_required"),
+            ("land", "! kilix95_required"),
             ("none", "! kilix95_required"),
             ("builtin", "! kilix95_required"),
         ]
