@@ -161,12 +161,12 @@ class OpenboxWiringTests(unittest.TestCase):
         for sig in ("EXIT", "HUP", "INT", "TERM"):
             self.assertRegex(text, rf"trap .*{sig}")
 
-    def test_fullscreen_strategy_is_decided_after_wm_readiness(self):
+    def test_screen_fill_strategy_is_decided_after_wm_readiness(self):
         text = SESSION.read_text()
         wm_block = text.index("# --- window manager ---")
-        strategy = text.index("# --- fullscreen strategy ---")
+        strategy = text.index("# --- screen-fill strategy ---")
         self.assertLess(wm_block, strategy,
-                        "the WM must be ready before the fullscreen strategy is chosen")
+                        "the WM must be ready before the screen-fill strategy is chosen")
 
 
 if __name__ == "__main__":
