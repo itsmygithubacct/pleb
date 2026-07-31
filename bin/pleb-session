@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pleb-session — the "Pleb" desktop: kilix fullscreen as the only X client.
+# pleb-session — the "Pleb" desktop: screen-filling kilix as the main X client.
 #
 # This is the X session entrypoint. It is run by:
 #   - LightDM, via /usr/share/xsessions/pleb.desktop  (Exec=/usr/local/bin/pleb-session)
@@ -9,7 +9,8 @@
 # It is deliberately SELF-CONTAINED (no sourcing of the Pleb checkout) so it
 # keeps working after it is copied to /usr/local/bin.
 #
-# A no-window-manager X session: a single fullscreen kilix client. When kilix
+# A minimal X session: one screen-filling kilix with its own clickable chrome.
+# When kilix
 # exits, the X session ends (LightDM returns to the greeter), unless respawn
 # (hard-kiosk) mode keeps it alive — see PLEB_RESPAWN below.
 #
@@ -18,15 +19,16 @@
 #   GPU_TERMINAL_SETTINGS_FILE shared clickable-chrome config
 #                     (default: ~/.local/gpu_terminal/settings.conf)
 #   KILIX             path to the kilix launcher   (default: $KILIX_DIR/kilix)
-#   PLEB_KILIX_ARGS   extra args passed to kilix   (default: native fullscreen
-#                     when a WM is present; no-WM sessions use screen-fill)
+#   PLEB_KILIX_ARGS   extra args passed to kilix   (default: maximized and
+#                     undecorated when a WM is present; no-WM sessions use
+#                     fixed screen-fill geometry)
 #   PLEB_WM           window-manager policy        (default: auto)
 #                     auto    prefer Pleb-managed Openbox; fall back to the
 #                             no-WM screen-fill path if it is unavailable
 #                     openbox require Pleb-managed Openbox; a missing binary,
 #                             unreadable profile or startup timeout is a
 #                             failure, not a silent downgrade
-#                     none    run no window manager (single fullscreen client)
+#                     none    run no window manager (single screen-fill client)
 #                     off     same as none
 #                     <cmd>   custom WM command, parsed as an argument vector
 #                             and held to the same readiness requirement
@@ -70,14 +72,16 @@
 #   KILIX95_ALLOW_MUTABLE_REF allow a tag/branch KILIX95_REF only when 1
 #   KILIX95_ALLOW_UNPINNED_INSTALL allow an automatic clone without a ref
 #
-# Fullscreen note: kitty's --start-as=fullscreen uses _NET_WM_STATE_FULLSCREEN,
-# which only works when a window manager is running. Pleb normally runs Openbox
-# for exactly that reason, so kilix gets native fullscreen (and F11), and native
-# application windows — browsers, dialogs — can be focused, raised, closed and
-# reached with Alt-Tab. When no WM is running (PLEB_WM=none, or auto with
-# Openbox unavailable) we instead size the kitty window to the whole screen in
-# pixels (borderless at 0,0 == effectively fullscreen); in that recovery mode a
-# second top-level client can end up permanently hidden behind kilix.
+# Display note: Kilix deliberately treats --start-as=fullscreen as
+# content-only fullscreen, hiding its page strip and clickable pane chrome.
+# The managed session must visibly be Kilix, so with a window manager it starts
+# maximized and asks kitty to hide only the host decoration. Native application
+# windows — browsers, dialogs — can still be focused, raised, closed and
+# reached with Alt-Tab. F11 remains the user's explicit content-only toggle.
+# When no WM is running (PLEB_WM=none, or auto with Openbox unavailable) we
+# instead size the kitty window to the whole screen in pixels (borderless at
+# 0,0); in that recovery mode a second top-level client can end up permanently
+# hidden behind kilix.
 set -u
 [ "$(id -u)" != 0 ] || { echo "pleb-session refuses to run as root" >&2; exit 1; }
 umask 077
@@ -681,9 +685,11 @@ else
     unset _pleb_wm_fail _pleb_wm_required
 fi
 
-# --- fullscreen strategy -----------------------------------------------------
-# Decided only now that the WM state is final: native EWMH fullscreen when a
-# window manager is present, fixed screen-fill geometry when not — never both.
+# --- screen-fill strategy ----------------------------------------------------
+# Decided only now that the WM state is final: maximize without host
+# decorations when a window manager is present, fixed screen-fill geometry
+# when not — never both. Native fullscreen is intentionally excluded because
+# Kilix uses it as a content-only mode that hides the identifying chrome.
 
 # Screen size in "WxH" (xdpyinfo first, xrandr fallback), else empty.
 _screen_wh() {
@@ -707,7 +713,7 @@ fi
 
 KILIX_ARGV=()
 if [ "$_PLEB_KILIX_ARGS_DEFAULT" = 1 ]; then
-    [ "$HAVE_WM" = 1 ] && KILIX_ARGV=(--start-as=fullscreen)
+    [ "$HAVE_WM" = 1 ] && KILIX_ARGV=(--start-as=maximized -o hide_window_decorations=yes)
 else
     read -r -a KILIX_ARGV <<< "$PLEB_KILIX_ARGS"
 fi
@@ -730,7 +736,7 @@ echo "--- wm=${PLEB_WM} active=$(if [ "$HAVE_WM" = 1 ]; then _pleb_wm_name "$PLE
 
 # --- optional: boot straight into the configured kilix desktop ----------------
 # The desktop isn't a standalone X client — it renders inside a kilix/kitty
-# window via the graphics protocol. So we run the fullscreen kilix window as
+# window via the graphics protocol. So we run the screen-filling kilix window as
 # usual but hand it `kilix desktop` as its startup PROGRAM (KILIX_IN_OVERLAY=1
 # renders it directly in this one window instead of spawning a tab). It must
 # come AFTER the kitty options above (FILL_ARGS), so append it last. Shells the

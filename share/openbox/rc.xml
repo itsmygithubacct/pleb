@@ -21,10 +21,10 @@
     - no root-window menu, no launcher keys, no screenshot keys, no dock use
     - no per-application rules
 
-  In particular there is NO rule forcing Kilix to the 'above' layer. Kilix asks
-  for _NET_WM_STATE_FULLSCREEN itself (kitty's "start-as=fullscreen"); leaving it
-  on the normal layer is what lets an Alt-Tab-selected browser window raise
-  above it. See the Non-goals in the Pleb README.
+  In particular there is NO rule forcing Kilix to the 'above' layer. The Pleb
+  launcher starts it maximized and asks kitty to hide the host decoration;
+  leaving it on the normal layer is what lets an Alt-Tab-selected browser
+  window raise above it. See the Non-goals in the Pleb README.
 
   ===========================================================================
   Derived from the default rc.xml shipped with Openbox 3.6.1
@@ -51,7 +51,7 @@
 
 <focus>
   <!-- Focus new windows as they appear: a browser launched from a Kilix shell
-       must come to the front rather than opening behind the fullscreen
+       must come to the front rather than opening behind the screen-filling
        terminal. -->
   <focusNew>yes</focusNew>
   <!-- Click to focus, not focus-follows-mouse. -->
@@ -163,7 +163,7 @@
   <chainQuitKey>C-g</chainQuitKey>
 
   <!-- Window cycling. This is the whole point of running a WM under Pleb:
-       Alt-Tab must move focus between the fullscreen Kilix window and any
+       Alt-Tab must move focus between the screen-filling Kilix window and any
        native application window, and raise the selection above Kilix. -->
   <keybind key="A-Tab">
     <action name="NextWindow">
@@ -433,13 +433,11 @@
 <applications>
   <!-- Intentionally empty.
 
-       Kilix is NOT pinned here. It requests _NET_WM_STATE_FULLSCREEN itself
-       via kitty's "start-as=fullscreen", and Openbox honours that through the
-       normal EWMH path: undecorated, screen-filling, and restored to normal
-       geometry when fullscreen is removed. Adding <layer>above</layer> for
-       Kilix would reintroduce exactly the bug this integration fixes — a
-       browser window that is focused but permanently hidden behind the
-       terminal. -->
+       Kilix is NOT pinned here. The launcher requests maximized state and
+       disables only the host decoration, while Openbox keeps the window on
+       the normal layer. Adding <layer>above</layer> for Kilix would reintroduce
+       exactly the bug this integration fixes — a browser window that is
+       focused but permanently hidden behind the terminal. -->
 </applications>
 
 </openbox_config>

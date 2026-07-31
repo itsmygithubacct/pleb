@@ -285,11 +285,18 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("xset b off", text)
         self.assertIn("xset -b", text)
 
-    def test_session_only_uses_native_fullscreen_with_wm_by_default(self):
+    def test_session_preserves_kilix_chrome_with_wm_by_default(self):
         text = (ROOT / "bin" / "pleb-session").read_text()
         self.assertIn("_PLEB_KILIX_ARGS_DEFAULT", text)
         self.assertIn("HAVE_WM=0", text)
-        self.assertIn('[ "$HAVE_WM" = 1 ] && KILIX_ARGV=(--start-as=fullscreen)', text)
+        self.assertIn(
+            "KILIX_ARGV=(--start-as=maximized -o hide_window_decorations=yes)",
+            text,
+        )
+        self.assertNotIn(
+            'KILIX_ARGV=(--start-as=fullscreen)',
+            text,
+        )
         self.assertNotIn('PLEB_KILIX_ARGS="${PLEB_KILIX_ARGS:---start-as=fullscreen}"', text)
 
 

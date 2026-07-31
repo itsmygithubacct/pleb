@@ -7,6 +7,11 @@ Pleb goes 0.1.2 → 0.1.6 alongside Plebian-OS, Kilix, and Kilix-95. 0.1.5 was
 prepared but never built, accepted, or tagged, so its entries are folded in here
 rather than left under a number nothing ships. See Plebian-OS RELEASING.md.
 
+- Start the main Pleb session maximized and without host decorations instead
+  of using Kilix's content-only fullscreen mode. The old default hid Kilix's
+  page strip and pane controls, making a successful login look like a plain
+  terminal; the new default fills the display while keeping Kilix visibly
+  identifiable and leaves F11 as the explicit content-only toggle.
 - Support **Kilix Cap desktop sessions**: the session layer accepts `cap` as a
   desktop provider and passes its `KILIX_CAP_*` configuration through, so a Pleb
   session can run Kilix Cap in place of external Kilix 95.
