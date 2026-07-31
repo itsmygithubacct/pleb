@@ -42,9 +42,8 @@ The layered blue backgrounds in `splash.png`, `banner.png`, and
 standalone Plebian-OS angular-P mark is an original replacement identity; it
 does not reproduce the Debian swirl.
 
-The following upstream record is preserved verbatim from the local Debian
-source metadata in
-`<workspace>/images/references/source-metadata/ceratopsian.md`:
+The following upstream record is preserved verbatim from the Debian source
+metadata used to prepare these release assets:
 
 ```text
 # ceratopsian
@@ -131,12 +130,10 @@ reference-guided, model-assisted editing workflow:
    mark as a fixed reference, then deterministically resized and normalized to
    the Debian Installer runtime contracts.
 
-The retained authoring record is outside the build tree under
-`<workspace>/`. It includes the exact prompts, full model outputs,
-selected intermediate images, normalization commands, review notes, and
-SHA-256 values. The principal record is
-`<workspace>/INSTALLER_IMAGE_REVIEW.md`; the corresponding prompt files
-are:
+The private authoring archive is not distributed with this repository. It
+retains the exact prompts, full model outputs, selected intermediate images,
+normalization commands, review notes, and SHA-256 values. Its corresponding
+prompt files are:
 
 ```text
 prompts/boot-b-terminal-p.prompt.txt
