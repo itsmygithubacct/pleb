@@ -15,6 +15,10 @@ rather than left under a number nothing ships. See Plebian-OS RELEASING.md.
   the pinned unified checkout so the text-native desktop is ready on first
   selection. Kilix TUI is an optional Kilix-pinned desktop, not an additional
   coordinated release-core repository.
+- Support **Kilix Land desktop sessions**: the session layer accepts `land`
+  and carries its source, build, profile, application-launch, and audio
+  settings into Kilix. Kilix owns the immutable first-install pin; Land remains
+  an optional desktop rather than an additional release-core repository.
 - Treat the `xp` and `kilix-xp` session-provider aliases as requiring the
   external Kilix 95 checkout during standalone installation, matching the
   launcher's existing XP selection behavior.
