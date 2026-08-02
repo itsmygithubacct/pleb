@@ -64,6 +64,13 @@ desktop, `kilix pty` session manager, dashboards, and Tmux Manager are
 therefore ready when a desktop first uses them, without relying on separate
 per-dashboard source caches.
 
+The install also selects Kilix's immutable voice closure. The standalone
+default, `PLEB_INSTALL_VOICE_MODEL=0`, installs its pinned read-aloud runtime
+without the speech library or acoustic model. Setting
+`PLEB_INSTALL_VOICE_MODEL=1` requires the complete checksum-pinned dictation
+closure; a failed full install returns nonzero and never silently falls back to
+read-aloud-only.
+
 For a standalone install, Pleb validates and copies the approved Plebian
 wallpaper to
 `~/.local/gpu_terminal/pleb/data/wallpapers/plebian-os.png`, with its exact
@@ -401,6 +408,7 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `PLEBIAN_OS_KILIX_GO_SHA256_AMD64` | *(none)* | Trusted SHA-256 for the pinned Linux amd64 Go archive. |
 | `PLEBIAN_OS_KILIX_GO_SHA256_ARM64` | *(none)* | Trusted SHA-256 for the pinned Linux arm64 Go archive. |
 | `PLEB_SKIP_DEPS` | `0` | If `1`, skip package installation during `pleb install`/`update`; update still verifies and fails if prerequisites are missing. |
+| `PLEB_INSTALL_VOICE_MODEL` | `0` | `0` installs the pinned read-aloud-only closure; `1` requires the complete pinned dictation library and model and fails instead of degrading. |
 | `PLEB_KILIX_ARGS` | auto | Args passed to Kilix; unset means maximized with host decorations hidden when a WM is present, fixed screen-fill sizing without one. |
 | `PLEB_WM` | `auto` | Window-manager policy: `auto`, `openbox` (required), `none`/`off`, or a custom command. |
 | `PLEB_OPENBOX_CONFIG` | `/usr/local/share/pleb/openbox/rc.xml` | Openbox profile Pleb starts Openbox with. |

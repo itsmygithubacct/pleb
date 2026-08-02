@@ -66,6 +66,54 @@ def make_go_archive(path: Path, version: str = "go1.26.4") -> None:
 
 
 class PlebBehaviorTests(unittest.TestCase):
+    def _run_voice_install(
+        self, policy: str, *, install_exit: int = 0, with_installer: bool = True
+    ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            checkout = tmp / "kilix"
+            (checkout / "scripts").mkdir(parents=True)
+            if with_installer:
+                write_executable(
+                    checkout / "scripts/install-kilix-voice.sh",
+                    "#!/bin/sh\nexit 0\n",
+                )
+            write_executable(
+                checkout / "kilix",
+                """#!/bin/sh
+printf '%s\n' "$*" >>"$VOICE_CALLS"
+exit "$VOICE_INSTALL_EXIT"
+""",
+            )
+            calls = tmp / "voice-calls"
+            env = clean_env(tmp)
+            env.update(
+                {
+                    "KILIX_DIR": str(checkout),
+                    "PLEB_INSTALL_VOICE_MODEL": policy,
+                    "VOICE_CALLS": str(calls),
+                    "VOICE_INSTALL_EXIT": str(install_exit),
+                }
+            )
+            script = textwrap.dedent(
+                f"""
+                set -uo pipefail
+                PLEB_ROOT={ROOT!s}
+                . "$PLEB_ROOT/lib/common.sh"
+                . "$PLEB_ROOT/lib/install.sh"
+                install_kilix_voice
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            recorded = calls.read_text().splitlines() if calls.exists() else []
+            return result, recorded
+
     def test_version_command_reports_release_file(self):
         with tempfile.TemporaryDirectory() as td:
             result = subprocess.run(
@@ -77,6 +125,44 @@ class PlebBehaviorTests(unittest.TestCase):
                 check=True,
             )
         self.assertEqual(result.stdout.strip(), f"pleb {(ROOT / 'VERSION').read_text().strip()}")
+
+    def test_voice_policy_zero_installs_only_read_aloud_and_remains_optional(self):
+        result, calls = self._run_voice_install("0", install_exit=19)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, ["voice install --without-dictation"])
+        self.assertIn("read-aloud installation failed", result.stderr)
+
+    def test_voice_policy_one_requires_full_install_without_fallback(self):
+        failed, calls = self._run_voice_install("1", install_exit=23)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(calls, ["voice install"])
+        self.assertNotIn("--without-dictation", "\n".join(calls))
+        self.assertIn("PLEB_INSTALL_VOICE_MODEL=1", failed.stderr)
+        self.assertIn("no read-aloud-only fallback", failed.stderr)
+
+        installed, calls = self._run_voice_install("1")
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        self.assertEqual(calls, ["voice install"])
+
+    def test_voice_policy_one_requires_a_safe_installer(self):
+        optional, optional_calls = self._run_voice_install(
+            "0", with_installer=False
+        )
+        self.assertEqual(optional.returncode, 0, optional.stderr)
+        self.assertEqual(optional_calls, [])
+
+        required, required_calls = self._run_voice_install(
+            "1", with_installer=False
+        )
+        self.assertNotEqual(required.returncode, 0)
+        self.assertEqual(required_calls, [])
+        self.assertIn("requires the full pinned dictation closure", required.stderr)
+
+    def test_voice_policy_rejects_unknown_values(self):
+        result, calls = self._run_voice_install("yes")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, [])
+        self.assertIn("must be 0", result.stderr)
 
     def test_recovery_doc_installs_readable_and_uninstalls_from_override_path(self):
         with tempfile.TemporaryDirectory() as td:

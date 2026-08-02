@@ -177,31 +177,38 @@ install_tmux_tui() {
 }
 
 # install_kilix_voice — install Kilix's pinned read-aloud/dictation closure.
-# The only component install here that is allowed to fail: kilix-voice is pinned
-# by a commit that may not be published yet, dictation additionally needs a
-# verified libvosk and a 41 MB acoustic model, and neither is worth a session.
-# A missing engine dims the two tab-bar widgets and nothing else, so this
-# reports what is unavailable and returns success. Read-aloud needs neither the
-# library nor the model, so a closure that cannot install dictation is retried
-# without it rather than abandoned.
+# Policy 0 deliberately installs read-aloud without libvosk or an acoustic
+# model; because voice remains optional in that mode, a missing closure is
+# reported without stopping the rest of Pleb. Policy 1 is an explicit request
+# for the full checksum-pinned dictation closure. It must fail the install if
+# any part is unavailable instead of silently accepting a read-aloud-only
+# system that does not satisfy the selected release policy.
 install_kilix_voice() {
     local installer="$KILIX_DIR/scripts/install-kilix-voice.sh"
+    local policy="${PLEB_INSTALL_VOICE_MODEL:-0}"
+    case "$policy" in
+        0|1) ;;
+        *) die "PLEB_INSTALL_VOICE_MODEL must be 0 (read-aloud only) or 1 (full dictation)" ;;
+    esac
     if [ ! -f "$installer" ] || [ -L "$installer" ] || [ ! -x "$installer" ]; then
+        if [ "$policy" = 1 ]; then
+            die "Kilix Voice installer is missing or unsafe: $installer (PLEB_INSTALL_VOICE_MODEL=1 requires the full pinned dictation closure)"
+        fi
         warn "Kilix Voice installer is missing or unsafe: $installer"
-        warn "read-aloud and dictation stay unavailable; the rest of Kilix is unaffected"
+        warn "read-aloud stays unavailable; dictation was disabled by policy"
         return 0
     fi
-    log "installing Kilix's pinned read-aloud and dictation closure"
-    if [ "${PLEB_INSTALL_VOICE_MODEL:-0}" != 1 ]; then
-        log "PLEB_INSTALL_VOICE_MODEL=0: skipping the speech library and model"
-    elif KILIX_VOICE_PREFIX="$HOME/.local" "$KILIX_DIR/kilix" voice install; then
+    if [ "$policy" = 1 ]; then
+        log "installing Kilix's full pinned read-aloud and dictation closure"
+        KILIX_VOICE_PREFIX="$HOME/.local" "$KILIX_DIR/kilix" voice install \
+            || die "Kilix Voice full dictation installation failed with PLEB_INSTALL_VOICE_MODEL=1; no read-aloud-only fallback was selected (run 'kilix voice doctor' for the reason)"
         return 0
-    else
-        warn "the pinned speech library or model is unavailable; dictation stays off"
     fi
+
+    log "PLEB_INSTALL_VOICE_MODEL=0: installing the pinned read-aloud-only closure"
     KILIX_VOICE_PREFIX="$HOME/.local" \
         "$KILIX_DIR/kilix" voice install --without-dictation \
-        || warn "Kilix Voice installation failed; run 'kilix voice doctor' for the reason"
+        || warn "Kilix Voice read-aloud installation failed; run 'kilix voice doctor' for the reason"
 }
 
 install_pty_broker() {

@@ -69,21 +69,29 @@ problem rather than a voice one: `pactl info` shows whether a server is
 reachable, and `pulsemixer` selects the output device.
 
 A dimmed microphone means the pinned speech library or the acoustic model is
-missing. The 0.1.7 release intentionally installs read-aloud alone because
-Kilix Voice has not published a checksum-pinned `libvosk` asset; dictation
-therefore stays unavailable even with a working network. That is the declared
-release policy, not a broken install. Once Kilix publishes a verified dictation
-closure, opt in and install it with:
+missing. The 0.1.7 closure pins both the `libvosk` release and the small English
+model by checksum, but Pleb keeps the amount installed under an explicit
+policy:
+
+- `PLEB_INSTALL_VOICE_MODEL=0` is the standalone default. It installs the
+  pinned read-aloud runtime without the library or model, so a dim microphone
+  is expected and does not fail `pleb install`.
+- `PLEB_INSTALL_VOICE_MODEL=1` requires read-aloud and dictation. A missing
+  installer or failed source, library, or model fetch makes `pleb install`
+  return nonzero; it does not retry as read-aloud-only and claim success.
+
+After fixing the reported network, checksum, or storage problem, retry the
+required closure with:
 
 ```sh
-kilix voice install
+PLEB_INSTALL_VOICE_MODEL=1 pleb install
 ```
 
-When those pins are available, both downloads are checksum-verified and land under
+The library and model downloads are checksum-verified and land under
 `~/.local/gpu_terminal/kilix/data/voice`, never in a source tree, so re-running
 the install is the whole fix. `kilix voice install --without-dictation`
-reinstalls read-aloud alone when the model is not wanted. If dictation starts but
-hears nothing, the input source is muted or is the wrong one: `pulsemixer`
+reinstalls read-aloud alone when the model is not wanted. If dictation starts
+but hears nothing, the input source is muted or is the wrong one: `pulsemixer`
 selects it, and `kilix-stt`'s level meter shows whether audio is arriving.
 
 `pleb status` reports all of this in one line: the two widgets, the engines, the

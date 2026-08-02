@@ -158,9 +158,9 @@ TMUX_TUI_LINK="${TMUX_TUI_LINK:-/usr/local/bin/tmux-tui}"
 TMUX_CLI_LINK="${TMUX_CLI_LINK:-/usr/local/bin/tb}"
 # Kilix installs its pinned read-aloud/dictation closure under the same user
 # prefix; both TUIs come out of one install, alongside the arbiter daemon the
-# tab-bar widgets talk to. Unlike the closures above, voice is allowed to be
-# absent — see install_kilix_voice — so these paths are checked before they are
-# published rather than asserted afterwards.
+# tab-bar widgets talk to. Voice is allowed to be absent only under the
+# read-aloud-only policy — see install_kilix_voice — so these paths are checked
+# before they are published rather than asserted afterwards.
 KILIX_VOICE_TTS_BIN="$HOME/.local/bin/kilix-tts"
 KILIX_VOICE_STT_BIN="$HOME/.local/bin/kilix-stt"
 KILIX_VOICE_TTS_LINK="${KILIX_VOICE_TTS_LINK:-/usr/local/bin/kilix-tts}"
