@@ -191,6 +191,23 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("never silently accepted", changelog)
         self.assertIn("does not retry as read-aloud-only", recovery)
 
+    def test_standalone_voice_dependencies_include_archive_extraction(self):
+        command = r"""
+set -euo pipefail
+. lib/common.sh
+. lib/install.sh
+_install_missing_apt_packages() {
+    shift
+    printf '%s\n' "$@"
+}
+ensure_system_deps
+"""
+        result = subprocess.run(
+            ["bash", "-c", command], cwd=ROOT, text=True,
+            capture_output=True, check=True,
+        )
+        self.assertIn("unzip", result.stdout.splitlines())
+
     def test_update_restart_uses_transient_systemd_unit(self):
         text = (ROOT / "lib" / "update.sh").read_text()
         self.assertIn("systemd-run", text)
