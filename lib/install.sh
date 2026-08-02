@@ -47,7 +47,7 @@ _install_missing_apt_packages() {
 ensure_system_deps() {
     local -a deps
     deps=(
-        git curl tar sudo tmux network-manager build-essential zlib1g-dev
+        git curl tar unzip sudo tmux network-manager build-essential zlib1g-dev
         lightdm xinit x11-xserver-utils x11-utils xterm openbox
         libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
         fontconfig fonts-dejavu-core
@@ -63,8 +63,9 @@ ensure_system_deps() {
     # cannot resolve them — and one unresolvable name fails the whole apt-get
     # transaction. Kept out of the required set and tolerated here, because
     # espeak-ng alone is the default engine and Kilix falls back to it when an
-    # mbrola voice is missing. Capture needs no new package: pulseaudio-utils
-    # (parec/pacat) is already installed for the volume widget.
+    # mbrola voice is missing. `unzip` above extracts the checksum-pinned Vosk
+    # wheel and acoustic-model archive. Capture needs no new package:
+    # pulseaudio-utils (parec/pacat) is already installed for the volume widget.
     _install_missing_apt_packages "read-aloud mbrola voices" mbrola mbrola-us1 \
         || warn "mbrola voices unavailable (enable Debian's contrib and non-free components to install them); read-aloud uses espeak-ng"
 }

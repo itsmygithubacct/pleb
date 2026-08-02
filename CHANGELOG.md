@@ -41,9 +41,11 @@ and settings when upgrading from the immediately previous published release.
 - Install Kilix's pinned Kilix Voice closure during `pleb install` and publish
   `kilix-tts` and `kilix-stt` on `PATH`. Kilix's coordinated 0.1.7 pin closes
   transitively over the exact voice source, `libvosk` release and digest, and
-  acoustic-model URL and digest. `PLEB_INSTALL_VOICE_MODEL=0` remains the
-  standalone default: it installs that pinned runtime for read-aloud without
-  the speech library or model, and a voice-only failure does not stop Pleb.
+  acoustic-model URL and digest. The standalone dependency closure includes
+  `unzip`, which extracts the checksum-verified Vosk wheel and model archives.
+  `PLEB_INSTALL_VOICE_MODEL=0` remains the standalone default: it installs that
+  pinned runtime for read-aloud without the speech library or model, and a
+  voice-only failure does not stop Pleb.
   `PLEB_INSTALL_VOICE_MODEL=1` instead requires the complete dictation closure;
   a missing installer, library, model, or failed download now stops the install
   with a nonzero result and is never silently accepted as read-aloud-only.
