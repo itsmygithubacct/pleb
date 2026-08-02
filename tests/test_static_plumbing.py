@@ -175,9 +175,21 @@ class PlebPlumbingTests(unittest.TestCase):
 
     def test_voice_defaults_to_the_available_read_aloud_closure(self):
         install = (ROOT / "lib" / "install.sh").read_text()
+        readme = (ROOT / "README.md").read_text()
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        recovery = (ROOT / "docs" / "RECOVERY.md").read_text()
         self.assertIn('${PLEB_INSTALL_VOICE_MODEL:-0}', install)
         self.assertNotIn('${PLEB_INSTALL_VOICE_MODEL:-1}', install)
         self.assertIn('voice install --without-dictation', install)
+        self.assertIn('if [ "$policy" = 1 ]', install)
+        self.assertIn("no read-aloud-only fallback was selected", install)
+        for text in (readme, changelog, recovery):
+            self.assertIn("PLEB_INSTALL_VOICE_MODEL=0", text)
+            self.assertIn("PLEB_INSTALL_VOICE_MODEL=1", text)
+            self.assertIn("read-aloud", text)
+        self.assertIn("returns nonzero", readme)
+        self.assertIn("never silently accepted", changelog)
+        self.assertIn("does not retry as read-aloud-only", recovery)
 
     def test_update_restart_uses_transient_systemd_unit(self):
         text = (ROOT / "lib" / "update.sh").read_text()

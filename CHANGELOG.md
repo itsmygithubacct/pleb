@@ -37,13 +37,14 @@ RELEASING.md.
   install. Capture needs no new package — `pulseaudio-utils` was already
   installed for the volume widget.
 - Install Kilix's pinned Kilix Voice closure during `pleb install` and publish
-  `kilix-tts` and `kilix-stt` on `PATH`. Unlike every other component install
-  this one is allowed to fail: a closure that cannot install dictation is
-  retried for read-aloud alone, and a closure that cannot install at all dims
-  the two widgets rather than stopping the install. Read-aloud-only is the
-  default while Kilix Voice has no published, checksum-pinned `libvosk` asset;
-  `PLEB_INSTALL_VOICE_MODEL=1` opts into dictation only when that verified
-  closure is available.
+  `kilix-tts` and `kilix-stt` on `PATH`. Kilix's coordinated 0.1.7 pin closes
+  transitively over the exact voice source, `libvosk` release and digest, and
+  acoustic-model URL and digest. `PLEB_INSTALL_VOICE_MODEL=0` remains the
+  standalone default: it installs that pinned runtime for read-aloud without
+  the speech library or model, and a voice-only failure does not stop Pleb.
+  `PLEB_INSTALL_VOICE_MODEL=1` instead requires the complete dictation closure;
+  a missing installer, library, model, or failed download now stops the install
+  with a nonzero result and is never silently accepted as read-aloud-only.
 - Report voice in `pleb status` — widgets, engines, daemon state from Kilix,
   plus whether the synthesizer, speech library and selected model are actually
   present — alongside the existing session-logging line.
