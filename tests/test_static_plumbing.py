@@ -173,6 +173,12 @@ class PlebPlumbingTests(unittest.TestCase):
             '"$KILIX_PTY_BROKER_BUILD" kilix-pty-broker-build', update)
         self.assertIn("install_pty_broker", update)
 
+    def test_voice_defaults_to_the_available_read_aloud_closure(self):
+        install = (ROOT / "lib" / "install.sh").read_text()
+        self.assertIn('${PLEB_INSTALL_VOICE_MODEL:-0}', install)
+        self.assertNotIn('${PLEB_INSTALL_VOICE_MODEL:-1}', install)
+        self.assertIn('voice install --without-dictation', install)
+
     def test_update_restart_uses_transient_systemd_unit(self):
         text = (ROOT / "lib" / "update.sh").read_text()
         self.assertIn("systemd-run", text)
