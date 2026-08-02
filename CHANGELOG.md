@@ -1,11 +1,14 @@
 # Changelog
 
-## 0.1.6 — unreleased
+## 0.1.7 — unreleased
 
-Version numbers 0.1.3, 0.1.4, and 0.1.5 were never coordinated stack releases;
-Pleb goes 0.1.2 → 0.1.6 alongside Plebian-OS, Kilix, and Kilix-95. 0.1.5 was
-prepared but never built, accepted, or tagged, so its entries are folded in here
-rather than left under a number nothing ships. See Plebian-OS RELEASING.md.
+Version numbers 0.1.3 through 0.1.6 were never published coordinated stack
+releases; Pleb goes 0.1.2 → 0.1.7 alongside Plebian-OS, Kilix, and Kilix-95.
+0.1.5 was prepared but never built or accepted. 0.1.6 reached a local candidate
+image and acceptance run, but later safety and cross-repository validation found
+release-blocking defects before any tag or artifact was published. Their work is
+folded in here rather than left under numbers nothing ships. See Plebian-OS
+RELEASING.md.
 
 - Start the main Pleb session maximized and without host decorations instead
   of using Kilix's content-only fullscreen mode. The old default hid Kilix's
