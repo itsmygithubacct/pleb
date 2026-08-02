@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.7 — unreleased
+## 0.1.7 — 2026-08-02
 
 Version numbers 0.1.3 through 0.1.6 were never published coordinated stack
 releases; Pleb goes 0.1.2 → 0.1.7 alongside Plebian-OS, Kilix, and Kilix-95.
@@ -8,7 +8,9 @@ releases; Pleb goes 0.1.2 → 0.1.7 alongside Plebian-OS, Kilix, and Kilix-95.
 image and acceptance run, but later safety and cross-repository validation found
 release-blocking defects before any tag or artifact was published. Their work is
 folded in here rather than left under numbers nothing ships. See Plebian-OS
-RELEASING.md.
+RELEASING.md. 0.1.7 is the fresh-install upgrade baseline; installations older
+than 0.1.7 are reinstalled, while every later stack release must preserve data
+and settings when upgrading from the immediately previous published release.
 
 - Start the main Pleb session maximized and without host decorations instead
   of using Kilix's content-only fullscreen mode. The old default hid Kilix's
