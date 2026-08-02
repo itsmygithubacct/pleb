@@ -40,8 +40,10 @@ RELEASING.md.
   `kilix-tts` and `kilix-stt` on `PATH`. Unlike every other component install
   this one is allowed to fail: a closure that cannot install dictation is
   retried for read-aloud alone, and a closure that cannot install at all dims
-  the two widgets rather than stopping the install. `PLEB_INSTALL_VOICE_MODEL=0`
-  installs read-aloud without the speech library and acoustic model.
+  the two widgets rather than stopping the install. Read-aloud-only is the
+  default while Kilix Voice has no published, checksum-pinned `libvosk` asset;
+  `PLEB_INSTALL_VOICE_MODEL=1` opts into dictation only when that verified
+  closure is available.
 - Report voice in `pleb status` — widgets, engines, daemon state from Kilix,
   plus whether the synthesizer, speech library and selected model are actually
   present — alongside the existing session-logging line.

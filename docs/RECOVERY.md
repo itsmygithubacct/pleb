@@ -69,14 +69,17 @@ problem rather than a voice one: `pactl info` shows whether a server is
 reachable, and `pulsemixer` selects the output device.
 
 A dimmed microphone means the pinned speech library or the acoustic model is
-missing — a first boot without a usable network leaves read-aloud working and
-dictation unavailable, which is the intended degradation, not a broken install:
+missing. The 0.1.7 release intentionally installs read-aloud alone because
+Kilix Voice has not published a checksum-pinned `libvosk` asset; dictation
+therefore stays unavailable even with a working network. That is the declared
+release policy, not a broken install. Once Kilix publishes a verified dictation
+closure, opt in and install it with:
 
 ```sh
 kilix voice install
 ```
 
-Both downloads are checksum-verified and land under
+When those pins are available, both downloads are checksum-verified and land under
 `~/.local/gpu_terminal/kilix/data/voice`, never in a source tree, so re-running
 the install is the whole fix. `kilix voice install --without-dictation`
 reinstalls read-aloud alone when the model is not wanted. If dictation starts but

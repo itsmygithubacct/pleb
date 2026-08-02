@@ -192,7 +192,7 @@ install_kilix_voice() {
         return 0
     fi
     log "installing Kilix's pinned read-aloud and dictation closure"
-    if [ "${PLEB_INSTALL_VOICE_MODEL:-1}" != 1 ]; then
+    if [ "${PLEB_INSTALL_VOICE_MODEL:-0}" != 1 ]; then
         log "PLEB_INSTALL_VOICE_MODEL=0: skipping the speech library and model"
     elif KILIX_VOICE_PREFIX="$HOME/.local" "$KILIX_DIR/kilix" voice install; then
         return 0
