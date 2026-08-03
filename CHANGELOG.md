@@ -92,9 +92,10 @@ and settings when upgrading from the immediately previous published release.
   session instead of silently downgrading, and a window manager that dies is
   fatal rather than leaving unmanaged clients behind. An already-running EWMH
   window manager is adopted, never replaced or killed.
-- Default GUI commands to native windows when a window manager is present, via
-  the new `KILIX_RUN_ALIASES` session variable; `kilix run <app>` remains the
-  explicit way to render an application inside a kilix tab.
+- Default installed GUI commands to `kilix run`, keeping Chromium and other
+  graphical applications inside Kilix tabs even when Openbox is present.
+  `KILIX_RUN_ALIASES=0` remains an explicit native-window opt-out, with
+  extension and exclusion lists available for site policy.
 - Report the window-manager mode, Openbox availability, profile drift and
   active WM in `pleb status`, and check them in `pleb doctor` — which now also
   flags an installed `pleb-session` or Openbox profile that differs from the

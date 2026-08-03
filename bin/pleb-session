@@ -37,8 +37,10 @@
 #                     back to the checkout's share/openbox/rc.xml)
 #   PLEB_WM_TIMEOUT   seconds to wait for the WM to own the display (default: 5)
 #   KILIX_RUN_ALIASES if =1, GUI commands are aliased to `kilix run` (in-tab);
-#                     if =0 they open native windows. Defaults to 0 when a
-#                     window manager is present, otherwise left to kilix
+#                     if =0 they open native windows. Defaults to 1 so GUI
+#                     applications remain inside Kilix tabs and panes
+#   KILIX_RUN_ALIAS_APPS       extra GUI command names to route through Kilix
+#   KILIX_RUN_ALIAS_EXCLUDE_APPS command names to leave as native X11 clients
 #   PLEB_NO_FILL      if =1, skip the no-WM screen-fill sizing (default: off)
 #   PLEB_BG           root window solid colour     (default: #101010)
 #   PLEB_LOG          session log file (default: ~/.local/gpu_terminal/pleb/state/session.log)
@@ -103,7 +105,7 @@ if [[ ! ${PLEB_ENV_USER+x} ]]; then
     fi
 fi
 
-_pleb_vars="GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_REF KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
+_pleb_vars="GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_REF KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
 declare -A _pleb_had _pleb_saved
 for _pleb_v in $_pleb_vars; do
     if [[ ${!_pleb_v+x} ]]; then
@@ -382,6 +384,8 @@ else
     KILIX_RUN_ALIASES=""
     _PLEB_RUN_ALIASES_DEFAULT=1
 fi
+KILIX_RUN_ALIAS_APPS="${KILIX_RUN_ALIAS_APPS:-}"
+KILIX_RUN_ALIAS_EXCLUDE_APPS="${KILIX_RUN_ALIAS_EXCLUDE_APPS:-}"
 PLEB_BG="${PLEB_BG:-#101010}"
 PLEB_LOG="${PLEB_LOG:-$PLEB_STATE_HOME/session.log}"
 PLEB_RESPAWN="${PLEB_RESPAWN:-0}"
@@ -719,20 +723,24 @@ else
 fi
 
 # --- GUI command policy ------------------------------------------------------
-# kilix's shell profile aliases Chromium, Firefox, xterm and friends to
+# kilix's shell profile aliases installed graphical applications to
 # `kilix run <app>`, which renders each app on its own private Xvfb inside a
-# kilix tab. Those windows are not host X11 top-level windows, so Openbox cannot
-# manage them and they never appear in Alt-Tab. With a window manager present
-# the useful default is the opposite: plain GUI commands open native windows,
-# and `kilix run` stays the explicit way to put an app inside a tab. Without a
-# WM the old behaviour is still the better one, so leave it to kilix.
-# An explicit value — from the environment or session.env — always wins.
+# kilix tab. Keep that as the session default even though Openbox is available:
+# the desktop's primary window-management surface is Kilix's page/pane chrome.
+# Openbox remains a safety net for an explicit KILIX_RUN_ALIASES=0 opt-out and
+# for unavoidable native dialogs. An explicit value — from the environment or
+# session.env — always wins.
 if [ "$_PLEB_RUN_ALIASES_DEFAULT" = 1 ]; then
-    [ "$HAVE_WM" = 1 ] && KILIX_RUN_ALIASES=0
+    KILIX_RUN_ALIASES=1
 fi
-export KILIX_RUN_ALIASES
+export KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS
+case "${KILIX_RUN_ALIASES:-}" in
+    0|no|false|off) _PLEB_GUI_MODE=native ;;
+    *)              _PLEB_GUI_MODE='kilix run' ;;
+esac
 echo "--- wm=${PLEB_WM} active=$(if [ "$HAVE_WM" = 1 ]; then _pleb_wm_name "$PLEB_WM_ACTIVE" || echo unknown; else echo none; fi)" \
-     "owned=$PLEB_WM_OWNED gui=$([ "${KILIX_RUN_ALIASES:-}" = 0 ] && echo native || echo 'kilix run') ---"
+     "owned=$PLEB_WM_OWNED gui=$_PLEB_GUI_MODE ---"
+unset _PLEB_GUI_MODE
 
 # --- optional: boot straight into the configured kilix desktop ----------------
 # The desktop isn't a standalone X client — it renders inside a kilix/kitty
@@ -816,6 +824,8 @@ if _pleb_desktop_enabled; then
                   "KILIX95_ALLOW_MUTABLE_REF=$KILIX95_ALLOW_MUTABLE_REF"
                   "KILIX95_ALLOW_UNPINNED_INSTALL=$KILIX95_ALLOW_UNPINNED_INSTALL"
                   "KILIX_RUN_ALIASES=$KILIX_RUN_ALIASES"
+                  "KILIX_RUN_ALIAS_APPS=$KILIX_RUN_ALIAS_APPS"
+                  "KILIX_RUN_ALIAS_EXCLUDE_APPS=$KILIX_RUN_ALIAS_EXCLUDE_APPS"
                   "$KILIX" desktop)
 fi
 

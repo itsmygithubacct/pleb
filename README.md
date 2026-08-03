@@ -236,20 +236,21 @@ pleb screen-size reset
 pleb screen-size set 13
 ```
 
-### Native windows versus kilix tabs
+### GUI applications stay in kilix tabs
 
-With a window manager present, plain GUI commands open **native** windows that
-Openbox manages, and `kilix run` stays the explicit way to render an app inside
-a kilix tab on its own private Xvfb:
+Plain commands for installed graphical applications are routed through
+`kilix run`, rendering each app inside a Kilix tab on its own private Xvfb:
 
 ```sh
-chromium https://example.com            # native Openbox window, in Alt-Tab
-kilix run chromium https://example.com  # rendered inside a kilix tab
+chromium https://example.com            # automatically: kilix run chromium …
+kilix run chromium https://example.com  # the equivalent explicit spelling
 ```
 
-`KILIX_RUN_ALIASES` controls this: it defaults to `0` (native) when a WM is
-present, and is left to kilix's own default when there is none. Set it to `1`
-to send GUI commands back into kilix tabs.
+Kilix combines common Debian GUI names with visible non-terminal applications
+from the installed XDG desktop catalogue. `KILIX_RUN_ALIASES=1` is the Pleb
+default. Set it to `0` for native Openbox windows, extend the catalogue with
+`KILIX_RUN_ALIAS_APPS="foo bar"`, or exempt commands with
+`KILIX_RUN_ALIAS_EXCLUDE_APPS="foo"`.
 
 ### Choosing the window manager
 
@@ -413,7 +414,9 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `PLEB_WM` | `auto` | Window-manager policy: `auto`, `openbox` (required), `none`/`off`, or a custom command. |
 | `PLEB_OPENBOX_CONFIG` | `/usr/local/share/pleb/openbox/rc.xml` | Openbox profile Pleb starts Openbox with. |
 | `PLEB_WM_TIMEOUT` | `5` | Seconds to wait for the window manager to own the display. |
-| `KILIX_RUN_ALIASES` | *(derived)* | `0` opens GUI commands as native windows, `1` sends them to `kilix run`. Defaults to `0` when a WM is present. |
+| `KILIX_RUN_ALIASES` | `1` | `1` sends installed GUI commands to `kilix run`; `0` opts into native Openbox windows. |
+| `KILIX_RUN_ALIAS_APPS` | *(none)* | Extra GUI command names to route through `kilix run`. |
+| `KILIX_RUN_ALIAS_EXCLUDE_APPS` | *(none)* | GUI command names to leave as native X11 clients. |
 | `PLEB_NO_FILL` | `0` | Skip the no-WM screen-fill sizing. |
 | `PLEB_BG` | `#101010` | Root-window solid colour. |
 | `PLEB_RESPAWN` | `0` | If `1`, relaunch kilix when it exits (hard kiosk). |
