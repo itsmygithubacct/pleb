@@ -75,15 +75,14 @@ cmd_status() {
         info "launcher : $SESSION_BIN_DST  (STALE: differs from $PLEB_BIN_SRC — run: pleb install)"
     elif [ -x "$SESSION_BIN_DST" ]; then info "launcher : $SESSION_BIN_DST"
     else info "launcher : not installed"; fi
-    local wm_mode wm_desc wm_native openbox_bin wm_name
+    local wm_mode wm_desc openbox_bin wm_name
     wm_mode="${PLEB_WM:-auto}"
     openbox_bin="$(command -v openbox 2>/dev/null || true)"
     case "$wm_mode" in
-        auto)     wm_desc="auto (openbox when available, else no WM)"; wm_native=1
-                  [ -n "$openbox_bin" ] || wm_native=0 ;;
-        openbox)  wm_desc="openbox (required)"; wm_native=1 ;;
-        none|off) wm_desc="$wm_mode (kilix sizes itself to the screen)"; wm_native=0 ;;
-        *)        wm_desc="custom: $wm_mode"; wm_native=1 ;;
+        auto)     wm_desc="auto (openbox when available, else no WM)" ;;
+        openbox)  wm_desc="openbox (required)" ;;
+        none|off) wm_desc="$wm_mode (kilix sizes itself to the screen)" ;;
+        *)        wm_desc="custom: $wm_mode" ;;
     esac
     info "wm       : $wm_desc"
     if [ -n "$openbox_bin" ]; then info "openbox  : $openbox_bin"
@@ -103,8 +102,7 @@ cmd_status() {
     case "${KILIX_RUN_ALIASES:-}" in
         1|yes|true|on)  info "gui apps : kilix run, in a kilix tab  (KILIX_RUN_ALIASES=$KILIX_RUN_ALIASES)" ;;
         0|no|false|off) info "gui apps : native windows  (KILIX_RUN_ALIASES=$KILIX_RUN_ALIASES)" ;;
-        *) if [ "$wm_native" = 1 ]; then info "gui apps : native windows (the session WM manages them)"
-           else info "gui apps : kilix run, in a kilix tab (no WM to manage them)"; fi ;;
+        *) info "gui apps : kilix run, in a kilix tab (session default)" ;;
     esac
     if [ -x "$KILIX_SETTINGS_LINK" ]; then
         info "settings : $GPU_TERMINAL_SETTINGS_FILE  [$KILIX_SETTINGS_LINK]"

@@ -352,6 +352,75 @@ exit "$VOICE_INSTALL_EXIT"
                 [f"{name}={persisted[name]}" for name in COORDINATED_STORAGE_VARS],
             )
 
+    def test_gui_routing_policy_is_exported_with_default_and_precedence(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            observed = tmp / "observed"
+            engine = tmp / "kilix"
+            write_executable(
+                engine,
+                "#!/bin/sh\n"
+                f"printf '%s\\n' \"$KILIX_RUN_ALIASES\" "
+                f"\"$KILIX_RUN_ALIAS_APPS\" "
+                f"\"$KILIX_RUN_ALIAS_EXCLUDE_APPS\" >{observed!s}\n",
+            )
+            config = tmp / "session.env"
+            config.write_text(
+                f"KILIX={engine!s}\nPLEB_NO_FILL=1\nPLEB_WM=none\n"
+                "KILIX_RUN_ALIASES=0\n"
+                "KILIX_RUN_ALIAS_APPS='persisted-one persisted-two'\n"
+                "KILIX_RUN_ALIAS_EXCLUDE_APPS=persisted-exclude\n"
+            )
+
+            persisted_env = clean_env(tmp)
+            persisted_env["PLEB_ENV_USER"] = str(config)
+            subprocess.run(
+                [str(ROOT / "bin/pleb-session")], cwd=ROOT,
+                env=persisted_env, text=True, capture_output=True, check=True,
+            )
+            self.assertEqual(
+                observed.read_text().splitlines(),
+                ["0", "persisted-one persisted-two", "persisted-exclude"],
+            )
+
+            for false_value in ("0", "no", "false", "off"):
+                false_env = persisted_env.copy()
+                false_env["KILIX_RUN_ALIASES"] = false_value
+                log = tmp / f"session-{false_value}.log"
+                false_env["PLEB_LOG"] = str(log)
+                subprocess.run(
+                    [str(ROOT / "bin/pleb-session")], cwd=ROOT,
+                    env=false_env, text=True, capture_output=True, check=True,
+                )
+                self.assertEqual(observed.read_text().splitlines()[0],
+                                 false_value)
+                self.assertIn("gui=native", log.read_text())
+
+            explicit_env = persisted_env.copy()
+            explicit_env.update({
+                "KILIX_RUN_ALIASES": "1",
+                "KILIX_RUN_ALIAS_APPS": "explicit-app",
+                "KILIX_RUN_ALIAS_EXCLUDE_APPS": "explicit-exclude",
+            })
+            subprocess.run(
+                [str(ROOT / "bin/pleb-session")], cwd=ROOT,
+                env=explicit_env, text=True, capture_output=True, check=True,
+            )
+            self.assertEqual(
+                observed.read_text().splitlines(),
+                ["1", "explicit-app", "explicit-exclude"],
+            )
+
+            config.write_text(
+                f"KILIX={engine!s}\nPLEB_NO_FILL=1\nPLEB_WM=none\n")
+            default_env = clean_env(tmp)
+            default_env["PLEB_ENV_USER"] = str(config)
+            subprocess.run(
+                [str(ROOT / "bin/pleb-session")], cwd=ROOT,
+                env=default_env, text=True, capture_output=True, check=True,
+            )
+            self.assertEqual(observed.read_text().splitlines(), ["1", "", ""])
+
     def test_explicit_land_provider_env_wins_over_persisted_values(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)

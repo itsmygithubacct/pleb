@@ -115,9 +115,15 @@ class OpenboxWiringTests(unittest.TestCase):
         session = _var_list(SESSION.read_text(), "_pleb_vars")
         common = _var_list(COMMON.read_text(), "vars")
         for name in ("PLEB_WM", "PLEB_OPENBOX_CONFIG", "PLEB_WM_TIMEOUT",
-                     "KILIX_RUN_ALIASES"):
+                     "KILIX_RUN_ALIASES", "KILIX_RUN_ALIAS_APPS",
+                     "KILIX_RUN_ALIAS_EXCLUDE_APPS"):
             self.assertIn(name, session, f"{name} missing from _pleb_vars")
             self.assertIn(name, common, f"{name} missing from common.sh vars")
+
+    def test_gui_apps_default_to_kilix_run_even_with_openbox(self):
+        text = SESSION.read_text()
+        self.assertIn('KILIX_RUN_ALIASES=1', text)
+        self.assertNotIn('[ "$HAVE_WM" = 1 ] && KILIX_RUN_ALIASES=0', text)
 
     def test_profile_default_path_matches_install_destination(self):
         # The launcher is self-contained and cannot read common.sh, so these two
