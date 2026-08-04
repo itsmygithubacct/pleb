@@ -15,6 +15,17 @@ dependencies are intentionally retained for explicit cleanup.
 log out ──▶ LightDM greeter ──▶ pick "Pleb" ──▶ screen-filling Kilix
 ```
 
+## Watch the episode
+
+https://github.com/user-attachments/assets/c7fb031d-92be-4683-9730-106e65f71a70
+
+**[Pleb: Turning Kilix into a Login Session](https://github.com/itsmygithubacct/pleb/releases/download/media-v1/03-pleb-login-session.mp4)**
+— part three of *Kilix, Pleb, and Plebian-OS: A Desktop Built Inside a Terminal*, the ten-part
+stack series (1920×1080, 2m46s, 9.3 MB; published as a
+[media release](https://github.com/itsmygithubacct/pleb/releases/tag/media-v1) so a clone stays
+small). The [full series](https://github.com/itsmygithubacct/plebian-os#watch-the-series) (31m22s)
+lives on `plebian-os` and plays at [plebian-os.com](https://plebian-os.com/#watch).
+
 ## Layout
 
 ```
