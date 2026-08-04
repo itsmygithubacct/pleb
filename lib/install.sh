@@ -163,6 +163,8 @@ install_kilix_tui_utils() {
         || die "kilix-tui-utils installation failed"
     [ -x "$KILIX_TEMPS_BIN" ] && [ -x "$KILIX_MEMORY_BIN" ] \
         || die "kilix-tui-utils did not produce Temps and Memory commands"
+    [ -x "$KILIX_MUSIC_BIN" ] \
+        || die "kilix-tui-utils did not produce the Music command"
 }
 
 install_tmux_tui() {
