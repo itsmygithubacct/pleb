@@ -148,6 +148,10 @@ KILIX_SETTINGS_LINK="${KILIX_SETTINGS_LINK:-/usr/local/bin/kilix-settings}"
 # prefix; Pleb publishes the thermal command for desktop/login PATHs.
 KILIX_TEMPS_BIN="$HOME/.local/bin/kilix-temps"
 KILIX_MEMORY_BIN="$HOME/.local/bin/kilix-memory"
+# The Music front end is a client of kilix-amp's control socket rather than a
+# player of its own, so it is the one utility whose usefulness depends on a
+# second repository. Checked at install time for that reason.
+KILIX_MUSIC_BIN="$HOME/.local/bin/kilix-music"
 KILIX_TEMPS_LINK="${KILIX_TEMPS_LINK:-/usr/local/bin/kilix-temps}"
 # Kilix installs its pinned tmux-tui/tmux-cli source closure under the same
 # user prefix. Pleb publishes both commands for login shells and system menus.

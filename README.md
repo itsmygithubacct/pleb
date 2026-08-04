@@ -55,8 +55,12 @@ revalidated even when an engine is already runnable. For automation, set
 manifests always supply a verified pair.
 
 `pleb install` also initializes and builds Kilix's pinned persistent PTY broker,
-then installs the single pinned `kilix-tui-utils` checkout (including Temps and
-Memory) and the tmux-tui source closure. The unified installer publishes
+then installs the single pinned `kilix-tui-utils` checkout (including Temps,
+Memory, and the Music front end) and the tmux-tui source closure. Music drives
+kilix-amp over its control socket rather than decoding anything itself, and
+starts a `kilix-amp --headless` backend when none is listening; the player
+binary itself arrives with the Kilix 95 Media Player, which builds it from the
+pinned content catalog on first use. The unified installer publishes
 `kilix-tui` and its utility commands under `~/.local/bin`; Pleb also symlinks
 `kilix`, `kilix-settings`, `kilix-temps`, `tmux-tui`, and tmux-cli's `tb.py` as `tb`
 onto the system `PATH` (`/usr/local/bin` by default). The Kilix TUI
@@ -96,7 +100,8 @@ therefore retain their kittens-fire wallpaper default.
 - On Debian/Ubuntu, `pleb install` installs Pleb's runtime packages with apt,
   including `build-essential`, NetworkManager's `nmtui` for the top-bar
   network/Wi-Fi widget, `pulsemixer` for its volume widget, and the
-  FluidSynth/SoundFont runtime used by kilix-amp MIDI playback.
+  FluidSynth/SoundFont runtime used by kilix-amp MIDI playback (the same
+  runtime its headless backend decodes with).
   Before a fork build, `pleb update` runs Kilix's own complete cross-distro
   dependency verifier and installer (including the `libxxhash` pkg-config
   module). Set `PLEB_SKIP_DEPS=1` to prevent package-manager changes; an update
