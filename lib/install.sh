@@ -214,6 +214,28 @@ install_kilix_voice() {
         || warn "Kilix Voice read-aloud installation failed; run 'kilix voice doctor' for the reason"
 }
 
+# install_kilix_amp — build the pinned Media Player and its headless backend.
+#
+# Kilix Amp is catalog content and has always installed on first use from the
+# desktop. A provisioned machine should not make the first person to open the
+# player, or the Music tool that drives its backend, wait for a compile, so it
+# is built here instead.
+#
+# Failure warns rather than dies. A machine without the SDL, libsndfile and
+# FluidSynth development libraries is a legitimate one — Plebian-OS installs
+# them before this runs, a standalone `pleb install` may not — and the on-demand
+# install stays available either way, so this is a head start, not a
+# precondition for a working session.
+install_kilix_amp() {
+    log "installing Kilix's pinned Media Player and its headless backend"
+    if ! "$KILIX_DIR/kilix" amp --install-only; then
+        warn "Kilix Amp did not build; the Media Player and kilix-music will build it on first use"
+        return 0
+    fi
+    [ -x "$KILIX_AMP_BIN" ] \
+        || warn "Kilix Amp reported success but $KILIX_AMP_BIN is missing"
+}
+
 install_pty_broker() {
     local source="$KILIX_DIR/third_party/kitty-pty-broker"
     local builder="$KILIX_DIR/scripts/build-pty-broker.sh"
@@ -608,6 +630,7 @@ do_install() {
     install_kilix_tui_utils
     install_tmux_tui
     install_kilix_voice
+    install_kilix_amp
     if [ ! -f "$KILIX_DIR/kilix-settings" ] \
             || [ -L "$KILIX_DIR/kilix-settings" ]; then
         die "missing or unsafe Kilix settings TUI: $KILIX_DIR/kilix-settings"
