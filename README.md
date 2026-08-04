@@ -56,11 +56,16 @@ manifests always supply a verified pair.
 
 `pleb install` also initializes and builds Kilix's pinned persistent PTY broker,
 then installs the single pinned `kilix-tui-utils` checkout (including Temps,
-Memory, and the Music front end) and the tmux-tui source closure. Music drives
-kilix-amp over its control socket rather than decoding anything itself, and
-starts a `kilix-amp --headless` backend when none is listening; the player
-binary itself arrives with the Kilix 95 Media Player, which builds it from the
-pinned content catalog on first use. The unified installer publishes
+Memory, and the Music front end), the tmux-tui source closure, and the pinned
+Media Player. Music drives kilix-amp over its control socket rather than
+decoding anything itself, and starts a `kilix-amp --headless` backend when none
+is listening.
+
+The Media Player is built here so nobody waits for a compile the first time
+they open it, but it is not a precondition for a working session: if the SDL,
+libsndfile and FluidSynth development libraries are absent, `pleb install`
+warns and Kilix builds the player on demand instead, from `kilix amp` or the
+first time the Media Player or the Music tool is opened. The unified installer publishes
 `kilix-tui` and its utility commands under `~/.local/bin`; Pleb also symlinks
 `kilix`, `kilix-settings`, `kilix-temps`, `tmux-tui`, and tmux-cli's `tb.py` as `tb`
 onto the system `PATH` (`/usr/local/bin` by default). The Kilix TUI

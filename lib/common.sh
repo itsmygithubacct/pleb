@@ -152,6 +152,9 @@ KILIX_MEMORY_BIN="$HOME/.local/bin/kilix-memory"
 # player of its own, so it is the one utility whose usefulness depends on a
 # second repository. Checked at install time for that reason.
 KILIX_MUSIC_BIN="$HOME/.local/bin/kilix-music"
+# Kilix Amp is catalog content, so Kilix's own data directory owns it and its
+# commit comes from the pinned content catalog rather than a ref here.
+KILIX_AMP_BIN="$KILIX_DATA_HOME/desktop-apps/kilix-amp/kilix-amp"
 KILIX_TEMPS_LINK="${KILIX_TEMPS_LINK:-/usr/local/bin/kilix-temps}"
 # Kilix installs its pinned tmux-tui/tmux-cli source closure under the same
 # user prefix. Pleb publishes both commands for login shells and system menus.
