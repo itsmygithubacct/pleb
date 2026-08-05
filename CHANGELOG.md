@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.8 — 2026-08-04
+
+Prepared 2026-08-04; not published. Supported upgrade source: 0.1.7, and the
+upgrade acceptance result is reserved and must be recorded before publication.
+
 ## 0.1.7 — 2026-08-02
 
 Version numbers 0.1.3 through 0.1.6 were never published coordinated stack
