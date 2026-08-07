@@ -5,6 +5,35 @@
 Prepared 2026-08-04; not published. Supported upgrade source: 0.1.7, and the
 upgrade acceptance result is reserved and must be recorded before publication.
 
+- **`pleb update` now updates Pleb itself.** It could move Kilix, Kilix 95 and
+  the pinned utility closures, but never the component it runs from: two
+  provisioned machines stayed on the 0.1.7 Pleb commit through repeated
+  updates, with `PLEB_REF` exported or not, because only the root-only OS-layer
+  updater knew how to move that checkout. `PLEB_REF`, `PLEB_BRANCH`, `PLEB_REPO`
+  and `PLEB_ALLOW_MUTABLE_REF` now behave exactly like their Kilix equivalents.
+  The move happens last, after every other component is coherent, so a changed
+  updater can only take effect on the next invocation; a checkout that does not
+  parse or cannot answer `pleb version` is restored to the previous commit, so
+  a failed self-update always leaves a working installation. `PLEB_DIR` must
+  resolve to the running checkout, an outer updater that lent Pleb its lock
+  keeps ownership of the checkout, and `PLEB_SELF_UPDATE=0` opts out entirely.
+- **Report every pinned component move, and never downgrade in silence.** A ref
+  override is per-run, so a later plain update reinstates the persisted pin and
+  a delivered fix disappears without a word — which is how a test machine's
+  Kilix 95 went back to its 0.1.7 pin. Precedence is unchanged; pinned moves now
+  print `component: <before> -> <after> (pinned by <source>)`, naming the
+  environment or the exact `session.env` responsible, and a move that walks an
+  installed component backwards is reported as a `DOWNGRADE` with the variable
+  to export to keep the newer commit.
+- **Refresh an installed Kilix Voice closure during updates.** Voice is
+  installed lazily and must stay that way — reading a pane aloud may not start a
+  41 MB download — so updates never installed it either, and a bumped voice pin
+  reached every fresh machine and no existing one. An update now refreshes the
+  closure to its pinned commit when the voice tools are already installed,
+  leaves the machine alone when they are not, and preserves the installed
+  read-aloud/dictation shape so a refresh cannot quietly add the recognition
+  closure.
+
 ## 0.1.7 — 2026-08-02
 
 Version numbers 0.1.3 through 0.1.6 were never published coordinated stack
