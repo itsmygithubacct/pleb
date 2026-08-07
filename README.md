@@ -114,7 +114,8 @@ therefore retain their kittens-fire wallpaper default.
   small soft-raster library used by Kilix Temps, and fetch the terminal engine).
 - `sudo` for `install` / `autologin` (system files only).
 - On Debian/Ubuntu, `pleb install` installs Pleb's runtime packages with apt,
-  including `build-essential`, NetworkManager's `nmtui` for the top-bar
+  including `build-essential` and `cmake` (the model store compiles its CPU
+  inference runtime locally), NetworkManager's `nmtui` for the top-bar
   network/Wi-Fi widget, `pulsemixer` for its volume widget, and the
   FluidSynth/SoundFont runtime used by kilix-amp MIDI playback (the same
   runtime its headless backend decodes with).

@@ -285,6 +285,8 @@ ensure_system_deps
         self.assertIn("network-manager", install)
         self.assertIn("pulsemixer", install)
         self.assertIn("build-essential", install)
+        # CMake builds the model store's CPU runtime on the machine itself.
+        self.assertIn("cmake", install)
         self.assertIn('python3 "$KILIX_DIR/kilix-settings" --ensure', install)
         self.assertIn('link_command "$KILIX_DIR/kilix-settings"', install)
         self.assertIn('"$installer" --print-path', install)
