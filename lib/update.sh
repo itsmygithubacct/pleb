@@ -697,7 +697,7 @@ _update_kilix95() {
     before="$(git -C "$KILIX95_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
 
     if [ -n "$KILIX95_REF" ]; then
-        checkout_fetched_ref "$KILIX95_DIR" "$KILIX95_REF" "kilix 95"
+        checkout_fetched_ref "$KILIX95_DIR" "$KILIX95_REF" "kilix 95" KILIX95_REF
     else
         branch="${KILIX95_BRANCH:-$(git -C "$KILIX95_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)}"
         { [ -n "$branch" ] && [ "$branch" != HEAD ]; } || branch=main
@@ -727,6 +727,142 @@ _update_kilix95() {
         log "kilix 95 already up to date at ${after:0:12}."
     else
         log "kilix 95 updated: ${before:0:12} -> ${after:0:12}"
+    fi
+}
+
+# --- pleb's own checkout ------------------------------------------------------
+# `pleb update` updated Kilix, Kilix 95 and the utility closures, and left the
+# one component it lives in exactly where it was: two provisioned machines sat
+# at the 0.1.7 Pleb commit through many updates, PLEB_REF exported or not. Only
+# the root-only OS-layer updater could move it.
+#
+# The hazard is that the updater runs out of the tree it has to move, so the
+# move happens LAST — after the Kilix transaction has committed and every other
+# component is coherent. Nothing but the restart offer runs afterwards, so a
+# changed lib/ or bin/ can only take effect on the next invocation, which is
+# stated in the log rather than left to be discovered. (Git replaces files by
+# rename, so the running shell keeps reading the inode it opened either way;
+# ordering makes that a decision instead of a detail being relied upon.)
+_PLEB_SELF_UPDATE_OK=0
+
+_pleb_self_update_restore() {
+    local head="$1" branch="$2"
+    if [ -n "$branch" ]; then
+        git -C "$PLEB_ROOT" checkout -f "$branch" >/dev/null 2>&1 \
+            && git -C "$PLEB_ROOT" reset --hard "$head" >/dev/null 2>&1
+    else
+        git -C "$PLEB_ROOT" checkout -f --detach "$head" >/dev/null 2>&1 \
+            && git -C "$PLEB_ROOT" reset --hard "$head" >/dev/null 2>&1
+    fi
+}
+
+# Everything the next `pleb` invocation needs before the moved checkout is
+# accepted: the whole sourced set must parse, and the CLI must answer a command
+# that touches every module. A tree that fails this is put back.
+_pleb_self_update_runnable() {
+    local script
+    for script in bin/pleb bin/pleb-session lib/common.sh lib/storage.sh \
+            lib/install.sh lib/autologin.sh lib/test.sh lib/kiosk.sh \
+            lib/update.sh; do
+        if [ ! -f "$PLEB_ROOT/$script" ] || [ -L "$PLEB_ROOT/$script" ]; then
+            warn "updated pleb is missing $script"
+            return 1
+        fi
+        bash -n "$PLEB_ROOT/$script" \
+            || { warn "updated pleb does not parse: $script"; return 1; }
+    done
+    [ -x "$PLEB_ROOT/bin/pleb" ] \
+        || { warn "updated pleb has no executable bin/pleb"; return 1; }
+    "$PLEB_ROOT/bin/pleb" version >/dev/null 2>&1 \
+        || { warn "updated pleb could not answer 'pleb version'"; return 1; }
+}
+
+# Decide (and validate) up front, so a bad pin or a dirty tree fails before any
+# component is touched rather than after everything else has succeeded.
+_prepare_pleb_self_update() {
+    local root configured
+    _PLEB_SELF_UPDATE_OK=0
+    case "${PLEB_SELF_UPDATE:-1}" in
+        1|yes|true|on) ;;
+        0|no|false|off)
+            log "pleb self-update disabled (PLEB_SELF_UPDATE=$PLEB_SELF_UPDATE)"
+            return 0 ;;
+        *) die "invalid PLEB_SELF_UPDATE=$PLEB_SELF_UPDATE (expected 0/1)" ;;
+    esac
+    if [ "${_UPDATE_LOCK_BORROWED:-0}" = 1 ]; then
+        # The OS-layer updater hands its lock down and has already put the Pleb
+        # checkout where its own release manifest wants it. Moving it underneath
+        # the process that launched us would undo that run's pinned checkout.
+        log "an outer updater owns the pleb checkout for this run; not self-updating"
+        return 0
+    fi
+    if [ ! -d "$PLEB_ROOT/.git" ]; then
+        log "pleb at $PLEB_ROOT is not a git checkout; not self-updating"
+        return 0
+    fi
+    root="$(cd "$PLEB_ROOT" && pwd -P)" \
+        || die "could not resolve the running pleb checkout: $PLEB_ROOT"
+    configured="$(cd "$PLEB_DIR" 2>/dev/null && pwd -P)" || configured=""
+    if [ -n "$configured" ] && [ "$configured" != "$root" ]; then
+        warn "PLEB_DIR=$PLEB_DIR is not the checkout this pleb runs from ($root)"
+        warn "not self-updating; run 'pleb update' from $PLEB_DIR instead"
+        return 0
+    fi
+    require_immutable_ref "$PLEB_REF" "$PLEB_ALLOW_MUTABLE_REF" \
+        PLEB_REF PLEB_ALLOW_MUTABLE_REF
+    validate_checkout_origin "$PLEB_ROOT" "$PLEB_REPO" "pleb"
+    require_clean_checkout "$PLEB_ROOT" "pleb"
+    _PLEB_SELF_UPDATE_OK=1
+}
+
+_update_pleb_self() {
+    local before after branch current version
+    [ "$_PLEB_SELF_UPDATE_OK" = 1 ] || return 0
+    before="$(git -C "$PLEB_ROOT" rev-parse --verify HEAD 2>/dev/null)" \
+        || die "could not read the current pleb commit at $PLEB_ROOT"
+    branch="$(git -C "$PLEB_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+
+    if [ -n "$PLEB_REF" ]; then
+        checkout_fetched_ref "$PLEB_ROOT" "$PLEB_REF" "pleb" PLEB_REF
+    else
+        current="${PLEB_BRANCH:-$branch}"
+        { [ -n "$current" ] && [ "$current" != HEAD ]; } || current=main
+        log "fetching latest pleb ($current) from origin"
+        git -C "$PLEB_ROOT" fetch --prune origin "$current" || die "pleb fetch failed"
+        if [ -n "$PLEB_BRANCH" ] && [ "$branch" != "$PLEB_BRANCH" ]; then
+            if git -C "$PLEB_ROOT" show-ref --verify --quiet "refs/heads/$PLEB_BRANCH"; then
+                git -C "$PLEB_ROOT" checkout "$PLEB_BRANCH" \
+                    || die "could not check out PLEB_BRANCH=$PLEB_BRANCH"
+            else
+                git -C "$PLEB_ROOT" checkout --track -b "$PLEB_BRANCH" "origin/$PLEB_BRANCH" \
+                    || die "could not track PLEB_BRANCH=$PLEB_BRANCH"
+            fi
+        fi
+        # fast-forward only — never silently clobber local work
+        if ! git -C "$PLEB_ROOT" merge --ff-only "origin/$current"; then
+            warn "cannot fast-forward $current (local commits/changes in $PLEB_ROOT?)."
+            die "resolve there and re-run 'pleb update'."
+        fi
+    fi
+
+    after="$(git -C "$PLEB_ROOT" rev-parse --verify HEAD 2>/dev/null)" \
+        || die "could not verify the pleb commit after checkout"
+    if [ "$before" = "$after" ]; then
+        log "pleb already up to date at ${after:0:12}."
+        return 0
+    fi
+    if ! _pleb_self_update_runnable; then
+        warn "the updated pleb checkout is not runnable; restoring ${before:0:12}"
+        _pleb_self_update_restore "$before" "$branch" \
+            || die "could not restore pleb ${before:0:12}; recover with: git -C $PLEB_ROOT checkout -f $before"
+        die "pleb self-update rolled back; the previous version is still installed"
+    fi
+    version="$(cat "$PLEB_ROOT/VERSION" 2>/dev/null || echo unknown)"
+    log "pleb updated: ${before:0:12} -> ${after:0:12} (VERSION $version)"
+    log "the new pleb runs from the next 'pleb' command onwards."
+    if [ -x "$SESSION_BIN_DST" ] && ! cmp -s "$PLEB_BIN_SRC" "$SESSION_BIN_DST"; then
+        warn "the installed session launcher $SESSION_BIN_DST is now stale"
+        warn "publish it with 'pleb install' (needs root) before the next login"
     fi
 }
 
@@ -1049,6 +1185,9 @@ do_update() {
         validate_checkout_origin "$KILIX95_DIR" "$KILIX95_REPO" "kilix 95"
         require_clean_checkout "$KILIX95_DIR" "kilix 95"
     fi
+    # Decided here, applied last: a bad PLEB_REF or a dirty Pleb tree must stop
+    # the run before any component moves, not after all of them have.
+    _prepare_pleb_self_update
     local before after branch current src_before src_after current_engine
     # track the checked-out branch (or KILIX_BRANCH if set); fall back to main
     branch="${KILIX_BRANCH:-$(git -C "$KILIX_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)}"
@@ -1058,7 +1197,7 @@ do_update() {
     _update_transaction_begin
 
     if [ -n "$KILIX_REF" ]; then
-        checkout_fetched_ref "$KILIX_DIR" "$KILIX_REF" "kilix"
+        checkout_fetched_ref "$KILIX_DIR" "$KILIX_REF" "kilix" KILIX_REF
     else
         log "fetching latest kilix ($branch) from origin"
         git -C "$KILIX_DIR" fetch --prune origin "$branch" || die "git fetch failed"
@@ -1100,6 +1239,9 @@ do_update() {
     install_kilix_tui_utils
     install_tmux_tui
     install_pty_broker
+    # Voice is installed lazily and stays that way; this only moves a closure
+    # that is already there onto the commit the new Kilix pins.
+    refresh_kilix_voice
 
     if _kilix_fork_enabled; then
         if _kilix_fork_needs_rebuild; then
@@ -1118,6 +1260,9 @@ do_update() {
     # Software state is now coherent. Restart failures must not undo a valid
     # update, but the lock remains held until restart handling finishes.
     _update_transaction_commit
+    # Last: the updater's own checkout, so a failure here cannot strand a
+    # half-updated engine and a moved Pleb cannot change this run underneath it.
+    _update_pleb_self
     _offer_restart
     _release_update_lock
     trap - EXIT INT TERM

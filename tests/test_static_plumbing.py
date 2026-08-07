@@ -140,6 +140,68 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn('checkout "$KILIX95_BRANCH"', text)
         self.assertIn('checkout --track -b "$KILIX95_BRANCH"', text)
 
+    def test_update_moves_pleb_itself_last_and_reversibly(self):
+        common = (ROOT / "lib" / "common.sh").read_text()
+        update = (ROOT / "lib" / "update.sh").read_text()
+        readme = (ROOT / "README.md").read_text()
+        for name in (
+            "PLEB_DIR",
+            "PLEB_REPO",
+            "PLEB_BRANCH",
+            "PLEB_REF",
+            "PLEB_ALLOW_MUTABLE_REF",
+            "PLEB_SELF_UPDATE",
+        ):
+            # Both halves matter: a default the CLI derives, and a name the
+            # session env file is allowed to supply.
+            self.assertIn(f'{name}="${{{name}:-', common)
+            self.assertIn(name, common.split("vars=", 1)[1].split("\n", 1)[0])
+        self.assertIn(
+            'checkout_fetched_ref "$PLEB_ROOT" "$PLEB_REF" "pleb" PLEB_REF', update)
+        self.assertIn('merge --ff-only "origin/$current"', update)
+        self.assertIn("_pleb_self_update_runnable", update)
+        self.assertIn("_pleb_self_update_restore", update)
+        # Preconditions up front, the move itself after the component
+        # transaction has committed, and nothing but the restart offer after.
+        prepare = update.index("_prepare_pleb_self_update\n")
+        commit = update.index("_update_transaction_commit\n", prepare)
+        move = update.index("    _update_pleb_self\n", commit)
+        restart = update.index("_offer_restart", move)
+        self.assertLess(commit, move)
+        self.assertLess(move, restart)
+        self.assertIn("PLEB_SELF_UPDATE=0", readme)
+
+    def test_pinned_component_moves_are_reported_and_downgrades_shouted(self):
+        common = (ROOT / "lib" / "common.sh").read_text()
+        install = (ROOT / "lib" / "install.sh").read_text()
+        update = (ROOT / "lib" / "update.sh").read_text()
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        self.assertIn("announce_component_move()", common)
+        self.assertIn("merge-base --is-ancestor", common)
+        self.assertIn("DOWNGRADE", common)
+        self.assertIn("PLEB_ENV_ORIGIN", common)
+        self.assertIn("_pleb_value_origin", common)
+        # Every pinned checkout names the variable that chose its ref, or the
+        # report cannot say who decided the move.
+        for text in (install, update):
+            for line in text.splitlines():
+                if "checkout_fetched_ref " in line and "()" not in line:
+                    self.assertRegex(line.strip(), r'"\s+[A-Z0-9_]+$')
+        self.assertIn("DOWNGRADE", changelog)
+
+    def test_update_refreshes_installed_voice_without_ever_installing_it(self):
+        install = (ROOT / "lib" / "install.sh").read_text()
+        update = (ROOT / "lib" / "update.sh").read_text()
+        readme = (ROOT / "README.md").read_text()
+        self.assertIn("refresh_kilix_voice()", install)
+        self.assertIn("refresh_kilix_voice", update)
+        # The laziness is the point: no installed tools, no installer run.
+        self.assertIn('[ ! -x "$KILIX_VOICE_TTS_BIN" ]', install)
+        self.assertIn("an update never installs it", install)
+        self.assertIn("args=(--without-dictation)", install)
+        self.assertIn("41 MB", install)
+        self.assertIn("lazily installed", readme)
+
     def test_update_rebuilds_or_fails_stale_fork(self):
         text = (ROOT / "lib" / "update.sh").read_text()
         self.assertIn("PLEBIAN_OS_BUILD_KILIX_FORK", text)

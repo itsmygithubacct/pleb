@@ -152,7 +152,7 @@ log in. To go back, log out and pick your usual session again.
 | `pleb autologin on [user]` | Boot straight into Pleb — no greeter (kiosk). *(sudo)* |
 | `pleb autologin off` | Revert to the normal greeter. *(sudo)* |
 | `pleb kiosk on` / `off` | Hard kiosk: respawn kilix if it exits (or don't). *(no sudo)* |
-| `pleb update [-y] [--no-restart\|--restart]` | Update clean checkouts, rebuild the fork, and optionally restart an active kiosk. |
+| `pleb update [-y] [--no-restart\|--restart]` | Update clean checkouts (including Pleb's own), rebuild the fork, and optionally restart an active kiosk. |
 | `pleb status` | Show the effective persisted engine / desktop / install / autologin / kiosk state. |
 | `pleb screen-size ...` | Show, increase, decrease, reset, or set Kilix terminal scale. |
 | `pleb settings` | Toggle Kilix's top-bar widgets, pane-title buttons, and session logging. |
@@ -335,10 +335,10 @@ These are shell environment files, so only place trusted content in them. If
 the CLI itself is invoked as root, it refuses to source a file that is not
 root-owned or is writable by group/other users.
 
-## Updating kilix
+## Updating the stack
 
 ```sh
-pleb update              # fetch latest kilix, ff-only, rebuild the fork, offer restart
+pleb update              # fetch latest kilix + pleb, ff-only, rebuild the fork, offer restart
 pleb update -y           # ...and restart an active Pleb kiosk without asking
 pleb update --restart    # explicitly restart an active kiosk; never prompts
 pleb update --no-restart # update only; leave LightDM alone
@@ -362,9 +362,33 @@ resolved through `FETCH_HEAD`, checked out detached, and verified; local tags
 are never trusted as the source of a release pin. Mutable refs require the
 corresponding explicit `*_ALLOW_MUTABLE_REF=1` trust override.
 
+A pinned move is always reported as `component: <before> -> <after> (pinned by
+<source>)`, naming the environment or the exact `session.env` that decided it.
+When a pin moves an installed component **backwards**, the line says `DOWNGRADE`
+and repeats the variable to export to keep the newer commit. Precedence is
+unchanged — a persisted pin is the machine's declared state and an environment
+override is deliberately per-run — but a rewind is never silent.
+
+`pleb update` also updates **Pleb itself**, last, after every other component is
+coherent. `PLEB_REF`, `PLEB_BRANCH` and `PLEB_REPO` follow the same rules as
+their Kilix equivalents, and the move only happens when `PLEB_DIR` resolves to
+the checkout the running `pleb` came from. If the moved checkout does not parse
+or cannot answer `pleb version`, the previous commit is restored and the update
+reports the rollback, so a failed self-update always leaves a working
+installation. The new code takes effect from the next `pleb` command; when the
+system session launcher becomes stale, the update says so and names
+`pleb install` (which needs root) as the fix. Set `PLEB_SELF_UPDATE=0` to keep
+the checkout where it is.
+
+Kilix Voice stays lazily installed: an update **refreshes** the voice closure to
+its pinned commit when the tools are already installed, and never installs them
+as a side effect when they are not. A read-aloud-only machine is refreshed
+read-aloud-only, so an update cannot enrol it in the recognition closure.
+
 The Plebian-OS updater passes its already-held copy of this same lock through an
 inherited file descriptor. Pleb validates and borrows that lock without
-releasing the parent updater's ownership.
+releasing the parent updater's ownership; that run owns the Pleb checkout, so
+the self-update step stands down for it.
 
 The canonical fork-build stamp is stored at
 `~/.local/gpu_terminal/kilix/state/fork-built-ref`, beside the Kilix generation

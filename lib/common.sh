@@ -58,9 +58,21 @@ _pleb_config_safe_to_source() {
     done
 }
 
+# Where each session-managed value came from. A pinned ref that moves a
+# component is only understandable if the answer to "who decided that?" is
+# printed beside the move: an override is per-run, so the next plain update
+# silently reinstates whatever the persisted pin says.
+declare -A PLEB_ENV_ORIGIN=()
+
+# _pleb_value_origin NAME — the file (or "the environment") that supplied NAME,
+# for reporting only. Never used to decide precedence.
+_pleb_value_origin() {
+    printf '%s\n' "${PLEB_ENV_ORIGIN[$1]:-the built-in default}"
+}
+
 load_pleb_session_env() {
     local vars var cfg
-    vars="GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_TRANSCRIPT_DIR KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_REPO KILIX_BRANCH KILIX_REF KILIX_ALLOW_MUTABLE_REF KILIX_PREBUILT_VERSION KILIX_PREBUILT_SHA256 PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL PLEB_INSTALL_KILIX95 PLEB_SKIP_DEPS PLEBIAN_OS_MANAGED_INSTALL PLEB_UPDATE_LOCK_FD KILIX_TRANSACTION_LOCK_FD KILIX_TRANSACTION_LOCK_PATH PLEBIAN_OS_BUILD_KILIX_FORK PLEBIAN_OS_KILIX_GO_MIN_VERSION PLEBIAN_OS_KILIX_GO_VERSION PLEBIAN_OS_KILIX_GO_SHA256_AMD64 PLEBIAN_OS_KILIX_GO_SHA256_ARM64"
+    vars="PLEB_DIR PLEB_REPO PLEB_BRANCH PLEB_REF PLEB_ALLOW_MUTABLE_REF PLEB_SELF_UPDATE GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_TRANSCRIPT_DIR KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_REPO KILIX_BRANCH KILIX_REF KILIX_ALLOW_MUTABLE_REF KILIX_PREBUILT_VERSION KILIX_PREBUILT_SHA256 PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL PLEB_INSTALL_KILIX95 PLEB_SKIP_DEPS PLEBIAN_OS_MANAGED_INSTALL PLEB_UPDATE_LOCK_FD KILIX_TRANSACTION_LOCK_FD KILIX_TRANSACTION_LOCK_PATH PLEBIAN_OS_BUILD_KILIX_FORK PLEBIAN_OS_KILIX_GO_MIN_VERSION PLEBIAN_OS_KILIX_GO_VERSION PLEBIAN_OS_KILIX_GO_SHA256_AMD64 PLEBIAN_OS_KILIX_GO_SHA256_ARM64"
     declare -A had saved
     for var in $vars; do
         if [[ ${!var+x} ]]; then
@@ -74,11 +86,20 @@ load_pleb_session_env() {
         # shellcheck source=/dev/null
         if [ -r "$cfg" ] && _pleb_config_safe_to_source "$cfg"; then
             . "$cfg"
+            # Record the last file that supplied each value. The caller's
+            # environment is restored below and wins, exactly as before; this
+            # only remembers which file would otherwise have decided.
+            for var in $vars; do
+                if [ "${had[$var]}" = 0 ] && [[ ${!var+x} ]]; then
+                    PLEB_ENV_ORIGIN[$var]="$cfg"
+                fi
+            done
         fi
     done
     for var in $vars; do
         if [ "${had[$var]}" = 1 ]; then
             printf -v "$var" '%s' "${saved[$var]}"
+            PLEB_ENV_ORIGIN[$var]="the environment"
         elif [ "$var" = PLEB_UPDATE_LOCK_FD ] \
             || [ "$var" = KILIX_TRANSACTION_LOCK_FD ] \
             || [ "$var" = KILIX_TRANSACTION_LOCK_PATH ]; then
@@ -184,6 +205,19 @@ PLEB_RECOVERY_DOC_DST="${PLEB_RECOVERY_DOC_DST:-/usr/local/share/doc/pleb/RECOVE
 # is a sync pair with PLEB_OPENBOX_CONFIG in bin/pleb-session: the launcher is
 # self-contained and cannot source this file, so the two literals must match.
 OPENBOX_CONFIG_DST="${OPENBOX_CONFIG_DST:-/usr/local/share/pleb/openbox/rc.xml}"
+
+# pleb itself. `pleb update` moves this checkout like any other component, so a
+# release that bumps Pleb reaches an installed machine through the same command
+# that delivers Kilix instead of needing the root-only OS-layer updater.
+# PLEB_DIR is the provisioned location and must resolve to the checkout this CLI
+# is actually running from before a self-update is attempted.
+PLEB_DIR="${PLEB_DIR:-$PLEB_ROOT}"
+PLEB_REPO="${PLEB_REPO:-https://github.com/itsmygithubacct/pleb.git}"
+PLEB_BRANCH="${PLEB_BRANCH:-}"   # empty = the repo's default branch
+PLEB_REF="${PLEB_REF:-}"         # optional full commit SHA
+PLEB_ALLOW_MUTABLE_REF="${PLEB_ALLOW_MUTABLE_REF:-0}"
+PLEB_SELF_UPDATE="${PLEB_SELF_UPDATE:-1}"
+export PLEB_DIR
 
 # kilix engine: where it lives, how to fetch it, and the launcher path.
 KILIX_DIR="${KILIX_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix}"
@@ -365,8 +399,29 @@ require_immutable_ref() {
     fi
 }
 
+# announce_component_move DIR LABEL BEFORE AFTER REF_NAME — say a pinned move
+# out loud, and shout when it walks an installed component BACKWARDS.
+#
+# Ref overrides are per-run by design and that precedence is deliberate: the
+# persisted pin is the machine's declared state. What makes it a foot-gun is
+# silence — a later plain update reinstates the pin and a delivered fix vanishes
+# with no trace in the log. So every pinned move names both ends and the thing
+# that decided them, and a rewind says so in as many words.
+announce_component_move() {
+    local dir="$1" label="$2" before="$3" after="$4" ref_name="${5:-}" origin
+    [ -n "$before" ] && [ -n "$after" ] && [ "$before" != "$after" ] || return 0
+    origin="$(_pleb_value_origin "$ref_name")"
+    if git -C "$dir" merge-base --is-ancestor "$after" "$before" >/dev/null 2>&1; then
+        warn "$label: ${before:0:12} -> ${after:0:12} (DOWNGRADE, pinned by $origin)"
+        warn "$label: the installed commit was newer; export ${ref_name:-the ref} to keep it"
+    else
+        log "$label: ${before:0:12} -> ${after:0:12} (pinned by $origin)"
+    fi
+}
+
 checkout_fetched_ref() {
-    local dir="$1" ref="$2" label="$3" resolved actual
+    local dir="$1" ref="$2" label="$3" ref_name="${4:-}" resolved actual before
+    before="$(git -C "$dir" rev-parse --verify HEAD 2>/dev/null || true)"
     log "fetching exact $label ref $ref from origin"
     git -C "$dir" fetch --no-tags origin "$ref" \
         || die "$label fetch failed for ref $ref"
@@ -379,4 +434,5 @@ checkout_fetched_ref() {
     [ "$actual" = "$resolved" ] \
         || die "$label checkout verification failed (expected $resolved, got $actual)"
     log "$label pinned at $resolved"
+    announce_component_move "$dir" "$label" "$before" "$actual" "$ref_name"
 }

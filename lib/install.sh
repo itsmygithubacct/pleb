@@ -114,7 +114,7 @@ ensure_kilix() {
     fi
     if [ -n "$KILIX_REF" ]; then
         require_clean_checkout "$KILIX_DIR" "kilix"
-        checkout_fetched_ref "$KILIX_DIR" "$KILIX_REF" "kilix"
+        checkout_fetched_ref "$KILIX_DIR" "$KILIX_REF" "kilix" KILIX_REF
         git -C "$KILIX_DIR" submodule update --init --recursive \
             || die "kilix submodule update failed"
     fi
@@ -149,7 +149,7 @@ ensure_kilix95() {
 
     if [ -n "$KILIX95_REF" ]; then
         require_clean_checkout "$KILIX95_DIR" "kilix 95"
-        checkout_fetched_ref "$KILIX95_DIR" "$KILIX95_REF" "kilix 95"
+        checkout_fetched_ref "$KILIX95_DIR" "$KILIX95_REF" "kilix 95" KILIX95_REF
     fi
 }
 
@@ -212,6 +212,58 @@ install_kilix_voice() {
     KILIX_VOICE_PREFIX="$HOME/.local" \
         "$KILIX_DIR/kilix" voice install --without-dictation \
         || warn "Kilix Voice read-aloud installation failed; run 'kilix voice doctor' for the reason"
+}
+
+# The commit the installed voice closure was built from, as its own installer
+# recorded it. Reported either side of a refresh so a voice move is as visible
+# as a Kilix or Kilix 95 one.
+_kilix_voice_installed_ref() {
+    local stamp="$KILIX_STATE_DIRECTORY/kilix-voice-install.refs"
+    [ -f "$stamp" ] && [ ! -L "$stamp" ] || return 0
+    sed -n 's/^kilix-voice=//p' "$stamp" | head -1
+}
+
+# refresh_kilix_voice — carry a moved voice pin onto a machine that already has
+# the closure, without ever being the thing that installs it.
+#
+# Voice is the one component Kilix installs lazily, and that laziness is load
+# bearing: `kilix speak` must not be able to start a git clone and a 41 MB model
+# download, which is why the launcher resolves the daemon without its installer.
+# An update inherits the same rule from the other direction — it may refresh
+# what is there, and it may not add what is not. Before this, a bumped
+# KILIX_VOICE_REF reached every fresh machine and no existing one, so the only
+# delivery route was a hand-typed `kilix voice install --force`.
+#
+# The read-aloud/dictation shape of the existing install is preserved for the
+# same reason: refreshing a read-aloud-only machine must not quietly enrol it in
+# the recognition closure.
+refresh_kilix_voice() {
+    local installer="$KILIX_DIR/scripts/install-kilix-voice.sh" before after
+    local -a args=()
+    if [ ! -x "$KILIX_VOICE_TTS_BIN" ] || [ ! -x "$KILIX_VOICE_STT_BIN" ]; then
+        log "kilix voice: not installed; an update never installs it (run 'kilix voice install')"
+        return 0
+    fi
+    if [ ! -f "$installer" ] || [ -L "$installer" ] || [ ! -x "$installer" ]; then
+        warn "Kilix Voice installer is missing or unsafe: $installer"
+        warn "the installed voice closure was left exactly as it was"
+        return 0
+    fi
+    [ -f "$KILIX_DATA_HOME/voice/lib/current/libvosk.so" ] \
+        || args=(--without-dictation)
+    before="$(_kilix_voice_installed_ref)"
+    log "refreshing the installed Kilix Voice closure to its pinned commit"
+    if ! KILIX_VOICE_PREFIX="$HOME/.local" "$installer" "${args[@]}"; then
+        warn "Kilix Voice refresh failed; the previously installed closure is still in place"
+        warn "run 'kilix voice doctor' for the reason"
+        return 0
+    fi
+    after="$(_kilix_voice_installed_ref)"
+    if [ -n "$before" ] && [ -n "$after" ] && [ "$before" != "$after" ]; then
+        log "kilix voice: ${before:0:12} -> ${after:0:12}"
+    elif [ -n "$after" ]; then
+        log "kilix voice already up to date at ${after:0:12}."
+    fi
 }
 
 # install_kilix_amp — build the pinned Media Player and its headless backend.
