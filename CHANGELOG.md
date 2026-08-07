@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.1.8 — 2026-08-04
+## 0.1.8 — 2026-08-07
 
-Prepared 2026-08-04; not published. Supported upgrade source: 0.1.7, and the
+Prepared 2026-08-07; not published. Supported upgrade source: 0.1.7, and the
 upgrade acceptance result is reserved and must be recorded before publication.
 
 - **`pleb update` now updates Pleb itself.** It could move Kilix, Kilix 95 and
@@ -33,6 +33,15 @@ upgrade acceptance result is reserved and must be recorded before publication.
   leaves the machine alone when they are not, and preserves the installed
   read-aloud/dictation shape so a refresh cannot quietly add the recognition
   closure.
+- **Document the self-update in the guide a machine ships with.** The recovery
+  guide installed at `/usr/local/share/doc/pleb/RECOVERY.md` now describes the
+  step that moves the checkout the CLI runs from: that the new code takes
+  effect on the next command, that a checkout which cannot answer
+  `pleb version` is put back, how to restore one by hand, and how to opt out.
+  It also says what a `DOWNGRADE` line means when one appears — that the
+  delivered commit never made it into the pin.
+- Install `cmake` with Pleb's runtime packages, alongside the rest of the build
+  toolchain the pinned components compile with.
 
 ## 0.1.7 — 2026-08-02
 
