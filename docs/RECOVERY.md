@@ -35,6 +35,36 @@ helper is `~/.local/gpu_terminal/sources/kilix/scripts/install-build-deps.sh`.
 `pleb update` verifies the complete Kilix dependency manifest again before it
 runs `kilix --build`, so it is safe to repeat after fixing the reported package.
 
+## The update moved Pleb itself
+
+`pleb update` updates the Pleb checkout too, last, after Kilix and the desktop
+provider are coherent. Two consequences are worth knowing before they surprise
+you.
+
+The new code runs from the next `pleb` command onwards, not the one that
+installed it. Run `pleb update` a second time when a release note says the
+updater itself changed.
+
+A moved checkout is verified before it is accepted: it must parse and answer
+`pleb version`. One that does not is put back on the previous commit and the
+run reports `pleb self-update rolled back; the previous version is still
+installed`, so the machine keeps a working installation. If the checkout is ever
+left somewhere you did not intend, `git -C ~/.local/gpu_terminal/sources/pleb
+checkout -f <commit>` restores it by hand, and
+
+```sh
+PLEB_SELF_UPDATE=0 pleb update
+```
+
+updates everything except Pleb.
+
+The commit chosen is `PLEB_REF` when one is set, exactly like `KILIX_REF`, and
+the persisted pin in `/etc/pleb/session.env` applies to every run that does not
+override it. That is deliberate — the pin is the machine's declared state — so
+an update that walks a component backwards is reported as a `DOWNGRADE` naming
+the file responsible. Seeing one means the delivered commit was never written
+into the pin; export the variable again for this run, and move the pin for good.
+
 ## No speech / no microphone
 
 Read-aloud and dictation are optional. When something they need is missing their
