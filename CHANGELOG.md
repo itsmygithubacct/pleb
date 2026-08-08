@@ -42,6 +42,24 @@ upgrade acceptance result is reserved and must be recorded before publication.
   delivered commit never made it into the pin.
 - Install `cmake` with Pleb's runtime packages, alongside the rest of the build
   toolchain the pinned components compile with.
+- **A failed update that had rebuilt the engine left a machine permanently
+  un-updatable.** Where an update parks the outgoing Kilix generation while its
+  transaction is in flight is a contract with the engine's generation
+  collector, and the two sides disagreed: `kilix --build` recognized a parked
+  generation only under `.update-rollback.*/*.entry`, while this updater parked
+  at `.pleb-update.*/previous`. The nested build a transaction runs therefore
+  reclaimed the very generation being held for rollback, and the rollback
+  restored `previous` onto a deleted directory; every later `pleb update`
+  refused to start with `refusing unsafe Kilix previous generation entry`, and
+  so did `plebian-os-update`, leaving hand surgery in the build directory as
+  the only way back. Updates now park in the shape the collector already
+  anticipates, and a `previous` entry naming a generation that is gone is
+  retired with a warning rather than refused, so a machine already in that
+  state repairs itself on the next update.
+- **Say so before waiting on the Kilix build/update lock.** Blocking there is
+  deliberate — a concurrent build or update has to finish first — but it was
+  silent, and a silent block reads as a hung command. A contended lock now
+  prints what it is waiting for; an uncontended one still says nothing.
 
 ## 0.1.7 — 2026-08-02
 

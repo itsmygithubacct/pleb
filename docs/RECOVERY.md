@@ -65,6 +65,31 @@ an update that walks a component backwards is reported as a `DOWNGRADE` naming
 the file responsible. Seeing one means the delivered commit was never written
 into the pin; export the variable again for this run, and move the pin for good.
 
+## "refusing unsafe Kilix previous generation entry"
+
+Every update snapshots the two Kilix engine generation entries — `current` and
+`previous`, under `~/.local/gpu_terminal/kilix/build` — so a failed run can put
+them back. An entry pointing at a generation directory that is no longer there
+fails that check, and up to 0.1.8 both `pleb update` and `plebian-os-update`
+refused to start against one:
+
+```
+[pleb] refusing unsafe Kilix previous generation entry: .../kilix/build/previous
+```
+
+A `previous` in that state references nothing, so there is no rollback left to
+protect. Updates now retire the stale entry and carry on, reporting
+
+```
+[pleb] previous Kilix generation generations/build.XXXXXX is gone; retiring the stale entry
+```
+
+Nothing is lost but the ability to roll back to a generation that was already
+deleted. An older machine still stuck on the refusal is repaired by removing
+that one entry — `rm ~/.local/gpu_terminal/kilix/build/previous` — and running
+the update again. Leave `current` alone: that entry is the engine you are
+running.
+
 ## No speech / no microphone
 
 Read-aloud and dictation are optional. When something they need is missing their
