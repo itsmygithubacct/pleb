@@ -269,6 +269,9 @@ ensure_system_deps
             capture_output=True, check=True,
         )
         self.assertIn("unzip", result.stdout.splitlines())
+        # PDF Conversion deliberately does not depend on uv in a release
+        # image; Debian's venv package supplies its isolated pip runtime.
+        self.assertIn("python3-venv", result.stdout.splitlines())
 
     def test_update_restart_uses_transient_systemd_unit(self):
         text = (ROOT / "lib" / "update.sh").read_text()

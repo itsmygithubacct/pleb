@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — 0.1.9
+
+- Install `python3-venv` for standalone sessions so catalog-pinned PDF
+  Conversion can build its hash-locked Python 3.11 runtime without making
+  `uv` part of the target operating-system closure.
+
 ## 0.1.8 — 2026-08-07
 
 Prepared 2026-08-07; not published. Supported upgrade source: 0.1.7, and the
