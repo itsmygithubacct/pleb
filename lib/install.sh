@@ -51,7 +51,7 @@ ensure_system_deps() {
         lightdm xinit x11-xserver-utils x11-utils xterm openbox
         libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
         fontconfig fonts-dejavu-core
-        python3-pil python3-xlib python3-websockets
+        python3-pil python3-xlib python3-websockets python3-venv
         pulseaudio pulseaudio-utils pulsemixer alsa-utils ffmpeg xauth zenity
         zstd espeak-ng
         dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk

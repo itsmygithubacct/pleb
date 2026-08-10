@@ -84,6 +84,11 @@ desktop, `kilix pty` session manager, dashboards, and Tmux Manager are
 therefore ready when a desktop first uses them, without relying on separate
 per-dashboard source caches.
 
+PDF Conversion follows the same catalog pinning contract but installs on first
+use from `kilix pdf` or the desktop menu. Standalone `pleb install` includes
+Debian's `python3-venv`, so its hash-locked Python 3.11 runtime works without
+installing `uv`; Plebian-OS carries the same prerequisite in its image manifest.
+
 The install also selects Kilix's immutable voice closure. The standalone
 default, `PLEB_INSTALL_VOICE_MODEL=0`, installs its pinned read-aloud runtime
 without the speech library or acoustic model. Setting
