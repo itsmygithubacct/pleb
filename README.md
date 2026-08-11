@@ -68,9 +68,9 @@ manifests always supply a verified pair.
 `pleb install` also initializes and builds Kilix's pinned persistent PTY broker,
 then installs the single pinned `kilix-tui-utils` checkout (including Temps,
 Memory, and the Music front end), the tmux-tui source closure, and the pinned
-Media Player. Music drives kilix-amp over its control socket rather than
-decoding anything itself, and starts a `kilix-amp --headless` backend when none
-is listening.
+Media Player and PDF Viewer. Music drives kilix-amp over its control socket
+rather than decoding anything itself, and starts a `kilix-amp --headless`
+backend when none is listening.
 
 The Media Player is built here so nobody waits for a compile the first time
 they open it, but it is not a precondition for a working session: if the SDL,
@@ -84,10 +84,18 @@ desktop, `kilix pty` session manager, dashboards, and Tmux Manager are
 therefore ready when a desktop first uses them, without relying on separate
 per-dashboard source caches.
 
+The PDF Viewer is installed here so its catalog-pinned launcher and native
+Poppler/Cairo renderer are ready before first use. If a standalone machine
+lacks the development files, the install retains the launcher's Evince
+fallback and reports that the native core was skipped. Plebian-OS 0.1.9 ships
+both Evince and the native build prerequisites; the viewer always retains its
+complete CPU path when GPU presentation is unavailable.
+
 PDF Conversion follows the same catalog pinning contract but installs on first
 use from `kilix pdf` or the desktop menu. Standalone `pleb install` includes
-Debian's `python3-venv`, so its hash-locked Python 3.11 runtime works without
-installing `uv`; Plebian-OS carries the same prerequisite in its image manifest.
+Debian's `python3-venv`, so its hash-locked Python 3.11 runtime does not depend
+on `uv`. Plebian-OS 0.1.9 separately installs an exact, checksum-verified `uv`
+release as system tooling.
 
 The install also selects Kilix's immutable voice closure. The standalone
 default, `PLEB_INSTALL_VOICE_MODEL=0`, installs its pinned read-aloud runtime

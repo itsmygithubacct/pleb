@@ -176,6 +176,11 @@ KILIX_MUSIC_BIN="$HOME/.local/bin/kilix-music"
 # Kilix Amp is catalog content, so Kilix's own data directory owns it and its
 # commit comes from the pinned content catalog rather than a ref here.
 KILIX_AMP_BIN="$KILIX_DATA_HOME/desktop-apps/kilix-amp/kilix-amp"
+# The PDF viewer follows the same catalog-owned layout. Its shell launcher is
+# always usable when Evince is present; the native Poppler core appears beside
+# it when the target has the required development files.
+KILIX_PDF_VIEWER_BIN="$KILIX_DATA_HOME/desktop-apps/kilix-pdf/kilix-pdf-viewer"
+KILIX_PDF_CORE_BIN="$KILIX_DATA_HOME/desktop-apps/kilix-pdf/build/kilix-pdf-core"
 KILIX_TEMPS_LINK="${KILIX_TEMPS_LINK:-/usr/local/bin/kilix-temps}"
 # Kilix installs its pinned tmux-tui/tmux-cli source closure under the same
 # user prefix. Pleb publishes both commands for login shells and system menus.

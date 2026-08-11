@@ -2,9 +2,12 @@
 
 ## Unreleased — 0.1.9
 
+- Preinstall Kilix's catalog-pinned PDF Viewer during `pleb install`. Its
+  Poppler/Cairo renderer remains a complete CPU path, and a missing native
+  build warns without disabling the Evince fallback or first-use retry.
 - Install `python3-venv` for standalone sessions so catalog-pinned PDF
-  Conversion can build its hash-locked Python 3.11 runtime without making
-  `uv` part of the target operating-system closure.
+  Conversion can build its hash-locked Python 3.11 runtime independently of
+  `uv`; Plebian-OS 0.1.9 separately ships its verified system `uv` pin.
 
 ## 0.1.8 — 2026-08-07
 
