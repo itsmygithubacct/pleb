@@ -179,6 +179,7 @@ exit "$VOICE_INSTALL_EXIT"
                     "KILIX_LINK": str(tmp / "missing/kilix"),
                     "PLEB_LINK": str(tmp / "missing/pleb"),
                     "AUTOLOGIN_CONF": str(tmp / "missing/autologin.conf"),
+                    "OPENBOX_CONFIG_DST": str(tmp / "missing/openbox/rc.xml"),
                 }
             )
             install_script = textwrap.dedent(
