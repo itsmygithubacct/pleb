@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased — 0.1.9
+## 0.1.9 — Unreleased
+
+Prepared for the coordinated 0.1.9 release; not published. The final stack
+closure and acceptance evidence remain owned by Plebian-OS release metadata.
 
 - Preinstall Kilix's catalog-pinned PDF Viewer during `pleb install`. Its
   Poppler/Cairo renderer remains a complete CPU path, and a missing native
@@ -9,10 +12,11 @@
   Conversion can build its hash-locked Python 3.11 runtime independently of
   `uv`; Plebian-OS 0.1.9 separately ships its verified system `uv` pin.
 
-## 0.1.8 — 2026-08-07
+## 0.1.8 — 2026-08-09
 
-Prepared 2026-08-07; not published. Supported upgrade source: 0.1.7, and the
-upgrade acceptance result is reserved and must be recorded before publication.
+Prepared 2026-08-07 and published 2026-08-09. Supported upgrade source: 0.1.7;
+the coordinated acceptance and provenance record is published with the
+[Plebian-OS release](https://github.com/itsmygithubacct/plebian-os/releases/tag/v0.1.8).
 
 - **`pleb update` now updates Pleb itself.** It could move Kilix, Kilix 95 and
   the pinned utility closures, but never the component it runs from: two
