@@ -104,6 +104,13 @@ without the speech library or acoustic model. Setting
 closure; a failed full install returns nonzero and never silently falls back to
 read-aloud-only.
 
+The pinned 0.1.9 Voice runtime owns the `kilix.speech.models/v1` catalog.
+`kilix stt --models --json` reports its choices, installed/default state, and
+explicit install-and-default argv without downloading. The CLI, dictation TUI,
+Kilix 95 Settings, built-in WM Settings, and terminal microphone button use that
+one control-plane contract; Pleb only installs or refreshes the immutable
+runtime and does not maintain another model list.
+
 For a standalone install, Pleb validates and copies the approved Plebian
 wallpaper to
 `~/.local/gpu_terminal/pleb/data/wallpapers/plebian-os.png`, with its exact
