@@ -269,9 +269,26 @@ ensure_system_deps
             capture_output=True, check=True,
         )
         self.assertIn("unzip", result.stdout.splitlines())
-        # PDF Conversion deliberately does not depend on uv in a release
-        # image; Debian's venv package supplies its isolated pip runtime.
+        # PDF Conversion deliberately does not depend on uv; Debian's venv
+        # package supplies its isolated pip runtime even when an OS release
+        # also installs uv as system tooling.
         self.assertIn("python3-venv", result.stdout.splitlines())
+
+    def test_install_prepares_the_catalog_pinned_pdf_viewer(self):
+        common = (ROOT / "lib" / "common.sh").read_text()
+        install = (ROOT / "lib" / "install.sh").read_text()
+        readme = (ROOT / "README.md").read_text()
+        self.assertIn("KILIX_PDF_VIEWER_BIN=", common)
+        self.assertIn("KILIX_PDF_CORE_BIN=", common)
+        self.assertIn("install_kilix_pdf_viewer()", install)
+        self.assertIn('"$KILIX_DIR/kilix" pdf-view --install-only', install)
+        self.assertIn('[ -x "$KILIX_PDF_VIEWER_BIN" ]', install)
+        self.assertIn('[ -x "$KILIX_PDF_CORE_BIN" ]', install)
+        amp = install.index("    install_kilix_amp\n")
+        viewer = install.index("    install_kilix_pdf_viewer\n", amp)
+        self.assertLess(amp, viewer)
+        self.assertIn("complete CPU path", readme)
+        self.assertIn("checksum-verified `uv`", readme)
 
     def test_update_restart_uses_transient_systemd_unit(self):
         text = (ROOT / "lib" / "update.sh").read_text()

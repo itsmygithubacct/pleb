@@ -288,6 +288,27 @@ install_kilix_amp() {
         || warn "Kilix Amp reported success but $KILIX_AMP_BIN is missing"
 }
 
+# install_kilix_pdf_viewer — install the catalog-pinned PDF launcher and build
+# its native Poppler/Cairo core when the target has the development files.
+#
+# This is best-effort for standalone Pleb installs: the catalog launcher can
+# still hand a document to Evince when no native core was built. Plebian-OS
+# installs both that fallback and the native build prerequisites before Pleb.
+install_kilix_pdf_viewer() {
+    log "installing Kilix's pinned PDF Viewer"
+    if ! "$KILIX_DIR/kilix" pdf-view --install-only; then
+        warn "Kilix PDF Viewer did not install; Kilix will retry on first use"
+        return 0
+    fi
+    [ -x "$KILIX_PDF_VIEWER_BIN" ] \
+        || warn "Kilix PDF Viewer reported success but $KILIX_PDF_VIEWER_BIN is missing"
+    if [ -x "$KILIX_PDF_CORE_BIN" ]; then
+        log "Kilix PDF Viewer's native Poppler/Cairo core is ready"
+    else
+        warn "Kilix PDF Viewer's native core was not built; its Evince fallback remains available when installed"
+    fi
+}
+
 install_pty_broker() {
     local source="$KILIX_DIR/third_party/kitty-pty-broker"
     local builder="$KILIX_DIR/scripts/build-pty-broker.sh"
@@ -683,6 +704,7 @@ do_install() {
     install_tmux_tui
     install_kilix_voice
     install_kilix_amp
+    install_kilix_pdf_viewer
     if [ ! -f "$KILIX_DIR/kilix-settings" ] \
             || [ -L "$KILIX_DIR/kilix-settings" ]; then
         die "missing or unsafe Kilix settings TUI: $KILIX_DIR/kilix-settings"
