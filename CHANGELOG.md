@@ -5,6 +5,10 @@
 Prepared for the coordinated 0.1.9 release; not published. The final stack
 closure and acceptance evidence remain owned by Plebian-OS release metadata.
 
+- Refresh installed Kilix Voice runtimes to the 0.1.9 shared speech-model
+  control plane. The pinned `kilix-stt --models --json` contract lists local
+  state without downloading; CLI, TUI, Kilix 95, built-in WM, and terminal
+  chrome all hand explicit installation/defaulting to that same runtime.
 - Preinstall Kilix's catalog-pinned PDF Viewer during `pleb install`. Its
   Poppler/Cairo renderer remains a complete CPU path, and a missing native
   build warns without disabling the Evince fallback or first-use retry.
