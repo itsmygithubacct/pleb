@@ -1248,22 +1248,25 @@ do_update() {
             current="$(git -C "$KILIX_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
             if [ "$current" != "$KILIX_BRANCH" ]; then
                 if git -C "$KILIX_DIR" show-ref --verify --quiet "refs/heads/$KILIX_BRANCH"; then
-                    git -C "$KILIX_DIR" checkout "$KILIX_BRANCH" \
+                    git -C "$KILIX_DIR" -c submodule.recurse=false \
+                        checkout "$KILIX_BRANCH" \
                         || die "could not check out KILIX_BRANCH=$KILIX_BRANCH"
                 else
-                    git -C "$KILIX_DIR" checkout --track -b "$KILIX_BRANCH" "origin/$KILIX_BRANCH" \
+                    git -C "$KILIX_DIR" -c submodule.recurse=false \
+                        checkout --track -b "$KILIX_BRANCH" "origin/$KILIX_BRANCH" \
                         || die "could not track KILIX_BRANCH=$KILIX_BRANCH"
                 fi
             fi
         fi
 
         # fast-forward only — never silently clobber local work
-        if ! git -C "$KILIX_DIR" merge --ff-only "origin/$branch"; then
+        if ! git -C "$KILIX_DIR" -c submodule.recurse=false \
+                merge --ff-only "origin/$branch"; then
             warn "cannot fast-forward $branch (local commits/changes in $KILIX_DIR?)."
             die "resolve there and re-run 'pleb update'."
         fi
     fi
-    git -C "$KILIX_DIR" submodule update --init --recursive || die "submodule update failed"
+    reconcile_kilix_submodules "$KILIX_DIR"
     after="$(git -C "$KILIX_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
     src_after="$(git -C "$KILIX_DIR/src" rev-parse HEAD 2>/dev/null || echo none)"
 

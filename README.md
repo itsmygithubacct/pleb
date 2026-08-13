@@ -382,6 +382,11 @@ resolved through `FETCH_HEAD`, checked out detached, and verified; local tags
 are never trusted as the source of a release pin. Mutable refs require the
 corresponding explicit `*_ALLOW_MUTABLE_REF=1` trust override.
 
+Kilix parent commits move before their pinned submodules are reconciled. Pleb
+then persists recursive submodule handling in that managed checkout, so an
+outer Plebian-OS rollback can restore changed or newly introduced submodules
+without having to know their names in advance.
+
 A pinned move is always reported as `component: <before> -> <after> (pinned by
 <source>)`, naming the environment or the exact `session.env` that decided it.
 When a pin moves an installed component **backwards**, the line says `DOWNGRADE`

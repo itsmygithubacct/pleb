@@ -140,6 +140,17 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn('checkout "$KILIX95_BRANCH"', text)
         self.assertIn('checkout --track -b "$KILIX95_BRANCH"', text)
 
+    def test_kilix_parent_moves_are_nonrecursive_then_reconciled(self):
+        common = (ROOT / "lib" / "common.sh").read_text()
+        install = (ROOT / "lib" / "install.sh").read_text()
+        update = (ROOT / "lib" / "update.sh").read_text()
+        self.assertIn('-c submodule.recurse=false checkout --detach', common)
+        self.assertIn('config --local --type=bool submodule.recurse true', common)
+        self.assertIn('submodule update --init --recursive', common)
+        self.assertIn('reconcile_kilix_submodules "$KILIX_DIR"', install)
+        self.assertIn('reconcile_kilix_submodules "$KILIX_DIR"', update)
+        self.assertIn('-c submodule.recurse=false', update)
+
     def test_update_moves_pleb_itself_last_and_reversibly(self):
         common = (ROOT / "lib" / "common.sh").read_text()
         update = (ROOT / "lib" / "update.sh").read_text()

@@ -432,7 +432,10 @@ checkout_fetched_ref() {
         || die "$label fetch failed for ref $ref"
     resolved="$(git -C "$dir" rev-parse --verify 'FETCH_HEAD^{commit}' 2>/dev/null)" \
         || die "fetched $label ref $ref did not resolve to a commit"
-    git -C "$dir" checkout --detach "$resolved" \
+    # Component-specific reconciliation happens after the parent move.  Do not
+    # let a repository's persistent recursive-submodule policy traverse a new
+    # gitlink before its caller has had a chance to initialize it safely.
+    git -C "$dir" -c submodule.recurse=false checkout --detach "$resolved" \
         || die "could not check out fetched $label ref $ref ($resolved)"
     actual="$(git -C "$dir" rev-parse --verify HEAD 2>/dev/null)" \
         || die "could not verify $label HEAD after checkout"
@@ -440,4 +443,21 @@ checkout_fetched_ref() {
         || die "$label checkout verification failed (expected $resolved, got $actual)"
     log "$label pinned at $resolved"
     announce_component_move "$dir" "$label" "$before" "$actual" "$ref_name"
+}
+
+# reconcile_kilix_submodules DIR — initialize the exact Kilix closure and leave
+# ordinary future checkout/reset commands recursive.  Plebian-OS 0.1.8's outer
+# updater predates some 0.1.9 Kilix submodules, so it cannot snapshot them by
+# name.  Its rollback can still restore changed and newly introduced gitlinks
+# when the target Pleb installer persists this repository-local contract.
+reconcile_kilix_submodules() {
+    local dir="$1" recurse
+    git -C "$dir" config --local --type=bool submodule.recurse true \
+        || die "could not enable recursive Kilix submodule transactions"
+    recurse="$(git -C "$dir" config --local --type=bool --get submodule.recurse \
+        2>/dev/null || true)"
+    [ "$recurse" = true ] \
+        || die "recursive Kilix submodule transaction policy did not persist"
+    git -C "$dir" submodule update --init --recursive \
+        || die "kilix submodule update failed"
 }
