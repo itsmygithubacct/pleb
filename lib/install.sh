@@ -115,8 +115,7 @@ ensure_kilix() {
     if [ -n "$KILIX_REF" ]; then
         require_clean_checkout "$KILIX_DIR" "kilix"
         checkout_fetched_ref "$KILIX_DIR" "$KILIX_REF" "kilix" KILIX_REF
-        git -C "$KILIX_DIR" submodule update --init --recursive \
-            || die "kilix submodule update failed"
+        reconcile_kilix_submodules "$KILIX_DIR"
     fi
     ensure_engine
 }

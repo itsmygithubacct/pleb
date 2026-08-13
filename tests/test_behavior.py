@@ -1206,6 +1206,132 @@ exit "$VOICE_INSTALL_EXIT"
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("deferring until its component update", result.stdout)
 
+    def test_legacy_outer_checkout_restores_changed_and_new_submodules(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            env = clean_env(tmp)
+            env["GIT_ALLOW_PROTOCOL"] = "file"
+
+            module = tmp / "module"
+            subprocess.run(["git", "init", "-q", "-b", "main", str(module)], check=True)
+            subprocess.run(["git", "-C", str(module), "config", "user.name", "Pleb Test"], check=True)
+            subprocess.run(["git", "-C", str(module), "config", "user.email", "pleb@example.invalid"], check=True)
+            (module / "payload").write_text("before\n")
+            subprocess.run(["git", "-C", str(module), "add", "payload"], check=True)
+            subprocess.run(["git", "-C", str(module), "commit", "-q", "-m", "before"], check=True)
+            module_before = subprocess.check_output(
+                ["git", "-C", str(module), "rev-parse", "HEAD"], text=True
+            ).strip()
+            (module / "payload").write_text("after\n")
+            subprocess.run(["git", "-C", str(module), "commit", "-qam", "after"], check=True)
+            module_after = subprocess.check_output(
+                ["git", "-C", str(module), "rev-parse", "HEAD"], text=True
+            ).strip()
+
+            seed = tmp / "kilix-seed"
+            subprocess.run(["git", "init", "-q", "-b", "main", str(seed)], check=True)
+            subprocess.run(["git", "-C", str(seed), "config", "user.name", "Pleb Test"], check=True)
+            subprocess.run(["git", "-C", str(seed), "config", "user.email", "pleb@example.invalid"], check=True)
+            subprocess.run(
+                ["git", "-c", "protocol.file.allow=always", "-C", str(seed),
+                 "submodule", "add", str(module), "third_party/existing"],
+                check=True, capture_output=True, text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(seed / "third_party/existing"),
+                 "checkout", "-q", "--detach", module_before], check=True,
+            )
+            subprocess.run(["git", "-C", str(seed), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(seed), "commit", "-q", "-m", "before closure"], check=True)
+            parent_before = subprocess.check_output(
+                ["git", "-C", str(seed), "rev-parse", "HEAD"], text=True
+            ).strip()
+
+            subprocess.run(
+                ["git", "-C", str(seed / "third_party/existing"),
+                 "checkout", "-q", "--detach", module_after], check=True,
+            )
+            subprocess.run(
+                ["git", "-c", "protocol.file.allow=always", "-C", str(seed),
+                 "submodule", "add", str(module), "third_party/new-module"],
+                check=True, capture_output=True, text=True,
+            )
+            subprocess.run(["git", "-C", str(seed), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(seed), "commit", "-q", "-m", "target closure"], check=True)
+            parent_target = subprocess.check_output(
+                ["git", "-C", str(seed), "rev-parse", "HEAD"], text=True
+            ).strip()
+
+            checkout = tmp / "kilix"
+            subprocess.run(["git", "clone", "-q", str(seed), str(checkout)], check=True, env=env)
+            subprocess.run(
+                ["git", "-C", str(checkout), "-c", "submodule.recurse=false",
+                 "checkout", "-q", "--detach", parent_before], check=True, env=env,
+            )
+            subprocess.run(
+                ["git", "-C", str(checkout), "submodule", "update", "--init", "--recursive"],
+                check=True, env=env,
+            )
+            subprocess.run(
+                ["git", "-C", str(checkout), "-c", "submodule.recurse=false",
+                 "checkout", "-q", "--detach", parent_target], check=True, env=env,
+            )
+            reconciled = subprocess.run(
+                [
+                    "bash", "-c",
+                    textwrap.dedent(
+                        f"""
+                        set -euo pipefail
+                        PLEB_ROOT={ROOT!s}
+                        . "$PLEB_ROOT/lib/common.sh"
+                        reconcile_kilix_submodules {checkout!s}
+                        """
+                    ),
+                ],
+                env=env, text=True, capture_output=True,
+            )
+            self.assertEqual(reconciled.returncode, 0, reconciled.stderr)
+            recurse = subprocess.check_output(
+                ["git", "-C", str(checkout), "config", "--local", "--get", "submodule.recurse"],
+                text=True,
+            ).strip()
+            self.assertEqual(recurse, "true")
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "-C", str(checkout / "third_party/existing"), "rev-parse", "HEAD"],
+                    text=True,
+                ).strip(),
+                module_after,
+            )
+            self.assertTrue((checkout / "third_party/new-module/.git").is_file())
+
+            # This is the checkout/reset pair in the published 0.1.8 outer
+            # updater, which cannot name the target-only submodule.
+            subprocess.run(
+                ["git", "-C", str(checkout), "checkout", "-q", "--detach", parent_before],
+                check=True, env=env,
+            )
+            subprocess.run(
+                ["git", "-C", str(checkout), "reset", "-q", "--hard", parent_before],
+                check=True, env=env,
+            )
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "-C", str(checkout / "third_party/existing"), "rev-parse", "HEAD"],
+                    text=True,
+                ).strip(),
+                module_before,
+            )
+            self.assertFalse((checkout / "third_party/new-module").exists())
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "-C", str(checkout), "status", "--porcelain",
+                     "--untracked-files=normal", "--ignore-submodules=none"],
+                    text=True,
+                ).strip(),
+                "",
+            )
+
     def test_failed_update_transaction_restores_both_checkouts_and_fork_engine(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)

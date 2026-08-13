@@ -5,6 +5,10 @@
 Prepared for the coordinated 0.1.9 release; not published. The final stack
 closure and acceptance evidence remain owned by Plebian-OS release metadata.
 
+- Persist recursive submodule handling in the managed Kilix checkout after a
+  parent-first move. This lets the published 0.1.8 Plebian-OS updater restore
+  changed and newly introduced 0.1.9 submodules during an outer rollback even
+  though that older updater could not know their names.
 - Refresh installed Kilix Voice runtimes to the 0.1.9 shared speech-model
   control plane. The pinned `kilix-stt --models --json` contract lists local
   state without downloading; CLI, TUI, Kilix 95, built-in WM, and terminal
