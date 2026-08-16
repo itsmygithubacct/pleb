@@ -2849,7 +2849,12 @@ class TbShellAliasTests(unittest.TestCase):
             self.assertFalse((tmp / ".bash_aliases").exists())
 
     def test_a_user_defined_tb_is_never_clobbered(self):
-        for definition in ("alias tb='echo mine'\n", "tb() { echo mine; }\n"):
+        for definition in (
+            "alias tb='echo mine'\n",
+            "tb() { echo mine; }\n",
+            "function tb { echo mine; }\n",
+            "alias ll='ls' tb='echo mine'\n",
+        ):
             with tempfile.TemporaryDirectory() as td:
                 tmp = Path(td)
                 source_home = tmp / "sources"
@@ -2860,6 +2865,23 @@ class TbShellAliasTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("already defines tb", result.stderr)
                 self.assertEqual(aliases.read_text(), definition)
+
+    def test_a_tb_defined_in_bashrc_is_never_shadowed(self):
+        # ~/.bashrc definitions are invisible to the non-interactive `type -t`
+        # probe, so the provisioning has to scan the file itself
+        for definition in ("alias tb='echo mine'\n", "function tb { echo mine; }\n"):
+            with tempfile.TemporaryDirectory() as td:
+                tmp = Path(td)
+                source_home = tmp / "sources"
+                self._write_stub_logger(source_home)
+                bashrc = tmp / ".bashrc"
+                bashrc.write_text(definition)
+                result = self._provision(tmp, source_home=source_home)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("already defines tb", result.stderr)
+                self.assertIn(str(bashrc), result.stderr)
+                self.assertFalse((tmp / ".bash_aliases").exists())
+                self.assertEqual(bashrc.read_text(), definition)
 
     def test_unrelated_aliases_survive_even_without_a_trailing_newline(self):
         with tempfile.TemporaryDirectory() as td:
@@ -2877,6 +2899,25 @@ class TbShellAliasTests(unittest.TestCase):
             )
             # the user's chosen mode is preserved on rewrite
             self.assertEqual(stat.S_IMODE(aliases.stat().st_mode), 0o600)
+
+    @unittest.skipUnless(os.geteuid() != 0, "root reads any file mode")
+    def test_an_unreadable_aliases_file_is_reported_and_left_alone(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source_home = tmp / "sources"
+            self._write_stub_logger(source_home)
+            aliases = tmp / ".bash_aliases"
+            aliases.write_text("alias ll='ls -al'\n")
+            aliases.chmod(0o200)  # owner-owned, write-only: content is opaque
+            try:
+                result = self._provision(tmp, source_home=source_home)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("unexpected shell aliases file", result.stderr)
+                self.assertIn("skipping the tb shell alias", result.stderr)
+                self.assertEqual(stat.S_IMODE(aliases.stat().st_mode), 0o200)
+            finally:
+                aliases.chmod(0o600)
+            self.assertEqual(aliases.read_text(), "alias ll='ls -al'\n")
 
     def test_symlinked_aliases_file_is_reported_and_left_alone(self):
         with tempfile.TemporaryDirectory() as td:

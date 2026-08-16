@@ -24,8 +24,9 @@ closure and acceptance evidence remain owned by Plebian-OS release metadata.
   The alias resolves tmux-cli's logger inside the sibling `kilix-apps`
   checkout through the shared source-root convention at use time. A `tb` that
   already exists — binary, alias, or function, including Pleb's own command
-  link — is reported and left alone, never clobbered, and a user-managed
-  (symlinked or foreign-owned) `~/.bash_aliases` is skipped with a note
+  link and any plausible definition in `~/.bash_aliases` or `~/.bashrc` — is
+  reported and left alone, never clobbered, and a user-managed (symlinked,
+  foreign-owned, or unreadable) `~/.bash_aliases` is skipped with a note
   instead of failing the install.
 
 ## 0.1.8 — 2026-08-09

@@ -178,6 +178,25 @@ install_tmux_tui() {
         || die "tmux-tui install did not produce tmux-tui and tb commands"
 }
 
+# dotfile_defines_tb — best-effort scan of one shell dotfile for any plausible
+# user definition of `tb`: an alias assignment in any position of an `alias`
+# command, or a function in either spelling, with or without parentheses. The
+# scan is deliberately coarse, and a dotfile that exists but cannot be read —
+# or a scan that fails outright — counts as a definition as well: skipping the
+# provisioning is always safe, while a definition the scan missed would get
+# shadowed by the appended alias.
+dotfile_defines_tb() {
+    local file="$1" rc=0
+    [ -e "$file" ] || [ -L "$file" ] || return 1
+    [ -f "$file" ] && [ -r "$file" ] || return 0
+    grep -qE \
+        '^[[:space:]]*(alias[[:space:]]+(.*[[:space:]])?tb=|function[[:space:]]+tb([[:space:](]|$)|tb[[:space:]]*\(\))' \
+        -- "$file" || rc=$?
+    # only grep's explicit no-match answer clears the name; a scan that failed
+    # outright cannot prove absence either
+    [ "$rc" -ne 1 ]
+}
+
 # provision_tb_shell_alias — give interactive shells a `tb` aliases-file entry
 # (kilix session shells read ~/.bashrc, which sources ~/.bash_aliases on
 # Debian). The alias resolves tmux-cli's logger inside the sibling kilix-apps
@@ -190,13 +209,13 @@ install_tmux_tui() {
 provision_tb_shell_alias() {
     local aliases_file="$TMUX_CLI_ALIAS_FILE"
     local target="$KILIX_APPS_DIR/tmux-cli/tb.py"
-    local alias_line existing_kind existing_path mode tmp
+    local alias_line existing_kind existing_path dotfile mode tmp
     alias_line="alias tb='python3 \"\${KILIX_APPS_DIR:-\${GPU_TERMINAL_SOURCE_HOME:-\$HOME/.local/gpu_terminal/sources}/kilix-apps}/tmux-cli/tb.py\"'"
     case "$aliases_file" in
         /*) ;;
         *) die "shell aliases path must be absolute: $aliases_file" ;;
     esac
-    if [ -f "$aliases_file" ] && grep -qxF -- "$alias_line" "$aliases_file"; then
+    if [ -f "$aliases_file" ] && grep -qxF -- "$alias_line" "$aliases_file" 2>/dev/null; then
         log "tb shell alias already provisioned in $aliases_file"
         return 0
     fi
@@ -210,39 +229,50 @@ provision_tb_shell_alias() {
         warn "tb already exists as an installed command ($TMUX_CLI_BIN or $TMUX_CLI_LINK); skipping the tb shell alias"
         return 0
     fi
-    if [ -f "$aliases_file" ] && grep -qE \
-            '^[[:space:]]*(alias[[:space:]]+tb=|(function[[:space:]]+)?tb[[:space:]]*\(\))' \
-            "$aliases_file"; then
-        warn "$aliases_file already defines tb; skipping the tb shell alias"
-        return 0
-    fi
-    if [ ! -f "$target" ]; then
-        warn "tmux-cli logger not found at $target; skipping the tb shell alias"
-        return 0
-    fi
     # The aliases file is the user's own dotfile. Never write through a
-    # symlink or into a file another user owns — but a dotfile arrangement
-    # this function does not understand is a reason to leave the file alone,
-    # not to fail the whole install.
+    # symlink, into a file another user owns, or over a file this install
+    # cannot read back in full — a dotfile arrangement this function does not
+    # understand is a reason to leave the file alone, not to fail the whole
+    # install, and certainly not to rewrite content it never saw.
     if [ -e "$aliases_file" ] || [ -L "$aliases_file" ]; then
         if ! { [ -f "$aliases_file" ] && [ ! -L "$aliases_file" ] \
+            && [ -r "$aliases_file" ] \
             && [ "$(stat -c '%u' "$aliases_file" 2>/dev/null)" = "$(id -u)" ]; }; then
             warn "not writing through unexpected shell aliases file: $aliases_file; skipping the tb shell alias"
             return 0
         fi
+    fi
+    # A user's own `tb` may be defined in the aliases file, or directly in
+    # ~/.bashrc where the non-interactive `type -t` probe above cannot see it.
+    # Any plausible definition wins over the provisioning.
+    for dotfile in "$aliases_file" "$HOME/.bashrc"; do
+        if dotfile_defines_tb "$dotfile"; then
+            warn "$dotfile already defines tb; skipping the tb shell alias"
+            return 0
+        fi
+    done
+    if [ ! -f "$target" ]; then
+        warn "tmux-cli logger not found at $target; skipping the tb shell alias"
+        return 0
     fi
     mode=644
     [ ! -f "$aliases_file" ] || mode="$(stat -c '%a' "$aliases_file")" \
         || die "could not inspect $aliases_file"
     tmp="$(mktemp "$(dirname "$aliases_file")/.bash_aliases.XXXXXX")" \
         || die "could not stage $aliases_file"
-    {
-        if [ -f "$aliases_file" ]; then
-            cat -- "$aliases_file"
-            [ -z "$(tail -c1 -- "$aliases_file")" ] || printf '\n'
+    if [ -f "$aliases_file" ]; then
+        # the rewrite must carry every byte of the original, so a cat that
+        # fails partway through means skip — never publish a partial copy
+        if ! cat -- "$aliases_file" >"$tmp"; then
+            rm -f -- "$tmp"
+            warn "could not read $aliases_file back; skipping the tb shell alias"
+            return 0
         fi
-        printf '%s\n' "$alias_line"
-    } >"$tmp" || { rm -f -- "$tmp"; die "could not write $aliases_file"; }
+        [ -z "$(tail -c1 -- "$aliases_file")" ] || printf '\n' >>"$tmp" \
+            || { rm -f -- "$tmp"; die "could not write $aliases_file"; }
+    fi
+    printf '%s\n' "$alias_line" >>"$tmp" \
+        || { rm -f -- "$tmp"; die "could not write $aliases_file"; }
     chmod "$mode" -- "$tmp" \
         || { rm -f -- "$tmp"; die "could not protect $aliases_file"; }
     mv -f -- "$tmp" "$aliases_file" \
