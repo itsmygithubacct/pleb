@@ -432,6 +432,12 @@ ensure_system_deps
         self.assertIn("command -v tb", install)
         self.assertIn('[ -x "$TMUX_CLI_BIN" ]', install)
         self.assertIn("skipping the tb shell alias", install)
+        # dotfile definitions are scanned in both files interactive shells
+        # read, and an unreadable aliases file is never rewritten blind
+        self.assertIn("dotfile_defines_tb() {", install)
+        self.assertIn('for dotfile in "$aliases_file" "$HOME/.bashrc"', install)
+        self.assertIn('[ -r "$aliases_file" ]', install)
+        self.assertIn('if ! cat -- "$aliases_file" >"$tmp"; then', install)
         # the written alias resolves the checkout at use time, with the same
         # override-then-source-root fallback order the CLI itself uses
         self.assertIn(
