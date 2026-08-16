@@ -84,6 +84,16 @@ desktop, `kilix pty` session manager, dashboards, and Tmux Manager are
 therefore ready when a desktop first uses them, without relying on separate
 per-dashboard source caches.
 
+As a fallback for shells whose `PATH` misses those links, `pleb install` also
+drops a `tb` alias into `~/.bash_aliases` (session shells read `~/.bashrc`,
+which sources that file on Debian). The alias resolves tmux-cli's `tb.py`
+inside the sibling `kilix-apps` checkout at use time — `KILIX_APPS_DIR` if
+set, otherwise `kilix-apps` under the shared source root — so it follows the
+source root wherever it is configured to live. If `tb` already exists on the
+machine as a binary, alias, or function (including the command link above),
+the current holder is reported and kept; the alias is only written when the
+name is genuinely free, and never replaces or shadows anything.
+
 The PDF Viewer is installed here so its catalog-pinned launcher and native
 Poppler/Cairo renderer are ready before first use. If a standalone machine
 lacks the development files, the install retains the launcher's Evince

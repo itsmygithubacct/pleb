@@ -178,6 +178,78 @@ install_tmux_tui() {
         || die "tmux-tui install did not produce tmux-tui and tb commands"
 }
 
+# provision_tb_shell_alias — give interactive shells a `tb` aliases-file entry
+# (kilix session shells read ~/.bashrc, which sources ~/.bash_aliases on
+# Debian). The alias resolves tmux-cli's logger inside the sibling kilix-apps
+# checkout at use time, through the same source-root convention that locates
+# every other sibling checkout, so the entry keeps working wherever the source
+# root actually lives. The name `tb` may already be taken on the target system
+# — as a binary, an alias, a function, or the published tmux-cli command link
+# above — and an existing holder always wins: provisioning reports it and
+# skips, it never clobbers or shadows.
+provision_tb_shell_alias() {
+    local aliases_file="$TMUX_CLI_ALIAS_FILE"
+    local target="$KILIX_APPS_DIR/tmux-cli/tb.py"
+    local alias_line existing_kind existing_path mode tmp
+    alias_line="alias tb='python3 \"\${KILIX_APPS_DIR:-\${GPU_TERMINAL_SOURCE_HOME:-\$HOME/.local/gpu_terminal/sources}/kilix-apps}/tmux-cli/tb.py\"'"
+    case "$aliases_file" in
+        /*) ;;
+        *) die "shell aliases path must be absolute: $aliases_file" ;;
+    esac
+    if [ -f "$aliases_file" ] && grep -qxF -- "$alias_line" "$aliases_file"; then
+        log "tb shell alias already provisioned in $aliases_file"
+        return 0
+    fi
+    existing_kind="$(type -t tb || true)"
+    if [ -n "$existing_kind" ]; then
+        existing_path="$(command -v tb || true)"
+        warn "tb already exists as a $existing_kind${existing_path:+ ($existing_path)}; skipping the tb shell alias"
+        return 0
+    fi
+    if [ -x "$TMUX_CLI_BIN" ] || [ -e "$TMUX_CLI_LINK" ] || [ -L "$TMUX_CLI_LINK" ]; then
+        warn "tb already exists as an installed command ($TMUX_CLI_BIN or $TMUX_CLI_LINK); skipping the tb shell alias"
+        return 0
+    fi
+    if [ -f "$aliases_file" ] && grep -qE \
+            '^[[:space:]]*(alias[[:space:]]+tb=|(function[[:space:]]+)?tb[[:space:]]*\(\))' \
+            "$aliases_file"; then
+        warn "$aliases_file already defines tb; skipping the tb shell alias"
+        return 0
+    fi
+    if [ ! -f "$target" ]; then
+        warn "tmux-cli logger not found at $target; skipping the tb shell alias"
+        return 0
+    fi
+    # The aliases file is the user's own dotfile. Never write through a
+    # symlink or into a file another user owns — but a dotfile arrangement
+    # this function does not understand is a reason to leave the file alone,
+    # not to fail the whole install.
+    if [ -e "$aliases_file" ] || [ -L "$aliases_file" ]; then
+        if ! { [ -f "$aliases_file" ] && [ ! -L "$aliases_file" ] \
+            && [ "$(stat -c '%u' "$aliases_file" 2>/dev/null)" = "$(id -u)" ]; }; then
+            warn "not writing through unexpected shell aliases file: $aliases_file; skipping the tb shell alias"
+            return 0
+        fi
+    fi
+    mode=644
+    [ ! -f "$aliases_file" ] || mode="$(stat -c '%a' "$aliases_file")" \
+        || die "could not inspect $aliases_file"
+    tmp="$(mktemp "$(dirname "$aliases_file")/.bash_aliases.XXXXXX")" \
+        || die "could not stage $aliases_file"
+    {
+        if [ -f "$aliases_file" ]; then
+            cat -- "$aliases_file"
+            [ -z "$(tail -c1 -- "$aliases_file")" ] || printf '\n'
+        fi
+        printf '%s\n' "$alias_line"
+    } >"$tmp" || { rm -f -- "$tmp"; die "could not write $aliases_file"; }
+    chmod "$mode" -- "$tmp" \
+        || { rm -f -- "$tmp"; die "could not protect $aliases_file"; }
+    mv -f -- "$tmp" "$aliases_file" \
+        || { rm -f -- "$tmp"; die "could not publish $aliases_file"; }
+    log "tb shell alias -> $aliases_file (tmux-cli logger in the kilix-apps checkout)"
+}
+
 # install_kilix_voice — install Kilix's pinned read-aloud/dictation closure.
 # Policy 0 deliberately installs read-aloud without libvosk or an acoustic
 # model; because voice remains optional in that mode, a missing closure is
@@ -739,6 +811,11 @@ do_install() {
 
     log "linking tmux-cli command alias -> $TMUX_CLI_LINK"
     link_command "$TMUX_CLI_BIN" "$TMUX_CLI_LINK" "tb"
+
+    # Fallback for shells whose PATH misses the published links; a taken `tb`
+    # name is reported and left alone, so on a complete install this is a
+    # visible no-op rather than a second `tb`.
+    provision_tb_shell_alias
 
     # One closure installs both TUIs, so either both are there or neither is; a
     # link to an absent target would only turn a dimmed widget into a broken
