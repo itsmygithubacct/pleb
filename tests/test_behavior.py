@@ -2742,5 +2742,165 @@ class KilixTransactionLockWait(unittest.TestCase):
                              result.stdout + result.stderr)
 
 
+class TbShellAliasTests(unittest.TestCase):
+    ALIAS_LINE = (
+        "alias tb='python3 \"${KILIX_APPS_DIR:-${GPU_TERMINAL_SOURCE_HOME:-"
+        "$HOME/.local/gpu_terminal/sources}/kilix-apps}/tmux-cli/tb.py\"'"
+    )
+
+    @staticmethod
+    def _write_stub_logger(source_home: Path) -> Path:
+        target = source_home / "kilix-apps" / "tmux-cli" / "tb.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        write_executable(
+            target,
+            "#!/usr/bin/env python3\nimport sys\nprint('stub-tb', *sys.argv[1:])\n",
+        )
+        return target
+
+    def _provision(self, tmp: Path, *, path: str = "/usr/bin:/bin",
+                   source_home: Path | None = None) -> subprocess.CompletedProcess:
+        env = clean_env(tmp)
+        # The host may carry a real `tb` on PATH and at the published link
+        # location; both must stay invisible to the sandbox.
+        env["PATH"] = path
+        env["TMUX_CLI_LINK"] = str(tmp / "absent-usr-local" / "tb")
+        if source_home is not None:
+            env["GPU_TERMINAL_SOURCE_HOME"] = str(source_home)
+        script = textwrap.dedent(
+            f"""
+            set -uo pipefail
+            PLEB_ROOT={ROOT!s}
+            . "$PLEB_ROOT/lib/common.sh"
+            . "$PLEB_ROOT/lib/install.sh"
+            provision_tb_shell_alias
+            """
+        )
+        return subprocess.run(
+            ["bash", "-c", script], cwd=ROOT, env=env, text=True,
+            capture_output=True,
+        )
+
+    def _run_alias(self, tmp: Path, **env_extra: str) -> subprocess.CompletedProcess:
+        env = clean_env(tmp)
+        env["PATH"] = "/usr/bin:/bin"
+        env.update(env_extra)
+        script = 'shopt -s expand_aliases\n. "$HOME/.bash_aliases"\ntb ping\n'
+        return subprocess.run(
+            ["bash", "-c", script], env=env, text=True, capture_output=True,
+        )
+
+    def test_alias_is_provisioned_resolvable_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source_home = tmp / "sources"
+            self._write_stub_logger(source_home)
+            first = self._provision(tmp, source_home=source_home)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertIn("tb shell alias ->", first.stdout)
+            aliases = tmp / ".bash_aliases"
+            self.assertEqual(aliases.read_text(), self.ALIAS_LINE + "\n")
+            self.assertEqual(stat.S_IMODE(aliases.stat().st_mode), 0o644)
+
+            # the alias resolves the checkout at use time from the exported
+            # source root, exactly like every other sibling checkout
+            ran = self._run_alias(tmp, GPU_TERMINAL_SOURCE_HOME=str(source_home))
+            self.assertEqual(ran.returncode, 0, ran.stderr)
+            self.assertEqual(ran.stdout.strip(), "stub-tb ping")
+
+            # without an exported root it falls back to the canonical location
+            self._write_stub_logger(tmp / ".local/gpu_terminal/sources")
+            fallback = self._run_alias(tmp)
+            self.assertEqual(fallback.returncode, 0, fallback.stderr)
+            self.assertEqual(fallback.stdout.strip(), "stub-tb ping")
+
+            second = self._provision(tmp, source_home=source_home)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn("already provisioned", second.stdout)
+            self.assertEqual(aliases.read_text(), self.ALIAS_LINE + "\n")
+
+    def test_existing_tb_on_path_wins_with_a_visible_note(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source_home = tmp / "sources"
+            self._write_stub_logger(source_home)
+            bindir = tmp / "hostbin"
+            bindir.mkdir()
+            write_executable(bindir / "tb", "#!/bin/sh\nexit 0\n")
+            result = self._provision(
+                tmp, path=f"{bindir}:/usr/bin:/bin", source_home=source_home,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("tb already exists as a file", result.stderr)
+            self.assertIn(str(bindir / "tb"), result.stderr)
+            self.assertFalse((tmp / ".bash_aliases").exists())
+
+    def test_installed_tb_command_wins_even_when_off_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source_home = tmp / "sources"
+            self._write_stub_logger(source_home)
+            local_bin = tmp / ".local/bin"
+            local_bin.mkdir(parents=True)
+            write_executable(local_bin / "tb", "#!/bin/sh\nexit 0\n")
+            result = self._provision(tmp, source_home=source_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("already exists as an installed command", result.stderr)
+            self.assertFalse((tmp / ".bash_aliases").exists())
+
+    def test_a_user_defined_tb_is_never_clobbered(self):
+        for definition in ("alias tb='echo mine'\n", "tb() { echo mine; }\n"):
+            with tempfile.TemporaryDirectory() as td:
+                tmp = Path(td)
+                source_home = tmp / "sources"
+                self._write_stub_logger(source_home)
+                aliases = tmp / ".bash_aliases"
+                aliases.write_text(definition)
+                result = self._provision(tmp, source_home=source_home)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("already defines tb", result.stderr)
+                self.assertEqual(aliases.read_text(), definition)
+
+    def test_unrelated_aliases_survive_even_without_a_trailing_newline(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source_home = tmp / "sources"
+            self._write_stub_logger(source_home)
+            aliases = tmp / ".bash_aliases"
+            aliases.write_text("alias ll='ls -al'")  # no trailing newline
+            aliases.chmod(0o600)
+            result = self._provision(tmp, source_home=source_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                aliases.read_text(),
+                "alias ll='ls -al'\n" + self.ALIAS_LINE + "\n",
+            )
+            # the user's chosen mode is preserved on rewrite
+            self.assertEqual(stat.S_IMODE(aliases.stat().st_mode), 0o600)
+
+    def test_symlinked_aliases_file_is_reported_and_left_alone(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source_home = tmp / "sources"
+            self._write_stub_logger(source_home)
+            real = tmp / "dotfiles" / "bash_aliases"
+            real.parent.mkdir()
+            real.write_text("# managed elsewhere\n")
+            (tmp / ".bash_aliases").symlink_to(real)
+            result = self._provision(tmp, source_home=source_home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("unexpected shell aliases file", result.stderr)
+            self.assertTrue((tmp / ".bash_aliases").is_symlink())
+            self.assertEqual(real.read_text(), "# managed elsewhere\n")
+
+    def test_a_missing_logger_checkout_skips_with_a_note(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            result = self._provision(tmp, source_home=tmp / "sources")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("tmux-cli logger not found", result.stderr)
+            self.assertFalse((tmp / ".bash_aliases").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

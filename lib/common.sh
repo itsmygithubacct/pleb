@@ -189,6 +189,12 @@ TMUX_CLI_BIN="$HOME/.local/bin/tb"
 TMUX_TUI_STAMP="$KILIX_STATE_DIRECTORY/tmux-tui-install.refs"
 TMUX_TUI_LINK="${TMUX_TUI_LINK:-/usr/local/bin/tmux-tui}"
 TMUX_CLI_LINK="${TMUX_CLI_LINK:-/usr/local/bin/tb}"
+# Interactive-shell fallback for the tmux-cli logger: an aliases-file entry
+# that reaches tb.py inside the sibling kilix-apps checkout. The checkout is
+# located under the shared source root exactly like the other sibling
+# checkouts above (an explicit KILIX_APPS_DIR wins), so no home path is fixed.
+KILIX_APPS_DIR="${KILIX_APPS_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-apps}"
+TMUX_CLI_ALIAS_FILE="${TMUX_CLI_ALIAS_FILE:-$HOME/.bash_aliases}"
 # Kilix installs its pinned read-aloud/dictation closure under the same user
 # prefix; both TUIs come out of one install, alongside the arbiter daemon the
 # tab-bar widgets talk to. Voice is allowed to be absent only under the

@@ -410,6 +410,41 @@ ensure_system_deps
         self.assertIn("tmux-tui", readme)
         self.assertIn("`tb.py` as `tb`", readme)
 
+    def test_tb_shell_alias_is_guarded_and_resolves_the_sibling_checkout(self):
+        common = (ROOT / "lib" / "common.sh").read_text()
+        install = (ROOT / "lib" / "install.sh").read_text()
+        readme = (ROOT / "README.md").read_text()
+        # the sibling checkout and the aliases file are resolved the same way
+        # as every other sibling checkout: overridable, rooted at the shared
+        # source root, never a fixed home path
+        self.assertIn(
+            'KILIX_APPS_DIR="${KILIX_APPS_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-apps}"',
+            common,
+        )
+        self.assertIn(
+            'TMUX_CLI_ALIAS_FILE="${TMUX_CLI_ALIAS_FILE:-$HOME/.bash_aliases}"',
+            common,
+        )
+        self.assertIn("provision_tb_shell_alias() {", install)
+        # a taken `tb` name is detected — live shell lookup plus both
+        # published command paths — and reported instead of clobbered
+        self.assertIn("type -t tb", install)
+        self.assertIn("command -v tb", install)
+        self.assertIn('[ -x "$TMUX_CLI_BIN" ]', install)
+        self.assertIn("skipping the tb shell alias", install)
+        # the written alias resolves the checkout at use time, with the same
+        # override-then-source-root fallback order the CLI itself uses
+        self.assertIn(
+            "\\${KILIX_APPS_DIR:-\\${GPU_TERMINAL_SOURCE_HOME:-"
+            "\\$HOME/.local/gpu_terminal/sources}/kilix-apps}/tmux-cli/tb.py",
+            install,
+        )
+        # do_install provisions the alias only after publishing the links, so
+        # a complete install keeps the real command as the one `tb`
+        link = install.index('link_command "$TMUX_CLI_BIN" "$TMUX_CLI_LINK" "tb"')
+        self.assertIn("provision_tb_shell_alias", install[link:])
+        self.assertIn("~/.bash_aliases", readme)
+
     def test_session_disables_x_keyboard_bell(self):
         text = (ROOT / "bin" / "pleb-session").read_text()
         self.assertIn("xset b off", text)

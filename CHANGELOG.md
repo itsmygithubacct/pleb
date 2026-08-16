@@ -19,6 +19,14 @@ closure and acceptance evidence remain owned by Plebian-OS release metadata.
 - Install `python3-venv` for standalone sessions so catalog-pinned PDF
   Conversion can build its hash-locked Python 3.11 runtime independently of
   `uv`; Plebian-OS 0.1.9 separately ships its verified system `uv` pin.
+- Provision a guarded `tb` alias in `~/.bash_aliases` during `pleb install`,
+  as a fallback for shells whose `PATH` misses the published command links.
+  The alias resolves tmux-cli's logger inside the sibling `kilix-apps`
+  checkout through the shared source-root convention at use time. A `tb` that
+  already exists — binary, alias, or function, including Pleb's own command
+  link — is reported and left alone, never clobbered, and a user-managed
+  (symlinked or foreign-owned) `~/.bash_aliases` is skipped with a note
+  instead of failing the install.
 
 ## 0.1.8 — 2026-08-09
 
