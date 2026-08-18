@@ -1,9 +1,12 @@
 # Changelog
 
-## 0.1.9 — Unreleased
+## 0.1.9 — 2026-08-14
 
-Prepared for the coordinated 0.1.9 release; not published. The final stack
-closure and acceptance evidence remain owned by Plebian-OS release metadata.
+Published as part of the coordinated
+[Plebian-OS 0.1.9 release](https://github.com/itsmygithubacct/plebian-os/releases/tag/v0.1.9).
+The final stack closure and acceptance evidence are owned by Plebian-OS release
+metadata; this repository's public `v0.1.9` tag identifies the selected Pleb
+component.
 
 - Persist recursive submodule handling in the managed Kilix checkout after a
   parent-first move. This lets the published 0.1.8 Plebian-OS updater restore
