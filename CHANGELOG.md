@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0 — Unreleased
+
+Selected for the coordinated Plebian-OS 0.2.0 candidate. The exact stack
+closure and acceptance evidence are recorded by Plebian-OS in
+`releases/0.2.0.env` and `releases/0.2.0-notes.md`.
+
+- Provision a guarded `tb` alias for interactive shells whose `PATH` misses
+  the installed command link. Existing commands, aliases, functions, and
+  plausible definitions in either `~/.bash_aliases` or `~/.bashrc` are left
+  untouched; unreadable or user-managed alias files are skipped safely.
+
 ## 0.1.9 — 2026-08-14
 
 Published as part of the coordinated
