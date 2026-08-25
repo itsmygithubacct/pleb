@@ -58,8 +58,13 @@ class PlebStorageTests(unittest.TestCase):
             capture_output=True,
         )
 
-    def assert_private_layout(self, storage: Path) -> None:
-        for path in (storage, *(storage / name for name in CATEGORIES)):
+    def assert_private_layout(
+        self, storage: Path, *, update_preservation: bool = True
+    ) -> None:
+        paths = [storage, *(storage / name for name in CATEGORIES)]
+        if update_preservation:
+            paths.append(storage / "state/update-preserve")
+        for path in paths:
             self.assertTrue(path.is_dir(), path)
             self.assertFalse(path.is_symlink(), path)
             self.assertEqual(path.stat().st_uid, os.getuid(), path)
@@ -304,7 +309,7 @@ class PlebStorageTests(unittest.TestCase):
                 preexec_fn=lambda: os.umask(0o022),
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assert_private_layout(storage)
+            self.assert_private_layout(storage, update_preservation=False)
             self.assertEqual(sentinel.read_text(), "kept\n")
             self.assertEqual(mode(storage / "state/session.log"), 0o600)
 

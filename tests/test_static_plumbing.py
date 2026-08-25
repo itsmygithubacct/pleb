@@ -256,10 +256,62 @@ class PlebPlumbingTests(unittest.TestCase):
         )
         self.assertGreaterEqual(
             update[self_update_start:self_update_end].count(
-                '_assert_still_clean "$PLEB_ROOT" pleb'
+                "_preserve_pleb_before_move"
             ),
             3,
         )
+        preserve_move_start = update.index("_preserve_pleb_before_move()")
+        preserve_move_end = update.index(
+            "_restore_pleb_preservations_after_success()", preserve_move_start
+        )
+        self.assertIn(
+            '_assert_still_clean "$PLEB_ROOT" pleb',
+            update[preserve_move_start:preserve_move_end],
+        )
+
+    def test_update_preservation_precedes_forward_and_rollback_mutations(self):
+        preserve = (ROOT / "lib" / "preserve.sh").read_text()
+        update = (ROOT / "lib" / "update.sh").read_text()
+        begin_start = update.index("_update_transaction_begin()")
+        begin_end = update.index("_restore_transaction_preservations_after_success()")
+        begin = update[begin_start:begin_end]
+        self.assertLess(
+            begin.index("_record_checkout_preservation"),
+            begin.index("_UPDATE_TXN_ACTIVE=1"),
+        )
+        self.assertLess(
+            begin.index("fsync_update_record"),
+            begin.index("_UPDATE_TXN_ACTIVE=1"),
+        )
+        self.assertLess(
+            begin.index("_prepare_recorded_preservation"),
+            begin.index("_begin_kilix_engine_mutation"),
+        )
+        rollback_start = update.index("_update_transaction_rollback()")
+        rollback_end = update.index("_update_cleanup()", rollback_start)
+        rollback = update[rollback_start:rollback_end]
+        self.assertLess(
+            rollback.index("_preserve_before_forced_restore"),
+            rollback.index("_deinit_new_kilix_submodule"),
+        )
+        self.assertIn("MANIFEST.sha256", preserve)
+        self.assertIn("STATUS", preserve)
+        self.assertIn("verify_snapshot(temporary)", preserve)
+        self.assertIn("fsync_tree(temporary)", preserve)
+        self.assertIn("_PLEB_PRESERVE_MAX_BYTES=1073741824", preserve)
+        self.assertIn("_PLEB_PRESERVE_KEEP=10", preserve)
+
+    def test_preserve_only_flag_is_implemented_and_documented(self):
+        cli = (ROOT / "bin" / "pleb").read_text()
+        update = (ROOT / "lib" / "update.sh").read_text()
+        readme = (ROOT / "README.md").read_text()
+        recovery = (ROOT / "docs" / "RECOVERY.md").read_text()
+        for text in (cli, update, readme, recovery):
+            self.assertIn("--preserve-only", text)
+        self.assertIn("_preserve_only_update_checkouts", update)
+        self.assertIn("sha256sum -c MANIFEST.sha256", recovery)
+        self.assertIn(".from-<short-sha>", readme)
+        self.assertIn(".local", readme)
 
     def test_pinned_component_moves_are_reported_and_downgrades_shouted(self):
         common = (ROOT / "lib" / "common.sh").read_text()
@@ -276,7 +328,9 @@ class PlebPlumbingTests(unittest.TestCase):
         for text in (install, update):
             for line in text.splitlines():
                 if "checkout_fetched_ref " in line and "()" not in line:
-                    self.assertRegex(line.strip(), r'"\s+[A-Z0-9_]+$')
+                    self.assertRegex(
+                        line.strip(), r'"\s+[A-Z0-9_]+(?:\s+_[a-z0-9_]+)?$'
+                    )
         self.assertIn("DOWNGRADE", changelog)
 
     def test_update_refreshes_installed_voice_without_ever_installing_it(self):

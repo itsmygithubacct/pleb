@@ -182,7 +182,7 @@ log in. To go back, log out and pick your usual session again.
 | `pleb autologin on [user]` | Boot straight into Pleb — no greeter (kiosk). *(sudo)* |
 | `pleb autologin off` | Revert to the normal greeter. *(sudo)* |
 | `pleb kiosk on` / `off` | Hard kiosk: respawn kilix if it exits (or don't). *(no sudo)* |
-| `pleb update [-y] [--no-restart\|--restart]` | Update clean checkouts (including Pleb's own), rebuild the fork, and optionally restart an active kiosk. |
+| `pleb update [-y] [--no-restart\|--restart] [--preserve-only]` | Preserve local checkout paths, update (including Pleb's own), rebuild the fork, and optionally restart an active kiosk. |
 | `pleb status` | Show the effective persisted engine / desktop / install / autologin / kiosk state. |
 | `pleb screen-size ...` | Show, increase, decrease, reset, or set Kilix terminal scale. |
 | `pleb settings` | Toggle Kilix's top-bar widgets, pane-title buttons, and session logging. |
@@ -372,6 +372,7 @@ pleb update              # fetch latest kilix + pleb, ff-only, rebuild the fork,
 pleb update -y           # ...and restart an active Pleb kiosk without asking
 pleb update --restart    # explicitly restart an active kiosk; never prompts
 pleb update --no-restart # update only; leave LightDM alone
+pleb update --preserve-only # verified snapshots only; move no checkout
 ```
 
 `pleb update` fast-forwards or pins `~/.local/gpu_terminal/sources/kilix`, updates the optional
@@ -380,11 +381,29 @@ desktop checkout when the selected provider needs it, reconciles the Kilix-pinne
 thermal dashboard and graphics libraries, installs the configured Go toolchain
 when necessary, and rebuilds the fork. It only offers to restart
 LightDM when Pleb is configured as the active kiosk/autologin session. Updates
-are serialized with an XDG-state lock and refuse any checkout with tracked or
-untracked local changes. Before changing either checkout, Pleb snapshots both
-component positions, the dashboard executable/native library, the fork engine,
-and their build stamps. Any component or build failure restores that coherent
-pre-update state. Updates never
+are serialized with an XDG-state lock. Before changing any participating
+checkout, Pleb copies every modified tracked and untracked path to
+`~/.local/gpu_terminal/pleb/state/update-preserve/`, records the checkout,
+commit, and verbatim porcelain status in `STATUS`, writes `MANIFEST.sha256`,
+verifies the copy, and fsyncs the files and containing directories. The update
+stops without moving a checkout if preservation or verification fails. A
+snapshot is limited to 1 GiB and requires a further 64 MiB of free space; the
+last ten verified snapshots for each checkout are retained. `--preserve-only`
+takes those snapshots and exits without fetching or moving anything.
+
+After a successful move, an original untracked path wins its pathname. If the
+release introduced the same path, the release copy is retained beside it as
+`<name>.from-<short-sha>`. A modified tracked path has the opposite default:
+the release version wins and the operator's exact copy is left beside it as
+`<name>.local`. Pleb never attempts a textual merge and never invokes
+Git's destructive clean operation; every conflict is reported and the durable
+snapshot is retained.
+Edits made during a failing update are preserved again with a `rollback` phase
+label before any forced restore.
+
+Pleb also snapshots both component positions, the dashboard
+executable/native library, the fork engine, and their build stamps. Any
+component or build failure restores that coherent pre-update state. Updates never
 force-update: if a branch cannot
 fast-forward, the command stops and tells you. A configured `KILIX_REF` or
 `KILIX95_REF` must be a full 40-character commit SHA, is fetched from `origin`,
