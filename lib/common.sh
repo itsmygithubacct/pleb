@@ -398,7 +398,7 @@ require_clean_checkout() {
     if [ -n "$status" ]; then
         err "$label checkout at $dir has local changes; refusing to update it:"
         printf '%s\n' "$status" >&2
-        die "commit, stash, or remove those changes, then re-run 'pleb update'"
+        die "commit or stash those changes, then re-run 'pleb update'"
     fi
 }
 

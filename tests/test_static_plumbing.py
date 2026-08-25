@@ -215,6 +215,25 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("HEAD:.gitmodules", update)
         self.assertIn("$_UPDATE_TXN_DIR/submodules", transaction)
 
+    def test_the_refusal_never_advises_removal(self):
+        removal_advice = "remove those " + "changes"
+        for directory in (ROOT / "lib", ROOT / "bin"):
+            for path in directory.iterdir():
+                if path.is_file():
+                    self.assertNotIn(removal_advice, path.read_text())
+
+        destructive_git = b"git " + b"clean"
+        tracked = subprocess.check_output(
+            ["git", "ls-files", "-z"], cwd=ROOT
+        ).split(b"\0")
+        offenders = []
+        for relative in tracked:
+            if not relative:
+                continue
+            if destructive_git in (ROOT / relative.decode()).read_bytes():
+                offenders.append(relative.decode())
+        self.assertEqual(offenders, [])
+
     def test_pinned_component_moves_are_reported_and_downgrades_shouted(self):
         common = (ROOT / "lib" / "common.sh").read_text()
         install = (ROOT / "lib" / "install.sh").read_text()
