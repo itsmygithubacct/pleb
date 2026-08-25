@@ -44,7 +44,8 @@ class PlebStorageTests(unittest.TestCase):
             f"""
             set -euo pipefail
             umask {umask:03o}
-            PLEB_ROOT={ROOT!s}
+            PLEB_CODE_ROOT={ROOT!s}
+            PLEB_ROOT="$PLEB_CODE_ROOT"
             . "$PLEB_ROOT/lib/common.sh"
             {body}
             """
