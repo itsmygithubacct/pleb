@@ -193,6 +193,69 @@ _restore_update_path() {
     return "$failed"
 }
 
+_kilix_submodule_key() {
+    local path="$1" key
+    key="${path//\//-}"
+    key="${key//./-}"
+    printf 'submodule-%s\n' "$key"
+}
+
+_write_kilix_submodule_map() {
+    local source="$1" output="$2" raw="" rc=0 setting path key
+    local -A key_paths=()
+    case "$source" in
+        committed)
+            raw="$(git -C "$KILIX_DIR" config --blob HEAD:.gitmodules \
+                --get-regexp '^submodule\..*\.path$' 2>/dev/null)" || rc=$?
+            ;;
+        worktree)
+            raw="$(git -C "$KILIX_DIR" config -f .gitmodules \
+                --get-regexp '^submodule\..*\.path$' 2>/dev/null)" || rc=$?
+            ;;
+        *) return 1 ;;
+    esac
+    case "$rc" in
+        0) ;;
+        1) raw="" ;;
+        *) return 1 ;;
+    esac
+    : >"$output" || return 1
+    while read -r setting path; do
+        [ -n "$setting" ] || continue
+        case "$path" in
+            ""|.|/*|../*|*/../*|*/..)
+                err "refusing unsafe Kilix submodule path in .gitmodules: ${path:-<empty>}"
+                return 1 ;;
+        esac
+        [[ "$path" != *$'\t'* && "$path" != *$'\n'* && "$path" != *$'\r'* ]] \
+            || { err "refusing a Kilix submodule path with control characters"; return 1; }
+        key="$(_kilix_submodule_key "$path")" || return 1
+        if [[ ${key_paths[$key]+x} ]] && [ "${key_paths[$key]}" != "$path" ]; then
+            err "Kilix submodule paths collide in rollback state: ${key_paths[$key]} and $path"
+            return 1
+        fi
+        key_paths[$key]="$path"
+        printf '%s\t%s\n' "$path" "$key" >>"$output" || return 1
+    done <<<"$raw"
+}
+
+_union_kilix_submodule_maps() {
+    local output="$1" input path key
+    shift
+    local -A seen=()
+    : >"$output" || return 1
+    for input in "$@"; do
+        [ -f "$input" ] || return 1
+        while IFS=$'\t' read -r path key; do
+            [ -n "$path" ] || continue
+            if [[ ! ${seen[$path]+x} ]]; then
+                seen[$path]=1
+                printf '%s\t%s\n' "$path" "$key" >>"$output" || return 1
+            fi
+        done <"$input"
+    done
+}
+
 _record_checkout_position() {
     local dir="$1" key="$2"
     git -C "$dir" rev-parse --verify HEAD >"$_UPDATE_TXN_DIR/$key.head" \
@@ -523,44 +586,40 @@ _commit_kilix_engine_generation() {
 }
 
 _update_transaction_rollback() {
-    local failed=0 stamp legacy_stamp
+    local failed=0 stamp legacy_stamp path key
+    local current_submodules="$_UPDATE_TXN_DIR/submodules.current"
+    local rollback_submodules="$_UPDATE_TXN_DIR/submodules.rollback"
     stamp="$(_kilix_fork_stamp)"
     legacy_stamp="$PLEB_STATE_HOME/kilix-fork-built-ref"
     warn "update failed; restoring the previous coherent Kilix/Kilix 95 state"
 
+    if ! _write_kilix_submodule_map worktree "$current_submodules"; then
+        err "could not derive the current Kilix submodule set for rollback"
+        failed=1
+        : >"$current_submodules"
+    fi
+    if ! _union_kilix_submodule_maps "$rollback_submodules" \
+            "$_UPDATE_TXN_DIR/submodules" "$current_submodules"; then
+        err "could not assemble the Kilix submodule rollback set"
+        failed=1
+        : >"$rollback_submodules"
+    fi
+
     # Deinitialize submodules introduced by the failed parent update while the
     # new .gitmodules entry still exists. Restoring the parent first would
     # strand their worktrees/config when the old commit did not know the path.
-    _deinit_new_kilix_submodule src kilix-src || failed=1
-    _deinit_new_kilix_submodule \
-        third_party/kitty-frame-presenter kilix-presenter || failed=1
-    _deinit_new_kilix_submodule \
-        third_party/kilix-content kilix-content || failed=1
-    _deinit_new_kilix_submodule \
-        third_party/kitty-pty-broker kilix-pty-broker || failed=1
+    while IFS=$'\t' read -r path key; do
+        [ -n "$path" ] || continue
+        _deinit_new_kilix_submodule "$path" "$key" || failed=1
+    done <"$rollback_submodules"
     _restore_checkout_position "$KILIX_DIR" kilix || failed=1
-    if [ "$(cat "$_UPDATE_TXN_DIR/kilix-src.initialized" 2>/dev/null || echo 0)" = 1 ] \
-        && [ -f "$_UPDATE_TXN_DIR/kilix-src.head" ]; then
-        _restore_checkout_position "$KILIX_DIR/src" kilix-src || failed=1
-    fi
-    if [ "$(cat "$_UPDATE_TXN_DIR/kilix-presenter.initialized" 2>/dev/null || echo 0)" = 1 ] \
-        && [ -f "$_UPDATE_TXN_DIR/kilix-presenter.head" ]; then
-        _restore_checkout_position \
-            "$KILIX_DIR/third_party/kitty-frame-presenter" \
-            kilix-presenter || failed=1
-    fi
-    if [ "$(cat "$_UPDATE_TXN_DIR/kilix-content.initialized" 2>/dev/null || echo 0)" = 1 ] \
-        && [ -f "$_UPDATE_TXN_DIR/kilix-content.head" ]; then
-        _restore_checkout_position \
-            "$KILIX_DIR/third_party/kilix-content" \
-            kilix-content || failed=1
-    fi
-    if [ "$(cat "$_UPDATE_TXN_DIR/kilix-pty-broker.initialized" 2>/dev/null || echo 0)" = 1 ] \
-        && [ -f "$_UPDATE_TXN_DIR/kilix-pty-broker.head" ]; then
-        _restore_checkout_position \
-            "$KILIX_DIR/third_party/kitty-pty-broker" \
-            kilix-pty-broker || failed=1
-    fi
+    while IFS=$'\t' read -r path key; do
+        [ -n "$path" ] || continue
+        if [ "$(cat "$_UPDATE_TXN_DIR/$key.initialized" 2>/dev/null || echo 0)" = 1 ] \
+            && [ -f "$_UPDATE_TXN_DIR/$key.head" ]; then
+            _restore_checkout_position "$KILIX_DIR/$path" "$key" || failed=1
+        fi
+    done <"$rollback_submodules"
     if [ "$(cat "$_UPDATE_TXN_DIR/kilix95.existed" 2>/dev/null || echo 1)" = 0 ]; then
         rm -rf -- "$KILIX95_DIR" || failed=1
     elif [ -f "$_UPDATE_TXN_DIR/kilix95.head" ]; then
@@ -623,37 +682,18 @@ _update_transaction_begin() {
     trap 'exit 143' TERM
     chmod 0700 "$_UPDATE_TXN_DIR"
 
+    _write_kilix_submodule_map committed "$_UPDATE_TXN_DIR/submodules" \
+        || die "could not derive the committed Kilix submodule set"
     _record_checkout_position "$KILIX_DIR" kilix
-    if git -C "$KILIX_DIR/src" rev-parse --verify HEAD >/dev/null 2>&1; then
-        printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix-src.initialized"
-        _record_checkout_position "$KILIX_DIR/src" kilix-src
-    else
-        printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix-src.initialized"
-    fi
-    if git -C "$KILIX_DIR/third_party/kitty-frame-presenter" \
-            rev-parse --verify HEAD >/dev/null 2>&1; then
-        printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix-presenter.initialized"
-        _record_checkout_position \
-            "$KILIX_DIR/third_party/kitty-frame-presenter" kilix-presenter
-    else
-        printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix-presenter.initialized"
-    fi
-    if git -C "$KILIX_DIR/third_party/kilix-content" \
-            rev-parse --verify HEAD >/dev/null 2>&1; then
-        printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix-content.initialized"
-        _record_checkout_position \
-            "$KILIX_DIR/third_party/kilix-content" kilix-content
-    else
-        printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix-content.initialized"
-    fi
-    if git -C "$KILIX_DIR/third_party/kitty-pty-broker" \
-            rev-parse --verify HEAD >/dev/null 2>&1; then
-        printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix-pty-broker.initialized"
-        _record_checkout_position \
-            "$KILIX_DIR/third_party/kitty-pty-broker" kilix-pty-broker
-    else
-        printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix-pty-broker.initialized"
-    fi
+    while IFS=$'\t' read -r path key; do
+        [ -n "$path" ] || continue
+        if git -C "$KILIX_DIR/$path" rev-parse --verify HEAD >/dev/null 2>&1; then
+            printf '%s\n' 1 >"$_UPDATE_TXN_DIR/$key.initialized"
+            _record_checkout_position "$KILIX_DIR/$path" "$key"
+        else
+            printf '%s\n' 0 >"$_UPDATE_TXN_DIR/$key.initialized"
+        fi
+    done <"$_UPDATE_TXN_DIR/submodules"
     if [ -e "$KILIX95_DIR" ] || [ -L "$KILIX95_DIR" ]; then
         printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix95.existed"
         if [ -d "$KILIX95_DIR/.git" ]; then
