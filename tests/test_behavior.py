@@ -1572,6 +1572,37 @@ exit "$VOICE_INSTALL_EXIT"
             self.assertEqual(committed.returncode, 0, committed.stderr)
             self.assertFalse(legacy_stamp.exists())
 
+    def test_failed_update_snapshot_never_marks_partial_copy_present(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source = tmp / "source"
+            source.mkdir()
+            (source / "operator-data").write_text("keep me\n")
+            transaction = tmp / "transaction"
+            transaction.mkdir()
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
+                . "$PLEB_CODE_ROOT/lib/common.sh"
+                . "$PLEB_CODE_ROOT/lib/update.sh"
+                _UPDATE_TXN_DIR={transaction!s}
+                cp() {{ return 71; }}
+                _snapshot_update_path {source!s} operator-tree
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("could not snapshot update path", result.stderr)
+            self.assertFalse((transaction / "operator-tree.present").exists())
+            self.assertEqual((source / "operator-data").read_text(), "keep me\n")
+
     def test_update_refuses_a_checkout_reached_through_a_symlink(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)

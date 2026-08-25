@@ -158,8 +158,10 @@ _acquire_update_lock() {
 _snapshot_update_path() {
     local path="$1" key="$2"
     if [ -e "$path" ] || [ -L "$path" ]; then
-        : >"$_UPDATE_TXN_DIR/$key.present"
-        cp -a -- "$path" "$_UPDATE_TXN_DIR/$key"
+        cp -a -- "$path" "$_UPDATE_TXN_DIR/$key" \
+            || die "could not snapshot update path: $path"
+        : >"$_UPDATE_TXN_DIR/$key.present" \
+            || die "could not mark update snapshot complete: $path"
     fi
 }
 
