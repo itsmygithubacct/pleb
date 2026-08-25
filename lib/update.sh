@@ -12,6 +12,28 @@ _UPDATE_TXN_COMMITTED=0
 _KILIX_TXN_LOCK_FD=""
 _KILIX_TXN_LOCK_BORROWED=0
 
+_require_managed_source_layout() {
+    # Every checkout this run may move must be a real directory, not a symlink
+    # into a development tree.
+    local dir name target
+    for dir in "$PLEB_ROOT" "${PLEB_DIR:-}" "$KILIX_DIR" "$KILIX95_DIR"; do
+        [ -n "$dir" ] || continue
+        _pleb_assert_no_symlink_components "$dir"
+    done
+    for name in pleb kilix kilix-desktops/kilix-95; do
+        [ -L "$GPU_TERMINAL_SOURCE_HOME/$name" ] || continue
+        target="$(realpath -m -- "$GPU_TERMINAL_SOURCE_HOME/$name")" \
+            || die "could not resolve managed source entry: $GPU_TERMINAL_SOURCE_HOME/$name"
+        for dir in "$PLEB_ROOT" "${PLEB_DIR:-}" "$KILIX_DIR" "$KILIX95_DIR"; do
+            [ -n "$dir" ] && [ -d "$dir" ] || continue
+            case "$(cd "$dir" && pwd -P)" in
+                "$target"|"$target"/*)
+                    die "refusing to update $dir: $GPU_TERMINAL_SOURCE_HOME/$name is a symlink into it" ;;
+            esac
+        done
+    done
+}
+
 _release_kilix_transaction_lock() {
     if [ -n "${_KILIX_TXN_LOCK_FD:-}" ]; then
         if [ "${_KILIX_TXN_LOCK_BORROWED:-0}" != 1 ]; then
@@ -584,6 +606,7 @@ _update_cleanup() {
 }
 
 _update_transaction_begin() {
+    _require_managed_source_layout
     local stamp legacy_stamp
     _validate_legacy_kilix_fork_stamp_path
     _acquire_kilix_transaction_lock
@@ -823,6 +846,7 @@ _pleb_self_update_runnable() {
 # Decide (and validate) up front, so a bad pin or a dirty tree fails before any
 # component is touched rather than after everything else has succeeded.
 _prepare_pleb_self_update() {
+    _require_managed_source_layout
     local root configured
     _PLEB_SELF_UPDATE_OK=0
     case "${PLEB_SELF_UPDATE:-1}" in
@@ -1212,6 +1236,7 @@ do_update() {
         esac
     done
 
+    _require_managed_source_layout
     _acquire_update_lock
     [ -d "$KILIX_DIR/.git" ] || die "no kilix git checkout at $KILIX_DIR — run 'pleb install' first"
     require_immutable_ref "$KILIX_REF" "$KILIX_ALLOW_MUTABLE_REF" \

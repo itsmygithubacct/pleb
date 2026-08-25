@@ -6,6 +6,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PlebPlumbingTests(unittest.TestCase):
+    def test_no_test_inherits_the_live_pleb_root(self):
+        needle = "PLEB_ROOT=" + "{ROOT"
+        offenders = []
+        for path in sorted((ROOT / "tests").glob("*.py")):
+            if needle in path.read_text():
+                offenders.append(str(path.relative_to(ROOT)))
+        self.assertEqual(offenders, [])
+
     def test_shell_scripts_parse(self):
         scripts = [
             "bin/pleb",

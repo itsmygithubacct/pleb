@@ -57,15 +57,22 @@ def git(*argv: str, cwd: Path | None = None) -> str:
 
 
 def run_update_shell(body: str, env: dict[str, str], **assign: str):
+    if "PLEB_ROOT" not in assign:
+        raise AssertionError("update-shell tests must provide an isolated PLEB_ROOT")
+    pleb_root = Path(assign["PLEB_ROOT"])
+    fixture_storage = pleb_root / "lib/storage.sh"
+    if not fixture_storage.exists():
+        fixture_storage.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "lib/storage.sh", fixture_storage)
     prelude = "\n".join(f"{name}={value}" for name, value in assign.items())
     script = textwrap.dedent(
         f"""
         set -uo pipefail
-        PLEB_ROOT={ROOT!s}
+        PLEB_CODE_ROOT={ROOT!s}
         {prelude}
-        . "$PLEB_ROOT/lib/common.sh"
-        . "$PLEB_ROOT/lib/install.sh"
-        . "$PLEB_ROOT/lib/update.sh"
+        . "$PLEB_CODE_ROOT/lib/common.sh"
+        . "$PLEB_CODE_ROOT/lib/install.sh"
+        . "$PLEB_CODE_ROOT/lib/update.sh"
         {body}
         """
     )
@@ -252,6 +259,7 @@ class PinnedMoveReportingTests(unittest.TestCase):
             result = run_update_shell(
                 f'checkout_fetched_ref "{checkout}" "$KILIX95_REF" "kilix 95" KILIX95_REF',
                 env,
+                PLEB_ROOT=str(tmp / "pleb-test-root"),
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), old)
@@ -271,6 +279,7 @@ class PinnedMoveReportingTests(unittest.TestCase):
                 'checkout_fetched_ref "%s" "$KILIX95_REF" "kilix 95" KILIX95_REF'
                 % checkout,
                 env,
+                PLEB_ROOT=str(tmp / "pleb-test-root"),
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), new)
@@ -314,6 +323,7 @@ class VoiceRefreshTests(unittest.TestCase):
             result = run_update_shell(
                 "refresh_kilix_voice",
                 clean_env(tmp),
+                PLEB_ROOT=str(tmp / "pleb-test-root"),
                 KILIX_DIR=str(kilix),
                 KILIX_DATA_HOME=str(data),
             )
@@ -328,6 +338,7 @@ class VoiceRefreshTests(unittest.TestCase):
             result = run_update_shell(
                 "refresh_kilix_voice",
                 clean_env(tmp),
+                PLEB_ROOT=str(tmp / "pleb-test-root"),
                 KILIX_DIR=str(kilix),
                 KILIX_DATA_HOME=str(data),
             )
@@ -341,6 +352,7 @@ class VoiceRefreshTests(unittest.TestCase):
             result = run_update_shell(
                 "refresh_kilix_voice",
                 clean_env(tmp),
+                PLEB_ROOT=str(tmp / "pleb-test-root"),
                 KILIX_DIR=str(kilix),
                 KILIX_DATA_HOME=str(data),
             )
@@ -357,6 +369,7 @@ class VoiceRefreshTests(unittest.TestCase):
             result = run_update_shell(
                 "refresh_kilix_voice\necho survived",
                 env,
+                PLEB_ROOT=str(tmp / "pleb-test-root"),
                 KILIX_DIR=str(kilix),
                 KILIX_DATA_HOME=str(data),
             )

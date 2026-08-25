@@ -100,7 +100,8 @@ exit "$VOICE_INSTALL_EXIT"
             script = textwrap.dedent(
                 f"""
                 set -uo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 . "$PLEB_ROOT/lib/common.sh"
                 . "$PLEB_ROOT/lib/install.sh"
                 install_kilix_voice
@@ -185,7 +186,8 @@ exit "$VOICE_INSTALL_EXIT"
             install_script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 . "$PLEB_ROOT/lib/common.sh"
                 . "$PLEB_ROOT/lib/install.sh"
                 run_root() {{ "$@"; }}
@@ -206,7 +208,8 @@ exit "$VOICE_INSTALL_EXIT"
             uninstall_script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 . "$PLEB_ROOT/lib/common.sh"
                 . "$PLEB_ROOT/lib/install.sh"
                 run_root() {{ "$@"; }}
@@ -238,7 +241,8 @@ exit "$VOICE_INSTALL_EXIT"
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 . "$PLEB_ROOT/lib/common.sh"
                 printf '%s\n' "$GPU_TERMINAL_SOURCE_HOME" "$GPU_TERMINAL_HOME" \
                     "$PLEB_STORAGE_HOME" "$PLEB_STATE_HOME" "$PLEB_DATA_HOME" \
@@ -310,7 +314,8 @@ exit "$VOICE_INSTALL_EXIT"
             print_script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 . "$PLEB_ROOT/lib/common.sh"
                 for name in {names}; do printf '%s=%s\n' "$name" "${{!name}}"; done
                 """
@@ -444,7 +449,8 @@ exit "$VOICE_INSTALL_EXIT"
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 . "$PLEB_ROOT/lib/common.sh"
                 for name in {" ".join(names)}; do
                     printf '%s=%s\n' "$name" "${{!name}}"
@@ -808,7 +814,8 @@ exit "$VOICE_INSTALL_EXIT"
                 f"""
                 set -euo pipefail
                 id() {{ [ "${{1:-}}" = -u ] && {{ echo 0; return; }}; command id "$@"; }}
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 PLEB_ENV_SYSTEM={config!s}
                 PLEB_ENV_USER={tmp / 'missing-user.env'!s}
                 . "$PLEB_ROOT/lib/common.sh"
@@ -834,7 +841,8 @@ exit "$VOICE_INSTALL_EXIT"
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 XSESSION_DST={xsession!s}
                 AUTOLOGIN_CONF={autologin!s}
                 . "$PLEB_ROOT/lib/common.sh"
@@ -868,7 +876,8 @@ exit "$VOICE_INSTALL_EXIT"
                 script = textwrap.dedent(
                     f"""
                     set -euo pipefail
-                    PLEB_ROOT={ROOT!s}
+                    PLEB_CODE_ROOT={ROOT!s}
+                    PLEB_ROOT="$PLEB_CODE_ROOT"
                     PLEB_STATE_HOME={state!s}
                     . "$PLEB_ROOT/lib/common.sh"
                     . "$PLEB_ROOT/lib/update.sh"
@@ -897,7 +906,8 @@ exit "$VOICE_INSTALL_EXIT"
                 script = textwrap.dedent(
                     f"""
                     set -euo pipefail
-                    PLEB_ROOT={ROOT!s}
+                    PLEB_CODE_ROOT={ROOT!s}
+                    PLEB_ROOT="$PLEB_CODE_ROOT"
                     PLEB_STATE_HOME={state!s}
                     . "$PLEB_ROOT/lib/common.sh"
                     . "$PLEB_ROOT/lib/update.sh"
@@ -942,7 +952,8 @@ exit "$VOICE_INSTALL_EXIT"
                 script = textwrap.dedent(
                     f"""
                     set -euo pipefail
-                    PLEB_ROOT={ROOT!s}
+                    PLEB_CODE_ROOT={ROOT!s}
+                    PLEB_ROOT="$PLEB_CODE_ROOT"
                     PLEB_STATE_HOME={state!s}
                     . "$PLEB_ROOT/lib/common.sh"
                     . "$PLEB_ROOT/lib/update.sh"
@@ -972,7 +983,8 @@ exit "$VOICE_INSTALL_EXIT"
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 PLEB_STATE_HOME={state!s}
                 PLEB_ENV_USER={persisted!s}
                 . "$PLEB_ROOT/lib/common.sh"
@@ -1027,7 +1039,8 @@ exit "$VOICE_INSTALL_EXIT"
                 script = textwrap.dedent(
                     f"""
                     set -euo pipefail
-                    PLEB_ROOT={ROOT!s}
+                    PLEB_CODE_ROOT={ROOT!s}
+                    PLEB_ROOT="$PLEB_CODE_ROOT"
                     KILIX_STORAGE_HOME={storage!s}
                     KILIX_STATE_DIRECTORY={state!s}
                     . "$PLEB_ROOT/lib/common.sh"
@@ -1119,7 +1132,8 @@ exit "$VOICE_INSTALL_EXIT"
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 KILIX_DIR={kilix!s}
                 KILIX_STORAGE_HOME={build.parent!s}
                 KILIX_BUILD_DIRECTORY={build!s}
@@ -1156,7 +1170,8 @@ exit "$VOICE_INSTALL_EXIT"
             skip_script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 KILIX_DIR={kilix!s}
                 PLEB_SKIP_DEPS=1
                 . "$PLEB_ROOT/lib/common.sh"
@@ -1190,7 +1205,8 @@ exit "$VOICE_INSTALL_EXIT"
                     textwrap.dedent(
                         f"""
                         set -euo pipefail
-                        PLEB_ROOT={ROOT!s}
+                        PLEB_CODE_ROOT={ROOT!s}
+                        PLEB_ROOT="$PLEB_CODE_ROOT"
                         KILIX_DIR={kilix!s}
                         PLEB_DEFER_PTY_BROKER=1
                         . "$PLEB_ROOT/lib/common.sh"
@@ -1282,7 +1298,8 @@ exit "$VOICE_INSTALL_EXIT"
                     textwrap.dedent(
                         f"""
                         set -euo pipefail
-                        PLEB_ROOT={ROOT!s}
+                        PLEB_CODE_ROOT={ROOT!s}
+                        PLEB_ROOT="$PLEB_CODE_ROOT"
                         . "$PLEB_ROOT/lib/common.sh"
                         reconcile_kilix_submodules {checkout!s}
                         """
@@ -1409,19 +1426,25 @@ exit "$VOICE_INSTALL_EXIT"
             stamp = kilix_state / "fork-built-ref"
             stamp.write_text("old-stamp\n")
             stamp.chmod(0o600)
+            pleb_test_root = tmp / "pleb-test-root"
+            (pleb_test_root / "lib").mkdir(parents=True)
+            (pleb_test_root / "lib/storage.sh").write_bytes(
+                (ROOT / "lib/storage.sh").read_bytes()
+            )
 
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT={pleb_test_root!s}
                 PLEB_STATE_HOME={state!s}
                 KILIX_STORAGE_HOME={build.parent!s}
                 KILIX_STATE_DIRECTORY={kilix_state!s}
                 KILIX_DIR={kilix!s}
                 KILIX_BUILD_DIRECTORY={build!s}
                 KILIX95_DIR={kilix95!s}
-                . "$PLEB_ROOT/lib/common.sh"
-                . "$PLEB_ROOT/lib/update.sh"
+                . "$PLEB_CODE_ROOT/lib/common.sh"
+                . "$PLEB_CODE_ROOT/lib/update.sh"
                 _acquire_update_lock
                 _update_transaction_begin
                 git -C "$KILIX_DIR" reset --hard {kilix_after!s} >/dev/null
@@ -1526,15 +1549,16 @@ exit "$VOICE_INSTALL_EXIT"
                     textwrap.dedent(
                         f"""
                         set -euo pipefail
-                        PLEB_ROOT={ROOT!s}
+                        PLEB_CODE_ROOT={ROOT!s}
+                        PLEB_ROOT={pleb_test_root!s}
                         PLEB_STATE_HOME={state!s}
                         KILIX_STORAGE_HOME={build.parent!s}
                         KILIX_STATE_DIRECTORY={kilix_state!s}
                         KILIX_DIR={kilix!s}
                         KILIX_BUILD_DIRECTORY={build!s}
                         KILIX95_DIR={kilix95!s}
-                        . "$PLEB_ROOT/lib/common.sh"
-                        . "$PLEB_ROOT/lib/update.sh"
+                        . "$PLEB_CODE_ROOT/lib/common.sh"
+                        . "$PLEB_CODE_ROOT/lib/update.sh"
                         _acquire_update_lock
                         _update_transaction_begin
                         _update_transaction_commit
@@ -1548,6 +1572,146 @@ exit "$VOICE_INSTALL_EXIT"
             self.assertEqual(committed.returncode, 0, committed.stderr)
             self.assertFalse(legacy_stamp.exists())
 
+    def test_update_refuses_a_checkout_reached_through_a_symlink(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            real_kilix = tmp / "real-kilix"
+            subprocess.run(
+                ["git", "init", "-q", "-b", "main", str(real_kilix)], check=True
+            )
+            subprocess.run(
+                ["git", "-C", str(real_kilix), "config", "user.name", "Pleb Test"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git", "-C", str(real_kilix), "config", "user.email",
+                    "pleb@example.invalid",
+                ],
+                check=True,
+            )
+            (real_kilix / "payload").write_text("unchanged\n")
+            subprocess.run(
+                ["git", "-C", str(real_kilix), "add", "payload"], check=True
+            )
+            subprocess.run(
+                ["git", "-C", str(real_kilix), "commit", "-q", "-m", "base"],
+                check=True,
+            )
+            before = subprocess.check_output(
+                ["git", "-C", str(real_kilix), "rev-parse", "HEAD"], text=True
+            ).strip()
+
+            source_root = tmp / ".local/gpu_terminal/sources"
+            source_root.mkdir(parents=True)
+            kilix_entry = source_root / "kilix"
+            kilix_entry.symlink_to(real_kilix, target_is_directory=True)
+            pleb_root = source_root / "pleb"
+            (pleb_root / "lib").mkdir(parents=True)
+            (pleb_root / "lib/storage.sh").write_bytes(
+                (ROOT / "lib/storage.sh").read_bytes()
+            )
+            kilix95 = source_root / "kilix-desktops/kilix-95"
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_CODE_ROOT={ROOT!s}
+                GPU_TERMINAL_SOURCE_HOME={source_root!s}
+                PLEB_ROOT={pleb_root!s}
+                PLEB_DIR={pleb_root!s}
+                KILIX_DIR={kilix_entry!s}
+                KILIX95_DIR={kilix95!s}
+                . "$PLEB_CODE_ROOT/lib/common.sh"
+                . "$PLEB_CODE_ROOT/lib/update.sh"
+                do_update --no-restart
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(str(kilix_entry), result.stderr)
+            self.assertIn("path with a symlink component", result.stderr)
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "-C", str(real_kilix), "rev-parse", "HEAD"], text=True
+                ).strip(),
+                before,
+            )
+            self.assertFalse((tmp / ".local/gpu_terminal/pleb").exists())
+
+    def test_update_refuses_a_root_that_is_a_symlink_destination(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            real_pleb = tmp / "real-pleb"
+            subprocess.run(
+                ["git", "init", "-q", "-b", "main", str(real_pleb)], check=True
+            )
+            subprocess.run(
+                ["git", "-C", str(real_pleb), "config", "user.name", "Pleb Test"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git", "-C", str(real_pleb), "config", "user.email",
+                    "pleb@example.invalid",
+                ],
+                check=True,
+            )
+            (real_pleb / "payload").write_text("unchanged\n")
+            (real_pleb / "lib").mkdir()
+            (real_pleb / "lib/storage.sh").write_bytes(
+                (ROOT / "lib/storage.sh").read_bytes()
+            )
+            subprocess.run(
+                ["git", "-C", str(real_pleb), "add", "payload", "lib/storage.sh"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(real_pleb), "commit", "-q", "-m", "base"],
+                check=True,
+            )
+            before = subprocess.check_output(
+                ["git", "-C", str(real_pleb), "rev-parse", "HEAD"], text=True
+            ).strip()
+
+            source_root = tmp / ".local/gpu_terminal/sources"
+            source_root.mkdir(parents=True)
+            pleb_entry = source_root / "pleb"
+            pleb_entry.symlink_to(real_pleb, target_is_directory=True)
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_CODE_ROOT={ROOT!s}
+                GPU_TERMINAL_SOURCE_HOME={source_root!s}
+                PLEB_ROOT={real_pleb!s}
+                PLEB_DIR={real_pleb!s}
+                KILIX_DIR={source_root / 'kilix'!s}
+                KILIX95_DIR={source_root / 'kilix-desktops/kilix-95'!s}
+                . "$PLEB_CODE_ROOT/lib/common.sh"
+                . "$PLEB_CODE_ROOT/lib/update.sh"
+                _prepare_pleb_self_update
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(str(pleb_entry), result.stderr)
+            self.assertIn("is a symlink into it", result.stderr)
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "-C", str(real_pleb), "rev-parse", "HEAD"], text=True
+                ).strip(),
+                before,
+            )
+
     def test_dirty_checkout_is_rejected_before_update(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
@@ -1557,7 +1721,8 @@ exit "$VOICE_INSTALL_EXIT"
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 . "$PLEB_ROOT/lib/common.sh"
                 require_clean_checkout {checkout!s} kilix
                 """
@@ -1621,7 +1786,8 @@ exit "$VOICE_INSTALL_EXIT"
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 . "$PLEB_ROOT/lib/common.sh"
                 require_clean_checkout {checkout!s} kilix
                 if (require_immutable_ref release 0 KILIX_REF KILIX_ALLOW_MUTABLE_REF); then exit 99; fi
@@ -1670,7 +1836,8 @@ touch {marker!s}
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 KILIX_DIR={checkout!s}
                 KILIX_PREBUILT_VERSION=kitty-9.9.9
                 KILIX_PREBUILT_SHA256={'a' * 64}
@@ -1705,7 +1872,8 @@ touch {marker!s}
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 KILIX_DIR={checkout!s}
                 KILIX_PREBUILT_VERSION=0.47.0
                 KILIX_PREBUILT_SHA256={'b' * 64}
@@ -1733,7 +1901,8 @@ touch {marker!s}
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 KILIX_DIR={checkout!s}
                 KILIX_PREBUILT_VERSION=0.47.0
                 KILIX_PREBUILT_SHA256={'c' * 64}
@@ -1814,7 +1983,8 @@ touch {marker!s}
             prefix = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 PLEB_STATE_HOME={pleb_state!s}
                 KILIX_STORAGE_HOME={build.parent!s}
                 KILIX_STATE_DIRECTORY={kilix_state!s}
@@ -1923,7 +2093,8 @@ touch {marker!s}
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 PLEB_STATE_HOME={pleb_state!s}
                 KILIX_STATE_DIRECTORY={kilix_state!s}
                 KILIX_DIR={checkout!s}
@@ -1955,7 +2126,8 @@ touch {marker!s}
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 . "$PLEB_ROOT/lib/common.sh"
                 . "$PLEB_ROOT/lib/update.sh"
                 export PLEBIAN_OS_KILIX_GO_MIN_VERSION=1.26
@@ -2019,7 +2191,8 @@ touch {called!s}
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 . "$PLEB_ROOT/lib/common.sh"
                 . "$PLEB_ROOT/lib/update.sh"
                 PLEB_ROOT={install_root!s}
@@ -2056,7 +2229,8 @@ touch {called!s}
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 . "$PLEB_ROOT/lib/common.sh"
                 . "$PLEB_ROOT/lib/update.sh"
                 GO_BIN_DIR={fake_bin!s}
@@ -2513,7 +2687,8 @@ class KilixEnginePark(unittest.TestCase):
         script = textwrap.dedent(
             f"""
             set -euo pipefail
-            PLEB_ROOT={ROOT!s}
+            PLEB_CODE_ROOT={ROOT!s}
+            PLEB_ROOT="$PLEB_CODE_ROOT"
             PLEB_STATE_HOME={state!s}
             KILIX_STORAGE_HOME={build.parent!s}
             KILIX_STATE_DIRECTORY={kilix_state!s}
@@ -2668,7 +2843,8 @@ class KilixTransactionLockWait(unittest.TestCase):
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 PLEB_STATE_HOME={state!s}
                 KILIX_STORAGE_HOME={kilix_state.parent!s}
                 KILIX_STATE_DIRECTORY={kilix_state!s}
@@ -2722,7 +2898,8 @@ class KilixTransactionLockWait(unittest.TestCase):
             script = textwrap.dedent(
                 f"""
                 set -euo pipefail
-                PLEB_ROOT={ROOT!s}
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
                 PLEB_STATE_HOME={state!s}
                 KILIX_STORAGE_HOME={kilix_state.parent!s}
                 KILIX_STATE_DIRECTORY={kilix_state!s}
@@ -2770,7 +2947,8 @@ class TbShellAliasTests(unittest.TestCase):
         script = textwrap.dedent(
             f"""
             set -uo pipefail
-            PLEB_ROOT={ROOT!s}
+            PLEB_CODE_ROOT={ROOT!s}
+            PLEB_ROOT="$PLEB_CODE_ROOT"
             . "$PLEB_ROOT/lib/common.sh"
             . "$PLEB_ROOT/lib/install.sh"
             provision_tb_shell_alias
