@@ -1924,6 +1924,73 @@ exit "$VOICE_INSTALL_EXIT"
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse(kilix95.exists())
 
+    def test_checkout_dirtied_after_the_gate_is_not_force_restored(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            checkout = tmp / "checkout"
+            subprocess.run(
+                ["git", "init", "-q", "-b", "main", str(checkout)], check=True
+            )
+            subprocess.run(
+                ["git", "-C", str(checkout), "config", "user.name", "Pleb Test"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git", "-C", str(checkout), "config", "user.email",
+                    "pleb@example.invalid",
+                ],
+                check=True,
+            )
+            payload = checkout / "payload"
+            payload.write_text("before\n")
+            subprocess.run(["git", "-C", str(checkout), "add", "payload"], check=True)
+            subprocess.run(
+                ["git", "-C", str(checkout), "commit", "-q", "-m", "before"],
+                check=True,
+            )
+            before = subprocess.check_output(
+                ["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True
+            ).strip()
+            payload.write_text("after\n")
+            subprocess.run(
+                ["git", "-C", str(checkout), "commit", "-qam", "after"], check=True
+            )
+            after = subprocess.check_output(
+                ["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True
+            ).strip()
+            payload.write_text("operator edit\n")
+            transaction = tmp / "transaction"
+            transaction.mkdir()
+            (transaction / "checkout.head").write_text(before + "\n")
+            (transaction / "checkout.branch").write_text("main\n")
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
+                . "$PLEB_CODE_ROOT/lib/common.sh"
+                . "$PLEB_CODE_ROOT/lib/update.sh"
+                _UPDATE_TXN_DIR={transaction!s}
+                _restore_checkout_position {checkout!s} checkout
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("changed after the update safety gate", result.stderr)
+            self.assertEqual(payload.read_text(), "operator edit\n")
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True
+                ).strip(),
+                after,
+            )
+
     def test_update_refuses_a_checkout_reached_through_a_symlink(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
