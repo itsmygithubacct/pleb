@@ -1684,6 +1684,246 @@ exit "$VOICE_INSTALL_EXIT"
             self.assertFalse((transaction / "operator-tree.present").exists())
             self.assertEqual((source / "operator-data").read_text(), "keep me\n")
 
+    def test_rollback_does_not_remove_content_it_did_not_create(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            kilix = tmp / "kilix"
+            subprocess.run(["git", "init", "-q", "-b", "main", str(kilix)], check=True)
+            subprocess.run(
+                ["git", "-C", str(kilix), "config", "user.name", "Pleb Test"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git", "-C", str(kilix), "config", "user.email",
+                    "pleb@example.invalid",
+                ],
+                check=True,
+            )
+            (kilix / "payload").write_text("parent\n")
+            subprocess.run(["git", "-C", str(kilix), "add", "payload"], check=True)
+            subprocess.run(
+                ["git", "-C", str(kilix), "commit", "-q", "-m", "parent"],
+                check=True,
+            )
+            gitlink = subprocess.check_output(
+                ["git", "-C", str(kilix), "rev-parse", "HEAD"], text=True
+            ).strip()
+            path = "third_party/kitty-pty-broker"
+            subprocess.run(
+                [
+                    "git", "-C", str(kilix), "update-index", "--add", "--cacheinfo",
+                    f"160000,{gitlink},{path}",
+                ],
+                check=True,
+            )
+            checkout = kilix / path
+            checkout.mkdir(parents=True)
+            notes = checkout / "my-notes.txt"
+            notes.write_text("operator bytes\n")
+            transaction = tmp / "transaction"
+            transaction.mkdir()
+            key = "submodule-third_party-kitty-pty-broker"
+            (transaction / f"{key}.initialized").write_text("0\n")
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
+                KILIX_DIR={kilix!s}
+                . "$PLEB_CODE_ROOT/lib/common.sh"
+                . "$PLEB_CODE_ROOT/lib/update.sh"
+                _UPDATE_TXN_DIR={transaction!s}
+                _deinit_new_kilix_submodule {path} {key}
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("refusing to deinitialize", result.stderr)
+            self.assertEqual(notes.read_text(), "operator bytes\n")
+
+    def test_rollback_deinitializes_only_a_clean_declared_submodule(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source = tmp / "module-source"
+            subprocess.run(["git", "init", "-q", "-b", "main", str(source)], check=True)
+            subprocess.run(
+                ["git", "-C", str(source), "config", "user.name", "Pleb Test"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git", "-C", str(source), "config", "user.email",
+                    "pleb@example.invalid",
+                ],
+                check=True,
+            )
+            (source / "payload").write_text("module\n")
+            subprocess.run(["git", "-C", str(source), "add", "payload"], check=True)
+            subprocess.run(
+                ["git", "-C", str(source), "commit", "-q", "-m", "module"],
+                check=True,
+            )
+
+            kilix = tmp / "kilix"
+            subprocess.run(["git", "init", "-q", "-b", "main", str(kilix)], check=True)
+            subprocess.run(
+                ["git", "-C", str(kilix), "config", "user.name", "Pleb Test"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git", "-C", str(kilix), "config", "user.email",
+                    "pleb@example.invalid",
+                ],
+                check=True,
+            )
+            (kilix / "payload").write_text("parent\n")
+            subprocess.run(["git", "-C", str(kilix), "add", "payload"], check=True)
+            subprocess.run(
+                ["git", "-C", str(kilix), "commit", "-q", "-m", "parent"],
+                check=True,
+            )
+            path = "third_party/new-module"
+            subprocess.run(
+                [
+                    "git", "-c", "protocol.file.allow=always", "-C", str(kilix),
+                    "submodule", "add", "-q", str(source), path,
+                ],
+                check=True,
+            )
+            transaction = tmp / "transaction"
+            transaction.mkdir()
+            key = "submodule-third_party-new-module"
+            (transaction / f"{key}.initialized").write_text("0\n")
+            ignored = kilix / path / "operator.log"
+            ignored.write_text("ignored operator bytes\n")
+            git_dir = Path(
+                subprocess.check_output(
+                    ["git", "-C", str(kilix / path), "rev-parse", "--git-dir"],
+                    text=True,
+                ).strip()
+            )
+            if not git_dir.is_absolute():
+                git_dir = kilix / path / git_dir
+            with (git_dir / "info/exclude").open("a") as exclude:
+                exclude.write("operator.log\n")
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
+                KILIX_DIR={kilix!s}
+                . "$PLEB_CODE_ROOT/lib/common.sh"
+                . "$PLEB_CODE_ROOT/lib/update.sh"
+                _UPDATE_TXN_DIR={transaction!s}
+                _deinit_new_kilix_submodule {path} {key}
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(ignored.read_text(), "ignored operator bytes\n")
+            ignored.unlink()
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((kilix / path / "payload").exists())
+
+    def test_rollback_preserves_a_kilix95_path_it_did_not_create(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            kilix95 = tmp / "kilix-95"
+            kilix95.mkdir()
+            notes = kilix95 / "my-notes.txt"
+            notes.write_text("operator bytes\n")
+            transaction = tmp / "transaction"
+            transaction.mkdir()
+            (transaction / "kilix95.existed").write_text("0\n")
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
+                KILIX95_DIR={kilix95!s}
+                . "$PLEB_CODE_ROOT/lib/common.sh"
+                . "$PLEB_CODE_ROOT/lib/update.sh"
+                _UPDATE_TXN_DIR={transaction!s}
+                _remove_created_kilix95_checkout
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("did not record creating", result.stderr)
+            self.assertEqual(notes.read_text(), "operator bytes\n")
+
+    def test_rollback_removes_only_the_kilix95_checkout_this_update_recorded(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source = tmp / "kilix-95-source"
+            subprocess.run(["git", "init", "-q", "-b", "main", str(source)], check=True)
+            subprocess.run(
+                ["git", "-C", str(source), "config", "user.name", "Pleb Test"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git", "-C", str(source), "config", "user.email",
+                    "pleb@example.invalid",
+                ],
+                check=True,
+            )
+            (source / "payload").write_text("provider\n")
+            subprocess.run(["git", "-C", str(source), "add", "payload"], check=True)
+            subprocess.run(
+                ["git", "-C", str(source), "commit", "-q", "-m", "provider"],
+                check=True,
+            )
+            kilix95 = tmp / "kilix-95"
+            subprocess.run(["git", "clone", "-q", str(source), str(kilix95)], check=True)
+            transaction = tmp / "transaction"
+            transaction.mkdir()
+            (transaction / "kilix95.existed").write_text("0\n")
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
+                KILIX95_DIR={kilix95!s}
+                . "$PLEB_CODE_ROOT/lib/common.sh"
+                . "$PLEB_CODE_ROOT/lib/update.sh"
+                _UPDATE_TXN_DIR={transaction!s}
+                _record_created_kilix95_checkout
+                _remove_created_kilix95_checkout
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(kilix95.exists())
+
     def test_update_refuses_a_checkout_reached_through_a_symlink(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
