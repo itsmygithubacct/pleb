@@ -4,6 +4,33 @@ Use this when `pleb update` stops during the Kilix prerequisite check or fork
 build with a message such as `pkg-config libxxhash: MISSING`. Your Pleb data is
 not damaged, and no source or data reset is needed.
 
+## Preserved checkout data
+
+Before an update moves Pleb, Kilix, Kilix 95, or an initialized Kilix
+submodule, it saves every modified tracked and untracked path under
+`~/.local/gpu_terminal/pleb/state/update-preserve/`. Each completed directory
+contains `STATUS`, `METADATA.json`, and `MANIFEST.sha256`; verify one with:
+
+```sh
+cd ~/.local/gpu_terminal/pleb/state/update-preserve/<snapshot>
+sha256sum -c MANIFEST.sha256
+```
+
+The updater verifies and fsyncs the snapshot before it moves local paths. It
+also takes a distinct `rollback` snapshot of edits made during the run before a
+forced restore. Preservation directories remain after both success and failure;
+the last ten verified snapshots per checkout are retained. To back up local
+checkout work without attempting an update, run:
+
+```sh
+pleb update --preserve-only
+```
+
+On success, untracked operator files return to their original names, with an
+incoming release collision beside them as `.from-<short-sha>`. For modified
+tracked files, the release version stays installed and the operator copy is
+left as `.local`. The command reports every such path.
+
 ## Plebian-OS: preferred recovery
 
 ```sh
@@ -48,9 +75,9 @@ updater itself changed.
 A moved checkout is verified before it is accepted: it must parse and answer
 `pleb version`. One that does not is put back on the previous commit and the
 run reports `pleb self-update rolled back; the previous version is still
-installed`, so the machine keeps a working installation. If the checkout is ever
-left somewhere you did not intend, `git -C ~/.local/gpu_terminal/sources/pleb
-checkout -f <commit>` restores it by hand, and
+installed`, so the machine keeps a working installation. A failed automatic
+restore names the preservation root and retains its recovery record for
+inspection. To update the other components without moving Pleb, use
 
 ```sh
 PLEB_SELF_UPDATE=0 pleb update

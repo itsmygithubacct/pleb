@@ -1511,6 +1511,19 @@ exit "$VOICE_INSTALL_EXIT"
             (pleb_test_root / "lib/storage.sh").write_bytes(
                 (ROOT / "lib/storage.sh").read_bytes()
             )
+            # P1 begins with real pre-existing operator state. Transaction
+            # begin must preserve and prepare it; rollback must reproduce it
+            # exactly after separately preserving edits made during the run.
+            (kilix / "payload").write_bytes(b"preexisting-parent-edit\n")
+            (kilix / "preexisting-untracked").write_bytes(
+                b"\x00preexisting-parent\xff"
+            )
+            (kilix / "preexisting-untracked").chmod(0o700)
+            (kilix / "src/payload").write_bytes(b"preexisting-src-edit\n")
+            (kilix / "src/preexisting-untracked").write_bytes(
+                b"\x00preexisting-src\xff"
+            )
+            (kilix / "src/preexisting-untracked").chmod(0o750)
 
             script = textwrap.dedent(
                 f"""
@@ -1539,6 +1552,10 @@ exit "$VOICE_INSTALL_EXIT"
                 printf '%s\n' new-kitten >{kitten!s}
                 printf '%s\n' new-stamp >{stamp!s}
                 printf '%s\n' new-broker >{broker_build / 'marker'!s}
+                printf '%s\n' rollback-operator-edit >"$KILIX_DIR/payload"
+                printf '%s\n' rollback-untracked >"$KILIX_DIR/operator-during-update"
+                printf '%s\n' rollback-submodule-edit >"$KILIX_DIR/src/payload"
+                printf '%s\n' rollback-submodule-untracked >"$KILIX_DIR/src/operator-during-update"
                 exit 73
                 """
             )
@@ -1548,7 +1565,7 @@ exit "$VOICE_INSTALL_EXIT"
                 text=True,
                 capture_output=True,
             )
-            self.assertEqual(result.returncode, 73)
+            self.assertEqual(result.returncode, 73, result.stderr)
             self.assertIn("restoring the previous coherent", result.stderr)
             expected_repos = [(kilix, kilix_before, "main")]
             expected_repos.extend(
@@ -1590,18 +1607,91 @@ exit "$VOICE_INSTALL_EXIT"
             self.assertEqual(stamp.read_text(), "old-stamp\n")
             self.assertEqual(legacy_stamp.read_text(), "legacy-stamp\n")
             self.assertEqual(list(state.glob("update-rollback.*")), [])
-            for _, checkout, _, _ in submodule_records:
-                self.assertEqual((checkout / "payload").read_text(), "before\n")
+            for path, checkout, _, _ in submodule_records:
+                expected_payload = (
+                    "preexisting-src-edit\n" if path == "src" else "before\n"
+                )
+                self.assertEqual((checkout / "payload").read_text(), expected_payload)
             self.assertEqual(
                 (broker_build / "marker").read_text(), "old-broker\n"
             )
             self.assertEqual(
-                subprocess.check_output(
-                    ["git", "-C", str(kilix), "status", "--porcelain"],
-                    text=True,
-                ).strip(),
-                "",
+                (kilix / "payload").read_bytes(), b"preexisting-parent-edit\n"
             )
+            self.assertEqual(
+                (kilix / "preexisting-untracked").read_bytes(),
+                b"\x00preexisting-parent\xff",
+            )
+            self.assertEqual(
+                (kilix / "src/preexisting-untracked").read_bytes(),
+                b"\x00preexisting-src\xff",
+            )
+            self.assertEqual(
+                stat.S_IMODE((kilix / "preexisting-untracked").stat().st_mode),
+                0o700,
+            )
+            self.assertEqual(
+                stat.S_IMODE(
+                    (kilix / "src/preexisting-untracked").stat().st_mode
+                ),
+                0o750,
+            )
+            preservation_root = state / "update-preserve"
+            forward_parent = list(preservation_root.glob("*-forward-kilix"))
+            forward_src = list(
+                preservation_root.glob("*-forward-submodule-src")
+            )
+            parent_snapshots = list(preservation_root.glob("*-rollback-kilix"))
+            src_snapshots = list(
+                preservation_root.glob("*-rollback-submodule-src")
+            )
+            self.assertEqual(len(forward_parent), 1)
+            self.assertEqual(len(forward_src), 1)
+            self.assertEqual(len(parent_snapshots), 1)
+            self.assertEqual(len(src_snapshots), 1)
+            self.assertEqual(
+                (forward_parent[0] / "files/payload").read_bytes(),
+                b"preexisting-parent-edit\n",
+            )
+            self.assertEqual(
+                (
+                    forward_parent[0]
+                    / "files/preexisting-untracked"
+                ).read_bytes(),
+                b"\x00preexisting-parent\xff",
+            )
+            self.assertEqual(
+                (forward_src[0] / "files/payload").read_bytes(),
+                b"preexisting-src-edit\n",
+            )
+            self.assertEqual(
+                (parent_snapshots[0] / "files/payload").read_text(),
+                "rollback-operator-edit\n",
+            )
+            self.assertEqual(
+                (parent_snapshots[0] / "files/operator-during-update").read_text(),
+                "rollback-untracked\n",
+            )
+            self.assertEqual(
+                (src_snapshots[0] / "files/payload").read_text(),
+                "rollback-submodule-edit\n",
+            )
+            self.assertEqual(
+                (src_snapshots[0] / "files/operator-during-update").read_text(),
+                "rollback-submodule-untracked\n",
+            )
+            for snapshot in (
+                *forward_parent,
+                *forward_src,
+                *parent_snapshots,
+                *src_snapshots,
+            ):
+                subprocess.run(
+                    ["sha256sum", "-c", "MANIFEST.sha256"],
+                    cwd=snapshot,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                )
             recorded = dict(
                 line.split("\t", 1)
                 for line in recorded_submodules.read_text().splitlines()
@@ -2061,6 +2151,109 @@ exit "$VOICE_INSTALL_EXIT"
                 before,
             )
             self.assertFalse((tmp / ".local/gpu_terminal/pleb").exists())
+
+    def test_preserve_only_snapshots_every_dirty_checkout_without_moving_it(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source_root = tmp / ".local/gpu_terminal/sources"
+            kilix = source_root / "kilix"
+            pleb_root = source_root / "pleb"
+            for checkout in (kilix, pleb_root):
+                subprocess.run(
+                    ["git", "init", "-q", "-b", "main", str(checkout)],
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "-C", str(checkout), "config", "user.name", "Pleb Test"],
+                    check=True,
+                )
+                subprocess.run(
+                    [
+                        "git", "-C", str(checkout), "config", "user.email",
+                        "pleb@example.invalid",
+                    ],
+                    check=True,
+                )
+                (checkout / "tracked").write_text("release\n")
+                subprocess.run(
+                    ["git", "-C", str(checkout), "add", "tracked"], check=True
+                )
+                subprocess.run(
+                    ["git", "-C", str(checkout), "commit", "-qm", "base"],
+                    check=True,
+                )
+            (pleb_root / "lib").mkdir()
+            (pleb_root / "lib/storage.sh").write_bytes(
+                (ROOT / "lib/storage.sh").read_bytes()
+            )
+            (kilix / "tracked").write_text("kilix operator edit\n")
+            (kilix / "untracked").write_bytes(b"\x00kilix\xff")
+            (pleb_root / "tracked").write_text("pleb operator edit\n")
+            (pleb_root / "untracked").write_bytes(b"\x00pleb\xff")
+            heads = {
+                checkout: subprocess.check_output(
+                    ["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True
+                ).strip()
+                for checkout in (kilix, pleb_root)
+            }
+            statuses = {
+                checkout: subprocess.check_output(
+                    [
+                        "git", "-C", str(checkout), "status", "--porcelain=v1",
+                        "--untracked-files=all",
+                    ]
+                )
+                for checkout in (kilix, pleb_root)
+            }
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_CODE_ROOT={ROOT!s}
+                GPU_TERMINAL_SOURCE_HOME={source_root!s}
+                PLEB_ROOT={pleb_root!s}
+                PLEB_DIR={pleb_root!s}
+                KILIX_DIR={kilix!s}
+                KILIX95_DIR={source_root / 'kilix-desktops/kilix-95'!s}
+                . "$PLEB_CODE_ROOT/lib/common.sh"
+                . "$PLEB_CODE_ROOT/lib/update.sh"
+                do_update --preserve-only
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("preserve-only completed: 2 checkout snapshot", result.stdout)
+            for checkout in (kilix, pleb_root):
+                self.assertEqual(
+                    subprocess.check_output(
+                        ["git", "-C", str(checkout), "rev-parse", "HEAD"],
+                        text=True,
+                    ).strip(),
+                    heads[checkout],
+                )
+                self.assertEqual(
+                    subprocess.check_output(
+                        [
+                            "git", "-C", str(checkout), "status",
+                            "--porcelain=v1", "--untracked-files=all",
+                        ]
+                    ),
+                    statuses[checkout],
+                )
+            preservation_root = tmp / ".local/gpu_terminal/pleb/state/update-preserve"
+            snapshots = list(preservation_root.glob("*-preserve-only-*"))
+            self.assertEqual(len(snapshots), 2)
+            for snapshot in snapshots:
+                subprocess.run(
+                    ["sha256sum", "-c", "MANIFEST.sha256"],
+                    cwd=snapshot,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                )
 
     def test_update_refuses_a_root_that_is_a_symlink_destination(self):
         with tempfile.TemporaryDirectory() as td:

@@ -14,6 +14,7 @@ here so it cannot come back:
 """
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import textwrap
@@ -59,6 +60,8 @@ def git(*argv: str, cwd: Path | None = None) -> str:
 def run_update_shell(body: str, env: dict[str, str], **assign: str):
     if "PLEB_ROOT" not in assign:
         raise AssertionError("update-shell tests must provide an isolated PLEB_ROOT")
+    if "PLEB_STATE_HOME" in assign and "PLEB_STORAGE_HOME" not in assign:
+        assign["PLEB_STORAGE_HOME"] = str(Path(assign["PLEB_STATE_HOME"]).parent)
     pleb_root = Path(assign["PLEB_ROOT"])
     fixture_storage = pleb_root / "lib/storage.sh"
     if not fixture_storage.exists():
@@ -84,7 +87,10 @@ def run_update_shell(body: str, env: dict[str, str], **assign: str):
 class SelfUpdateTests(unittest.TestCase):
     """Pleb must move its own checkout the way it moves every other one."""
 
-    def _stack(self, tmp: Path, *, break_the_update: bool = False):
+    def _stack(
+        self, tmp: Path, *, break_the_update: bool = False,
+        incoming_camera: bool = False,
+    ):
         """An origin carrying one new Pleb commit, and a checkout behind it.
 
         Seeded from the working tree rather than cloned from it, so the code
@@ -97,6 +103,8 @@ class SelfUpdateTests(unittest.TestCase):
         git("commit", "-qm", "test: the installed pleb", cwd=upstream)
         base = git("rev-parse", "HEAD", cwd=upstream)
         (upstream / "VERSION").write_text("9.9.9-test\n")
+        if incoming_camera:
+            (upstream / "camera.sh").write_text("release camera\n")
         if break_the_update:
             # A shipped tree that cannot parse is the failure this has to
             # survive: the machine must end the run on the version it had.
@@ -109,6 +117,51 @@ class SelfUpdateTests(unittest.TestCase):
         git("clone", "-q", str(upstream), str(checkout))
         git("checkout", "-q", "--detach", base, cwd=checkout)
         return upstream, checkout, base, head
+
+    def test_local_paths_survive_a_real_self_update_with_asymmetric_conflicts(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            upstream, checkout, _, head = self._stack(
+                tmp, incoming_camera=True
+            )
+            (checkout / "VERSION").write_text("operator version edit\n")
+            (checkout / "camera.sh").write_text("operator camera\n")
+            (checkout / "camera.sh").chmod(0o700)
+            env = clean_env(tmp)
+            result = run_update_shell(
+                "_prepare_pleb_self_update\n_update_pleb_self",
+                env,
+                PLEB_ROOT=str(checkout),
+                PLEB_DIR=str(checkout),
+                PLEB_REPO=str(upstream),
+                PLEB_REF=head,
+                PLEB_STATE_HOME=str(tmp / "state"),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), head)
+            self.assertEqual((checkout / "VERSION").read_text(), "9.9.9-test\n")
+            self.assertEqual(
+                (checkout / "VERSION.local").read_text(),
+                "operator version edit\n",
+            )
+            self.assertEqual((checkout / "camera.sh").read_text(), "operator camera\n")
+            self.assertEqual(
+                stat.S_IMODE((checkout / "camera.sh").stat().st_mode), 0o700
+            )
+            self.assertEqual(
+                (checkout / f"camera.sh.from-{head[:12]}").read_text(),
+                "release camera\n",
+            )
+            snapshots = list(
+                (tmp / "state" / "update-preserve").glob("*-forward-pleb")
+            )
+            self.assertEqual(len(snapshots), 1)
+            subprocess.run(
+                ["sha256sum", "-c", "MANIFEST.sha256"],
+                cwd=snapshots[0],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
 
     def test_a_pinned_ref_moves_the_running_checkout(self):
         with tempfile.TemporaryDirectory() as td:
@@ -150,6 +203,48 @@ class SelfUpdateTests(unittest.TestCase):
             self.assertNotEqual((checkout / "VERSION").read_text().strip(), "9.9.9-test")
             self.assertIn("rolled back", result.stderr)
             self.assertIn("previous version is still installed", result.stderr)
+
+    def test_failed_self_fetch_restores_the_operator_state_it_prepared(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            upstream, checkout, base, _ = self._stack(tmp)
+            (checkout / "VERSION").write_text("operator version\n")
+            (checkout / "operator-only").write_bytes(b"\x00operator\xff")
+            status_before = subprocess.check_output(
+                [
+                    "git", "-C", str(checkout), "status", "--porcelain=v1",
+                    "--untracked-files=all",
+                ]
+            )
+            env = clean_env(tmp)
+            missing = "f" * 40
+            result = run_update_shell(
+                "_prepare_pleb_self_update\n"
+                "trap _update_cleanup EXIT\n"
+                "_update_pleb_self",
+                env,
+                PLEB_ROOT=str(checkout),
+                PLEB_DIR=str(checkout),
+                PLEB_REPO=str(upstream),
+                PLEB_REF=missing,
+                PLEB_STATE_HOME=str(tmp / "state"),
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("fetch failed", result.stderr)
+            self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), base)
+            self.assertEqual((checkout / "VERSION").read_text(), "operator version\n")
+            self.assertEqual(
+                (checkout / "operator-only").read_bytes(), b"\x00operator\xff"
+            )
+            self.assertEqual(
+                subprocess.check_output(
+                    [
+                        "git", "-C", str(checkout), "status", "--porcelain=v1",
+                        "--untracked-files=all",
+                    ]
+                ),
+                status_before,
+            )
 
     def test_a_mutable_ref_is_refused_before_anything_moves(self):
         with tempfile.TemporaryDirectory() as td:
@@ -225,7 +320,7 @@ class SelfUpdateTests(unittest.TestCase):
             self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), base)
             self.assertIn("not the checkout this pleb runs from", result.stderr)
 
-    def test_self_update_rechecks_cleanliness_next_to_the_move(self):
+    def test_self_update_preserves_an_edit_made_after_the_initial_gate(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             upstream, checkout, base, head = self._stack(tmp)
@@ -242,11 +337,18 @@ class SelfUpdateTests(unittest.TestCase):
                 PLEB_REF=head,
                 PLEB_STATE_HOME=str(tmp / "state"),
             )
-            self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), base)
-            self.assertIn("operator edit", (checkout / "VERSION").read_text())
-            self.assertIn("changed after the update safety gate", result.stderr)
-            self.assertIn("no files were moved", result.stderr)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), head)
+            self.assertEqual((checkout / "VERSION").read_text(), "9.9.9-test\n")
+            self.assertIn("operator edit", (checkout / "VERSION.local").read_text())
+            snapshots = list((tmp / "state" / "update-preserve").glob("*-forward-pleb"))
+            self.assertEqual(len(snapshots), 1)
+            subprocess.run(
+                ["sha256sum", "-c", "MANIFEST.sha256"],
+                cwd=snapshots[0],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
             self.assertNotIn("fetch failed", result.stderr)
 
 

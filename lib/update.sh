@@ -3,6 +3,9 @@
 # the fork if it changed, and restart only when an active kiosk opts in.
 # Sourced by `pleb`. KILIX_DIR/KILIX_BRANCH come from common.sh.
 
+# shellcheck source=/dev/null
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/preserve.sh"
+
 _UPDATE_LOCK_FD=""
 _UPDATE_LOCK_DIR=""
 _UPDATE_LOCK_BORROWED=0
@@ -11,6 +14,11 @@ _UPDATE_TXN_ACTIVE=0
 _UPDATE_TXN_COMMITTED=0
 _KILIX_TXN_LOCK_FD=""
 _KILIX_TXN_LOCK_BORROWED=0
+_PLEB_SELF_INITIAL_PRESERVE=""
+declare -a _PLEB_SELF_PRESERVATIONS=()
+_PLEB_SELF_MOVE_ACTIVE=0
+_PLEB_SELF_BEFORE=""
+_PLEB_SELF_BRANCH=""
 
 _require_managed_source_layout() {
     # Every checkout this run may move must be a real directory, not a symlink
@@ -18,6 +26,8 @@ _require_managed_source_layout() {
     local dir name target
     for dir in "$PLEB_ROOT" "${PLEB_DIR:-}" "$KILIX_DIR" "$KILIX95_DIR"; do
         [ -n "$dir" ] || continue
+        [[ "$dir" != *$'\n'* && "$dir" != *$'\r'* ]] \
+            || die "refusing participating checkout path with a line break"
         _pleb_assert_no_symlink_components "$dir"
     done
     for name in pleb kilix kilix-desktops/kilix-95; do
@@ -264,9 +274,111 @@ _record_checkout_position() {
         || : >"$_UPDATE_TXN_DIR/$key.branch"
 }
 
+_record_checkout_preservation() {
+    local dir="$1" label="$2" key="$3" snapshot
+    preserve_checkout "$dir" "$label" forward \
+        || die "could not preserve $label checkout before update"
+    snapshot="$PLEB_PRESERVE_RESULT"
+    [ -n "$snapshot" ] || return 0
+    printf '%s\n' "$snapshot" >"$_UPDATE_TXN_DIR/$key.preserve" \
+        || die "could not record the $label preservation snapshot"
+    printf '%s\n' "$snapshot" >>"$_UPDATE_TXN_DIR/$key.preserve-list" \
+        || die "could not record the $label preservation list"
+    if [ "$key" = pleb ]; then
+        _PLEB_SELF_INITIAL_PRESERVE="$snapshot"
+        _PLEB_SELF_PRESERVATIONS+=("$snapshot")
+    fi
+}
+
+_capture_transaction_checkout_before_move() {
+    local dir="$1" label="$2" key snapshot
+    case "$label" in
+        "kilix 95") key=kilix95 ;;
+        *) key="$label" ;;
+    esac
+    preserve_checkout "$dir" "$label" forward \
+        || die "could not preserve $label changes immediately before checkout"
+    snapshot="$PLEB_PRESERVE_RESULT"
+    if [ -n "$snapshot" ]; then
+        prepare_preserved_checkout "$dir" "$snapshot" \
+            || die "$label changed while preparing its preservation snapshot: $snapshot"
+        if [ ! -f "$_UPDATE_TXN_DIR/$key.preserve" ]; then
+            printf '%s\n' "$snapshot" >"$_UPDATE_TXN_DIR/$key.preserve" \
+                || die "could not record the late $label rollback snapshot"
+        fi
+        printf '%s\n' "$snapshot" >>"$_UPDATE_TXN_DIR/$key.preserve-list" \
+            || die "could not record the late $label preservation snapshot"
+        fsync_update_record "$_UPDATE_TXN_DIR" \
+            || die "could not make the late $label preservation record durable"
+    fi
+    _assert_still_clean "$dir" "$key" \
+        || die "$label checkout changed immediately before its move"
+}
+
+_prepare_recorded_preservation() {
+    local dir="$1" key="$2" snapshot
+    [ -f "$_UPDATE_TXN_DIR/$key.preserve" ] || return 0
+    snapshot="$(cat "$_UPDATE_TXN_DIR/$key.preserve")" || return 1
+    prepare_preserved_checkout "$dir" "$snapshot"
+}
+
+_restore_recorded_preservation() {
+    local dir="$1" key="$2" mode="$3" target="${4:-unknown}" snapshot
+    [ -f "$_UPDATE_TXN_DIR/$key.preserve" ] || return 0
+    snapshot="$(cat "$_UPDATE_TXN_DIR/$key.preserve")" || return 1
+    restore_preserved_checkout "$dir" "$snapshot" "$mode" "$target"
+}
+
+_restore_recorded_preservations_after_success() {
+    local dir="$1" key="$2" target="$3" snapshot
+    [ -f "$_UPDATE_TXN_DIR/$key.preserve-list" ] || return 0
+    while IFS= read -r snapshot; do
+        [ -n "$snapshot" ] || continue
+        restore_preserved_checkout "$dir" "$snapshot" success "$target" \
+            || return 1
+    done <"$_UPDATE_TXN_DIR/$key.preserve-list"
+}
+
+_preserve_before_forced_restore() {
+    local dir="$1" label="$2" snapshot
+    git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+    preserve_checkout "$dir" "$label" rollback || return 1
+    snapshot="$PLEB_PRESERVE_RESULT"
+    [ -n "$snapshot" ] || return 0
+    prepare_preserved_checkout "$dir" "$snapshot"
+}
+
+_preserve_pleb_before_move() {
+    local snapshot
+    preserve_checkout "$PLEB_ROOT" pleb forward \
+        || die "could not preserve pleb checkout before self-update"
+    snapshot="$PLEB_PRESERVE_RESULT"
+    if [ -n "$snapshot" ]; then
+        prepare_preserved_checkout "$PLEB_ROOT" "$snapshot" \
+            || die "pleb checkout changed while preparing its preservation snapshot: $snapshot"
+        _PLEB_SELF_PRESERVATIONS+=("$snapshot")
+        [ -n "$_PLEB_SELF_INITIAL_PRESERVE" ] \
+            || _PLEB_SELF_INITIAL_PRESERVE="$snapshot"
+    fi
+    _assert_still_clean "$PLEB_ROOT" pleb \
+        || die "pleb checkout changed while its preservation snapshot was prepared"
+}
+
+_restore_pleb_preservations_after_success() {
+    local target="$1" snapshot
+    for snapshot in "${_PLEB_SELF_PRESERVATIONS[@]}"; do
+        restore_preserved_checkout "$PLEB_ROOT" "$snapshot" success "$target" \
+            || die "pleb updated, but operator paths could not be restored; preserved at $snapshot"
+    done
+    _PLEB_SELF_PRESERVATIONS=()
+    _PLEB_SELF_INITIAL_PRESERVE=""
+}
+
 _assert_still_clean() {
-    local dir="$1" label="$2" status
+    local dir="$1" label="$2" status ignore=none
+    [ "$label" = kilix ] && ignore=all
     status="$(git -C "$dir" status --porcelain --untracked-files=normal \
+        --ignore-submodules="$ignore" \
         2>/dev/null)" \
         || { err "could not re-check $label checkout at $dir"; return 1; }
     if [ -n "$status" ]; then
@@ -662,14 +774,38 @@ _update_transaction_rollback() {
 
     if ! _write_kilix_submodule_map worktree "$current_submodules"; then
         err "could not derive the current Kilix submodule set for rollback"
-        failed=1
-        : >"$current_submodules"
+        return 1
     fi
     if ! _union_kilix_submodule_maps "$rollback_submodules" \
             "$_UPDATE_TXN_DIR/submodules" "$current_submodules"; then
         err "could not assemble the Kilix submodule rollback set"
-        failed=1
-        : >"$rollback_submodules"
+        return 1
+    fi
+
+    # No forced checkout, submodule deinit, or provider-tree removal is allowed
+    # until edits made during this run have their own verified, durable copy.
+    # If preservation itself fails, leave the stack untouched for inspection.
+    if ! _preserve_before_forced_restore "$KILIX_DIR" kilix; then
+        err "could not preserve Kilix changes before rollback"
+        return 1
+    fi
+    while IFS=$'\t' read -r path key; do
+        [ -n "$path" ] || continue
+        if git -C "$KILIX_DIR/$path" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+            && ! _preserve_before_forced_restore "$KILIX_DIR/$path" "$key"; then
+            err "could not preserve $path changes before rollback"
+            return 1
+        fi
+    done <"$rollback_submodules"
+    if [ -d "$KILIX95_DIR/.git" ] \
+        && ! _preserve_before_forced_restore "$KILIX95_DIR" kilix95; then
+        err "could not preserve Kilix 95 changes before rollback"
+        return 1
+    fi
+    if [ -f "$_UPDATE_TXN_DIR/pleb.preserve" ] \
+        && ! _preserve_before_forced_restore "$PLEB_ROOT" pleb; then
+        err "could not preserve Pleb changes before rollback"
+        return 1
     fi
 
     # Deinitialize submodules introduced by the failed parent update while the
@@ -691,6 +827,27 @@ _update_transaction_rollback() {
         _remove_created_kilix95_checkout || failed=1
     elif [ -f "$_UPDATE_TXN_DIR/kilix95.head" ]; then
         _restore_checkout_position "$KILIX95_DIR" kilix95 || failed=1
+    fi
+    _restore_recorded_preservation "$KILIX_DIR" kilix rollback \
+        "$(cat "$_UPDATE_TXN_DIR/kilix.head" 2>/dev/null || echo unknown)" \
+        || failed=1
+    while IFS=$'\t' read -r path key; do
+        [ -n "$path" ] || continue
+        if [ -f "$_UPDATE_TXN_DIR/$key.preserve" ]; then
+            _restore_recorded_preservation "$KILIX_DIR/$path" "$key" rollback \
+                "$(cat "$_UPDATE_TXN_DIR/$key.head" 2>/dev/null || echo unknown)" \
+                || failed=1
+        fi
+    done <"$rollback_submodules"
+    if [ -f "$_UPDATE_TXN_DIR/kilix95.preserve" ]; then
+        _restore_recorded_preservation "$KILIX95_DIR" kilix95 rollback \
+            "$(cat "$_UPDATE_TXN_DIR/kilix95.head" 2>/dev/null || echo unknown)" \
+            || failed=1
+    fi
+    if [ -f "$_UPDATE_TXN_DIR/pleb.preserve" ]; then
+        _restore_recorded_preservation "$PLEB_ROOT" pleb rollback \
+            "$(git -C "$PLEB_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)" \
+            || failed=1
     fi
     _restore_kilix_engine_generation || failed=1
     _restore_update_path "$stamp" fork-stamp file || failed=1
@@ -729,6 +886,22 @@ _update_cleanup() {
     elif [ -n "${_UPDATE_TXN_DIR:-}" ]; then
         err "rollback recovery data retained at $_UPDATE_TXN_DIR"
     fi
+    if [ "${_PLEB_SELF_MOVE_ACTIVE:-0}" = 1 ]; then
+        [ "$rc" -ne 0 ] || rc=1
+        warn "pleb self-update failed; restoring ${_PLEB_SELF_BEFORE:0:12}"
+        if ! _pleb_self_update_restore "$_PLEB_SELF_BEFORE" "$_PLEB_SELF_BRANCH"; then
+            err "automatic Pleb self-update rollback was incomplete; preserved data remains under $(_pleb_preservation_root)"
+            rc=1
+            rollback_ok=0
+        elif [ -n "$_PLEB_SELF_INITIAL_PRESERVE" ] \
+            && ! restore_preserved_checkout "$PLEB_ROOT" \
+                "$_PLEB_SELF_INITIAL_PRESERVE" rollback "$_PLEB_SELF_BEFORE"; then
+            err "Pleb commit was restored, but operator paths remain only at $_PLEB_SELF_INITIAL_PRESERVE"
+            rc=1
+            rollback_ok=0
+        fi
+        _PLEB_SELF_MOVE_ACTIVE=0
+    fi
     _release_update_lock
     exit "$rc"
 }
@@ -751,6 +924,11 @@ _update_transaction_begin() {
 
     _write_kilix_submodule_map committed "$_UPDATE_TXN_DIR/submodules" \
         || die "could not derive the committed Kilix submodule set"
+    _write_kilix_submodule_map worktree "$_UPDATE_TXN_DIR/submodules.worktree" \
+        || die "could not derive the working Kilix submodule set"
+    _union_kilix_submodule_maps "$_UPDATE_TXN_DIR/submodules.participating" \
+        "$_UPDATE_TXN_DIR/submodules" "$_UPDATE_TXN_DIR/submodules.worktree" \
+        || die "could not assemble participating Kilix submodules"
     _record_checkout_position "$KILIX_DIR" kilix
     while IFS=$'\t' read -r path key; do
         [ -n "$path" ] || continue
@@ -760,7 +938,7 @@ _update_transaction_begin() {
         else
             printf '%s\n' 0 >"$_UPDATE_TXN_DIR/$key.initialized"
         fi
-    done <"$_UPDATE_TXN_DIR/submodules"
+    done <"$_UPDATE_TXN_DIR/submodules.participating"
     if [ -e "$KILIX95_DIR" ] || [ -L "$KILIX95_DIR" ]; then
         printf '%s\n' 1 >"$_UPDATE_TXN_DIR/kilix95.existed"
         if [ -d "$KILIX95_DIR/.git" ]; then
@@ -769,6 +947,23 @@ _update_transaction_begin() {
     else
         printf '%s\n' 0 >"$_UPDATE_TXN_DIR/kilix95.existed"
     fi
+    # All preservation copies precede every update mutation. Only after every
+    # snapshot path is recorded and the transaction record is fsynced do local
+    # paths move aside and the engine transaction begin.
+    _record_checkout_preservation "$KILIX_DIR" kilix kilix
+    while IFS=$'\t' read -r path key; do
+        [ -n "$path" ] || continue
+        git -C "$KILIX_DIR/$path" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+            || continue
+        _record_checkout_preservation "$KILIX_DIR/$path" "$key" "$key"
+    done <"$_UPDATE_TXN_DIR/submodules.participating"
+    if [ -d "$KILIX95_DIR/.git" ]; then
+        _record_checkout_preservation "$KILIX95_DIR" kilix95 kilix95
+    fi
+    if [ "${_PLEB_SELF_UPDATE_OK:-0}" = 1 ]; then
+        _record_checkout_preservation "$PLEB_ROOT" pleb pleb
+    fi
+
     stamp="$(_kilix_fork_stamp)"
     legacy_stamp="$PLEB_STATE_HOME/kilix-fork-built-ref"
     _snapshot_kilix_engine_generation
@@ -781,10 +976,44 @@ _update_transaction_begin() {
     _snapshot_update_path "$TMUX_TUI_STAMP" tmux-tui-stamp
     _snapshot_update_path \
         "$KILIX_PTY_BROKER_BUILD" kilix-pty-broker-build
+    fsync_update_record "$_UPDATE_TXN_DIR" \
+        || die "could not make the update rollback record durable"
     _UPDATE_TXN_ACTIVE=1
+    _prepare_recorded_preservation "$KILIX_DIR" kilix \
+        || die "could not prepare preserved Kilix paths for update"
+    while IFS=$'\t' read -r path key; do
+        [ -n "$path" ] || continue
+        _prepare_recorded_preservation "$KILIX_DIR/$path" "$key" \
+            || die "could not prepare preserved $path paths for update"
+    done <"$_UPDATE_TXN_DIR/submodules.participating"
+    _prepare_recorded_preservation "$KILIX95_DIR" kilix95 \
+        || die "could not prepare preserved Kilix 95 paths for update"
+    _prepare_recorded_preservation "$PLEB_ROOT" pleb \
+        || die "could not prepare preserved Pleb paths for update"
     _begin_kilix_engine_mutation
     rm -f -- "$legacy_stamp" \
         || die "could not retire the legacy Pleb-side Kilix fork stamp"
+}
+
+_restore_transaction_preservations_after_success() {
+    local path key target
+    target="$(git -C "$KILIX_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+    _restore_recorded_preservations_after_success "$KILIX_DIR" kilix "$target" \
+        || die "Kilix updated, but its preserved operator paths could not be restored"
+    while IFS=$'\t' read -r path key; do
+        [ -n "$path" ] || continue
+        [ -f "$_UPDATE_TXN_DIR/$key.preserve" ] || continue
+        target="$(git -C "$KILIX_DIR/$path" rev-parse HEAD 2>/dev/null || echo unknown)"
+        _restore_recorded_preservations_after_success \
+            "$KILIX_DIR/$path" "$key" "$target" \
+            || die "$path updated, but its preserved operator paths could not be restored"
+    done <"$_UPDATE_TXN_DIR/submodules.participating"
+    if [ -f "$_UPDATE_TXN_DIR/kilix95.preserve" ]; then
+        target="$(git -C "$KILIX95_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+        _restore_recorded_preservations_after_success \
+            "$KILIX95_DIR" kilix95 "$target" \
+            || die "Kilix 95 updated, but its preserved operator paths could not be restored"
+    fi
 }
 
 _update_transaction_commit() {
@@ -873,15 +1102,19 @@ _update_kilix95() {
     before="$(git -C "$KILIX95_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
 
     if [ -n "$KILIX95_REF" ]; then
-        checkout_fetched_ref "$KILIX95_DIR" "$KILIX95_REF" "kilix 95" KILIX95_REF
+        _capture_transaction_checkout_before_move "$KILIX95_DIR" "kilix 95"
+        checkout_fetched_ref "$KILIX95_DIR" "$KILIX95_REF" "kilix 95" KILIX95_REF _capture_transaction_checkout_before_move
     else
         branch="${KILIX95_BRANCH:-$(git -C "$KILIX95_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)}"
         { [ -n "$branch" ] && [ "$branch" != HEAD ]; } || branch=main
         log "fetching latest kilix 95 ($branch) from origin"
+        _capture_transaction_checkout_before_move "$KILIX95_DIR" "kilix 95"
         git -C "$KILIX95_DIR" fetch --prune origin "$branch" || die "kilix 95 fetch failed"
         if [ -n "$KILIX95_BRANCH" ]; then
             current="$(git -C "$KILIX95_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
             if [ "$current" != "$KILIX95_BRANCH" ]; then
+                _capture_transaction_checkout_before_move \
+                    "$KILIX95_DIR" "kilix 95"
                 if git -C "$KILIX95_DIR" show-ref --verify --quiet "refs/heads/$KILIX95_BRANCH"; then
                     git -C "$KILIX95_DIR" checkout "$KILIX95_BRANCH" \
                         || die "could not check out KILIX95_BRANCH=$KILIX95_BRANCH"
@@ -891,6 +1124,7 @@ _update_kilix95() {
                 fi
             fi
         fi
+        _capture_transaction_checkout_before_move "$KILIX95_DIR" "kilix 95"
         if ! git -C "$KILIX95_DIR" merge --ff-only "origin/$branch"; then
             warn "cannot fast-forward $branch (local commits/changes in $KILIX95_DIR?)."
             warn "resolve there and re-run 'pleb update'."
@@ -923,6 +1157,7 @@ _PLEB_SELF_UPDATE_OK=0
 
 _pleb_self_update_restore() {
     local head="$1" branch="$2"
+    _preserve_before_forced_restore "$PLEB_ROOT" pleb || return 1
     _assert_still_clean "$PLEB_ROOT" pleb || return 1
     if [ -n "$branch" ]; then
         git -C "$PLEB_ROOT" checkout -f "$branch" >/dev/null 2>&1 \
@@ -940,7 +1175,7 @@ _pleb_self_update_runnable() {
     local script
     for script in bin/pleb bin/pleb-session lib/common.sh lib/storage.sh \
             lib/install.sh lib/autologin.sh lib/test.sh lib/kiosk.sh \
-            lib/update.sh; do
+            lib/preserve.sh lib/update.sh; do
         if [ ! -f "$PLEB_ROOT/$script" ] || [ -L "$PLEB_ROOT/$script" ]; then
             warn "updated pleb is missing $script"
             return 1
@@ -954,8 +1189,9 @@ _pleb_self_update_runnable() {
         || { warn "updated pleb could not answer 'pleb version'"; return 1; }
 }
 
-# Decide (and validate) up front, so a bad pin or a dirty tree fails before any
-# component is touched rather than after everything else has succeeded.
+# Decide and validate up front. Local paths are preserved transactionally in
+# _update_transaction_begin, after every participating checkout has passed its
+# identity checks and before any of them is moved.
 _prepare_pleb_self_update() {
     _require_managed_source_layout
     local root configured
@@ -989,7 +1225,6 @@ _prepare_pleb_self_update() {
     require_immutable_ref "$PLEB_REF" "$PLEB_ALLOW_MUTABLE_REF" \
         PLEB_REF PLEB_ALLOW_MUTABLE_REF
     validate_checkout_origin "$PLEB_ROOT" "$PLEB_REPO" "pleb"
-    require_clean_checkout "$PLEB_ROOT" "pleb"
     _PLEB_SELF_UPDATE_OK=1
 }
 
@@ -999,19 +1234,23 @@ _update_pleb_self() {
     before="$(git -C "$PLEB_ROOT" rev-parse --verify HEAD 2>/dev/null)" \
         || die "could not read the current pleb commit at $PLEB_ROOT"
     branch="$(git -C "$PLEB_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+    _PLEB_SELF_BEFORE="$before"
+    _PLEB_SELF_BRANCH="$branch"
+    _PLEB_SELF_MOVE_ACTIVE=1
 
     if [ -n "$PLEB_REF" ]; then
-        _assert_still_clean "$PLEB_ROOT" pleb \
-            || die "pleb checkout changed before self-update; no files were moved"
-        checkout_fetched_ref "$PLEB_ROOT" "$PLEB_REF" "pleb" PLEB_REF
+        _preserve_pleb_before_move
+        checkout_fetched_ref "$PLEB_ROOT" "$PLEB_REF" "pleb" PLEB_REF _preserve_pleb_before_move
     else
         current="${PLEB_BRANCH:-$branch}"
         { [ -n "$current" ] && [ "$current" != HEAD ]; } || current=main
         log "fetching latest pleb ($current) from origin"
+        _preserve_pleb_before_move
         git -C "$PLEB_ROOT" fetch --prune origin "$current" || die "pleb fetch failed"
         if [ -n "$PLEB_BRANCH" ] && [ "$branch" != "$PLEB_BRANCH" ]; then
+            _preserve_pleb_before_move
             _assert_still_clean "$PLEB_ROOT" pleb \
-                || die "pleb checkout changed before self-update; no files were moved"
+                || die "pleb checkout changed while its preservation snapshot was prepared"
             if git -C "$PLEB_ROOT" show-ref --verify --quiet "refs/heads/$PLEB_BRANCH"; then
                 git -C "$PLEB_ROOT" checkout "$PLEB_BRANCH" \
                     || die "could not check out PLEB_BRANCH=$PLEB_BRANCH"
@@ -1021,8 +1260,9 @@ _update_pleb_self() {
             fi
         fi
         # fast-forward only — never silently clobber local work
+        _preserve_pleb_before_move
         _assert_still_clean "$PLEB_ROOT" pleb \
-            || die "pleb checkout changed before self-update; no files were moved"
+            || die "pleb checkout changed while its preservation snapshot was prepared"
         if ! git -C "$PLEB_ROOT" merge --ff-only "origin/$current"; then
             warn "cannot fast-forward $current (local commits/changes in $PLEB_ROOT?)."
             die "resolve there and re-run 'pleb update'."
@@ -1033,20 +1273,68 @@ _update_pleb_self() {
         || die "could not verify the pleb commit after checkout"
     if [ "$before" = "$after" ]; then
         log "pleb already up to date at ${after:0:12}."
+        _restore_pleb_preservations_after_success "$after"
+        _PLEB_SELF_MOVE_ACTIVE=0
         return 0
     fi
     if ! _pleb_self_update_runnable; then
         warn "the updated pleb checkout is not runnable; restoring ${before:0:12}"
         _pleb_self_update_restore "$before" "$branch" \
-            || die "could not restore pleb ${before:0:12}; recover with: git -C $PLEB_ROOT checkout -f $before"
+            || die "could not restore pleb ${before:0:12}; preserved checkout data remains under $(_pleb_preservation_root)"
+        if [ -n "$_PLEB_SELF_INITIAL_PRESERVE" ]; then
+            restore_preserved_checkout "$PLEB_ROOT" \
+                "$_PLEB_SELF_INITIAL_PRESERVE" rollback "$before" \
+                || die "pleb commit was restored, but operator paths remain only at $_PLEB_SELF_INITIAL_PRESERVE"
+        fi
+        _PLEB_SELF_MOVE_ACTIVE=0
         die "pleb self-update rolled back; the previous version is still installed"
     fi
+    _restore_pleb_preservations_after_success "$after"
+    _PLEB_SELF_MOVE_ACTIVE=0
     version="$(cat "$PLEB_ROOT/VERSION" 2>/dev/null || echo unknown)"
     log "pleb updated: ${before:0:12} -> ${after:0:12} (VERSION $version)"
     log "the new pleb runs from the next 'pleb' command onwards."
     if [ -x "$SESSION_BIN_DST" ] && ! cmp -s "$PLEB_BIN_SRC" "$SESSION_BIN_DST"; then
         warn "the installed session launcher $SESSION_BIN_DST is now stale"
         warn "publish it with 'pleb install' (needs root) before the next login"
+    fi
+}
+
+_preserve_only_update_checkouts() {
+    local map path key count=0 failed=""
+    map="$(mktemp "$PLEB_STATE_HOME/preserve-only-submodules.XXXXXX")" \
+        || die "could not create the preserve-only checkout map"
+    _write_kilix_submodule_map worktree "$map" \
+        || { rm -f -- "$map"; die "could not derive Kilix submodules for preservation"; }
+    preserve_checkout "$KILIX_DIR" kilix preserve-only \
+        || { rm -f -- "$map"; die "could not preserve Kilix checkout"; }
+    [ -z "$PLEB_PRESERVE_RESULT" ] || ((count += 1))
+    while IFS=$'\t' read -r path key; do
+        [ -n "$path" ] || continue
+        git -C "$KILIX_DIR/$path" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+            || continue
+        if ! preserve_checkout "$KILIX_DIR/$path" "$key" preserve-only; then
+            failed="$path"
+            break
+        fi
+        [ -z "$PLEB_PRESERVE_RESULT" ] || ((count += 1))
+    done <"$map"
+    rm -f -- "$map"
+    [ -z "$failed" ] || die "could not preserve $failed checkout"
+    if [ -d "$KILIX95_DIR/.git" ]; then
+        preserve_checkout "$KILIX95_DIR" kilix95 preserve-only \
+            || die "could not preserve Kilix 95 checkout"
+        [ -z "$PLEB_PRESERVE_RESULT" ] || ((count += 1))
+    fi
+    if [ -d "$PLEB_ROOT/.git" ]; then
+        preserve_checkout "$PLEB_ROOT" pleb preserve-only \
+            || die "could not preserve Pleb checkout"
+        [ -z "$PLEB_PRESERVE_RESULT" ] || ((count += 1))
+    fi
+    if [ "$count" = 0 ]; then
+        log "no modified or untracked checkout paths needed preservation"
+    else
+        log "preserve-only completed: $count checkout snapshot(s) verified"
     fi
 }
 
@@ -1343,12 +1631,19 @@ _rebuild_kilix_fork() {
 do_update() {
     _UPDATE_YES=0
     _UPDATE_RESTART=ask
+    local preserve_only=0
+    _PLEB_SELF_INITIAL_PRESERVE=""
+    _PLEB_SELF_PRESERVATIONS=()
+    _PLEB_SELF_MOVE_ACTIVE=0
+    _PLEB_SELF_BEFORE=""
+    _PLEB_SELF_BRANCH=""
     while [ $# -gt 0 ]; do
         case "$1" in
             -y|--yes) _UPDATE_YES=1; shift ;;
             --no-restart) _UPDATE_RESTART=no; shift ;;
             --restart) _UPDATE_RESTART=yes; shift ;;
-            -h|--help) info "usage: pleb update [-y|--yes] [--no-restart|--restart]"; return 0 ;;
+            --preserve-only) preserve_only=1; shift ;;
+            -h|--help) info "usage: pleb update [-y|--yes] [--no-restart|--restart] [--preserve-only]"; return 0 ;;
             *) die "unknown update option: $1" ;;
         esac
     done
@@ -1356,6 +1651,16 @@ do_update() {
     _require_managed_source_layout
     _acquire_update_lock
     [ -d "$KILIX_DIR/.git" ] || die "no kilix git checkout at $KILIX_DIR — run 'pleb install' first"
+    validate_checkout_origin "$KILIX_DIR" "$KILIX_REPO" "kilix"
+    if [ -d "$KILIX95_DIR/.git" ]; then
+        validate_checkout_origin "$KILIX95_DIR" "$KILIX95_REPO" "kilix 95"
+    fi
+    if [ "$preserve_only" = 1 ]; then
+        _preserve_only_update_checkouts
+        _release_update_lock
+        trap - EXIT INT TERM
+        return 0
+    fi
     require_immutable_ref "$KILIX_REF" "$KILIX_ALLOW_MUTABLE_REF" \
         KILIX_REF KILIX_ALLOW_MUTABLE_REF
     require_immutable_ref "$KILIX95_REF" "$KILIX95_ALLOW_MUTABLE_REF" \
@@ -1364,11 +1669,8 @@ do_update() {
         && [ -z "$KILIX95_REF" ] && [ "$KILIX95_ALLOW_UNPINNED_INSTALL" != 1 ]; then
         die "automatic Kilix 95 install requires an immutable KILIX95_REF commit SHA (set KILIX95_ALLOW_UNPINNED_INSTALL=1 only to allow an unpinned clone)"
     fi
-    validate_checkout_origin "$KILIX_DIR" "$KILIX_REPO" "kilix"
-    require_clean_checkout "$KILIX_DIR" "kilix"
     if [ -d "$KILIX95_DIR/.git" ]; then
-        validate_checkout_origin "$KILIX95_DIR" "$KILIX95_REPO" "kilix 95"
-        require_clean_checkout "$KILIX95_DIR" "kilix 95"
+        :
     fi
     # Decided here, applied last: a bad PLEB_REF or a dirty Pleb tree must stop
     # the run before any component moves, not after all of them have.
@@ -1382,13 +1684,16 @@ do_update() {
     _update_transaction_begin
 
     if [ -n "$KILIX_REF" ]; then
-        checkout_fetched_ref "$KILIX_DIR" "$KILIX_REF" "kilix" KILIX_REF
+        _capture_transaction_checkout_before_move "$KILIX_DIR" kilix
+        checkout_fetched_ref "$KILIX_DIR" "$KILIX_REF" "kilix" KILIX_REF _capture_transaction_checkout_before_move
     else
         log "fetching latest kilix ($branch) from origin"
+        _capture_transaction_checkout_before_move "$KILIX_DIR" kilix
         git -C "$KILIX_DIR" fetch --prune origin "$branch" || die "git fetch failed"
         if [ -n "$KILIX_BRANCH" ]; then
             current="$(git -C "$KILIX_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
             if [ "$current" != "$KILIX_BRANCH" ]; then
+                _capture_transaction_checkout_before_move "$KILIX_DIR" kilix
                 if git -C "$KILIX_DIR" show-ref --verify --quiet "refs/heads/$KILIX_BRANCH"; then
                     git -C "$KILIX_DIR" -c submodule.recurse=false \
                         checkout "$KILIX_BRANCH" \
@@ -1402,6 +1707,7 @@ do_update() {
         fi
 
         # fast-forward only — never silently clobber local work
+        _capture_transaction_checkout_before_move "$KILIX_DIR" kilix
         if ! git -C "$KILIX_DIR" -c submodule.recurse=false \
                 merge --ff-only "origin/$branch"; then
             warn "cannot fast-forward $branch (local commits/changes in $KILIX_DIR?)."
@@ -1444,6 +1750,8 @@ do_update() {
     [ -n "$current_engine" ] && "$KILIX_DIR/kilix" --which >/dev/null 2>&1 \
         || die "updated Kilix has no runnable engine"
     log "engine now: $current_engine"
+
+    _restore_transaction_preservations_after_success
 
     # Software state is now coherent. Restart failures must not undo a valid
     # update, but the lock remains held until restart handling finishes.

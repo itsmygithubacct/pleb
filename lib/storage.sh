@@ -197,4 +197,8 @@ ensure_pleb_private_storage() {
     _pleb_private_data_dir "$PLEB_CACHE_HOME"
     _pleb_private_data_dir "$PLEB_SESSION_HOME"
     _pleb_private_data_dir "$PLEB_DATA_HOME"
+    # Update preservation is durable recovery state, not cache data. Keep it
+    # private beneath the already-validated state category so it can never be
+    # swept by cache cleanup.
+    _pleb_private_data_dir "$PLEB_STATE_HOME/update-preserve"
 }

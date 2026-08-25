@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.1 — Unreleased
+
+- **Preserve operator checkout data automatically during updates.** Before any
+  participating Pleb, Kilix, Kilix 95, or initialized Kilix-submodule checkout
+  moves—and again before a rollback overwrites an edit made during the
+  run—`pleb update` copies every modified tracked and untracked path outside
+  the source trees, preserves mode and mtime, writes `STATUS` and
+  `MANIFEST.sha256`, verifies the copy, and fsyncs it. Untracked paths keep
+  their names while release collisions become `.from-<short-sha>`; release
+  versions of modified tracked paths win while the operator copies become
+  `.local`. `pleb update --preserve-only` snapshots without moving anything.
+  A checkout snapshot is capped at 1 GiB with a 64 MiB free-space reserve, and
+  the last ten verified snapshots per checkout are retained. Updates never run
+  Git's destructive clean operation or advise removing untracked work.
+
 ## 0.2.0 — Unreleased
 
 Selected for the coordinated Plebian-OS 0.2.0 candidate. The exact stack

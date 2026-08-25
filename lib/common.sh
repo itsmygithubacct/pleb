@@ -431,13 +431,17 @@ announce_component_move() {
 }
 
 checkout_fetched_ref() {
-    local dir="$1" ref="$2" label="$3" ref_name="${4:-}" resolved actual before
+    local dir="$1" ref="$2" label="$3" ref_name="${4:-}" \
+        before_move="${5:-}" resolved actual before
     before="$(git -C "$dir" rev-parse --verify HEAD 2>/dev/null || true)"
     log "fetching exact $label ref $ref from origin"
     git -C "$dir" fetch --no-tags origin "$ref" \
         || die "$label fetch failed for ref $ref"
     resolved="$(git -C "$dir" rev-parse --verify 'FETCH_HEAD^{commit}' 2>/dev/null)" \
         || die "fetched $label ref $ref did not resolve to a commit"
+    if [ -n "$before_move" ]; then
+        "$before_move" "$dir" "$label"
+    fi
     # Component-specific reconciliation happens after the parent move.  Do not
     # let a repository's persistent recursive-submodule policy traverse a new
     # gitlink before its caller has had a chance to initialize it safely.
