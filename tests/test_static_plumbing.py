@@ -6,6 +6,50 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PlebPlumbingTests(unittest.TestCase):
+    def test_account_names_follow_debian_policy_before_autologin_rendering(self):
+        valid = ("a", "a-b_c0", "a" + "b" * 31)
+        invalid = ("", "-starts-with-dash", "_service", "Upper", "a" + "b" * 32,
+                   "name;command", "name\nkey=value")
+        for name in valid:
+            with self.subTest(valid=name):
+                subprocess.run(
+                    ["bash", "-c", '. lib/common.sh; validate_account_name "$1"',
+                     "account-test", name],
+                    cwd=ROOT, check=True, capture_output=True, text=True,
+                )
+        for name in invalid:
+            with self.subTest(invalid=name):
+                result = subprocess.run(
+                    ["bash", "-c", '. lib/common.sh; validate_account_name "$1"',
+                     "account-test", name],
+                    cwd=ROOT, capture_output=True, text=True,
+                )
+                self.assertNotEqual(result.returncode, 0)
+        autologin = (ROOT / "lib" / "autologin.sh").read_text()
+        self.assertLess(
+            autologin.index('validate_regular_account "$user"'),
+            autologin.index('write_root "$AUTOLOGIN_CONF"'),
+        )
+
+    def test_session_account_must_be_a_regular_non_root_user(self):
+        current = subprocess.run(
+            ["id", "-un"], check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["bash", "-c", '. lib/common.sh; validate_regular_account "$1"',
+             "account-test", current],
+            cwd=ROOT, check=True, capture_output=True, text=True,
+        )
+        for name in ("root", "daemon", "no-such-pleb-account"):
+            with self.subTest(name=name):
+                result = subprocess.run(
+                    ["bash", "-c",
+                     '. lib/common.sh; validate_regular_account "$1"',
+                     "account-test", name],
+                    cwd=ROOT, capture_output=True, text=True,
+                )
+                self.assertNotEqual(result.returncode, 0)
+
     def test_no_test_inherits_the_live_pleb_root(self):
         needle = "PLEB_ROOT=" + "{ROOT"
         offenders = []
