@@ -279,14 +279,68 @@ _restore_checkout_position() {
 }
 
 _deinit_new_kilix_submodule() {
-    local path="$1" key="$2" initialized mode
+    local path="$1" key="$2" initialized entry mode="" expected="" actual status
     initialized="$(cat "$_UPDATE_TXN_DIR/$key.initialized" 2>/dev/null || echo 0)"
     [ "$initialized" = 0 ] || return 0
-    mode="$(git -C "$KILIX_DIR" ls-files --stage -- "$path" 2>/dev/null \
-        | awk 'NR == 1 { print $1 }')"
-    [ -n "$mode" ] || return 0
-    [ "$mode" = 160000 ] || return 1
+    [ -e "$KILIX_DIR/$path" ] || [ -L "$KILIX_DIR/$path" ] || return 0
+    entry="$(git -C "$KILIX_DIR" ls-files --stage -- "$path" 2>/dev/null \
+        | awk 'NR == 1 { print $1 " " $2 }')"
+    read -r mode expected <<<"$entry" || :
+    if [ "$mode" != 160000 ] \
+        || [ ! -f "$KILIX_DIR/$path/.git" ] \
+        || [ -L "$KILIX_DIR/$path/.git" ]; then
+        err "refusing to deinitialize $path: it is not an update-created submodule checkout"
+        return 1
+    fi
+    actual="$(git -C "$KILIX_DIR/$path" rev-parse --verify HEAD 2>/dev/null)" \
+        || { err "refusing to deinitialize $path: its checkout identity is unreadable"; return 1; }
+    status="$(git -C "$KILIX_DIR/$path" status --porcelain \
+        --untracked-files=all --ignored 2>/dev/null)" \
+        || { err "refusing to deinitialize $path: its checkout state is unreadable"; return 1; }
+    if [ "$actual" != "$expected" ] || [ -n "$status" ]; then
+        err "refusing to deinitialize $path: it is not an exact clean checkout of $expected"
+        return 1
+    fi
     git -C "$KILIX_DIR" submodule deinit -f -- "$path" >/dev/null 2>&1
+}
+
+_record_created_kilix95_checkout() {
+    [ "$(cat "$_UPDATE_TXN_DIR/kilix95.existed" 2>/dev/null || echo 1)" = 0 ] \
+        || return 0
+    [ -d "$KILIX95_DIR/.git" ] && [ ! -L "$KILIX95_DIR/.git" ] \
+        || die "new Kilix 95 path is not a safe checkout: $KILIX95_DIR"
+    git -C "$KILIX95_DIR" rev-parse --verify HEAD \
+        >"$_UPDATE_TXN_DIR/kilix95.created-head" \
+        || die "could not record the new Kilix 95 checkout identity"
+    git -C "$KILIX95_DIR" config --get remote.origin.url \
+        >"$_UPDATE_TXN_DIR/kilix95.created-origin" \
+        || die "could not record the new Kilix 95 checkout origin"
+    : >"$_UPDATE_TXN_DIR/kilix95.created" \
+        || die "could not complete the new Kilix 95 checkout identity"
+}
+
+_remove_created_kilix95_checkout() {
+    local expected actual expected_origin actual_origin status
+    [ -e "$KILIX95_DIR" ] || [ -L "$KILIX95_DIR" ] || return 0
+    if [ ! -f "$_UPDATE_TXN_DIR/kilix95.created" ] \
+        || [ ! -d "$KILIX95_DIR/.git" ] \
+        || [ -L "$KILIX95_DIR/.git" ]; then
+        err "refusing to remove $KILIX95_DIR: this update did not record creating that checkout"
+        return 1
+    fi
+    expected="$(cat "$_UPDATE_TXN_DIR/kilix95.created-head")" || return 1
+    expected_origin="$(cat "$_UPDATE_TXN_DIR/kilix95.created-origin")" || return 1
+    actual="$(git -C "$KILIX95_DIR" rev-parse --verify HEAD 2>/dev/null)" || return 1
+    actual_origin="$(git -C "$KILIX95_DIR" config --get remote.origin.url 2>/dev/null)" \
+        || return 1
+    status="$(git -C "$KILIX95_DIR" status --porcelain \
+        --untracked-files=all --ignored 2>/dev/null)" || return 1
+    if [ "$actual" != "$expected" ] || [ "$actual_origin" != "$expected_origin" ] \
+        || [ -n "$status" ]; then
+        err "refusing to remove $KILIX95_DIR: the update-created checkout changed"
+        return 1
+    fi
+    rm -rf -- "$KILIX95_DIR"
 }
 
 _validate_kilix_storage_root() {
@@ -621,7 +675,7 @@ _update_transaction_rollback() {
         fi
     done <"$rollback_submodules"
     if [ "$(cat "$_UPDATE_TXN_DIR/kilix95.existed" 2>/dev/null || echo 1)" = 0 ]; then
-        rm -rf -- "$KILIX95_DIR" || failed=1
+        _remove_created_kilix95_checkout || failed=1
     elif [ -f "$_UPDATE_TXN_DIR/kilix95.head" ]; then
         _restore_checkout_position "$KILIX95_DIR" kilix95 || failed=1
     fi
@@ -787,6 +841,7 @@ _update_kilix95() {
     if [ ! -d "$KILIX95_DIR/.git" ]; then
         if kilix95_required; then
             ensure_kilix95
+            _record_created_kilix95_checkout
         else
             log "kilix 95 not installed; skipping optional desktop update"
         fi
