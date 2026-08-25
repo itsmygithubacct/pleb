@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.2.1 — Unreleased
+## 0.2.1 — 2026-08-25
+
+Selected for the coordinated Plebian-OS 0.2.1 candidate. The exact stack
+closure and acceptance evidence are owned by Plebian-OS in
+`releases/0.2.1.env` and `releases/0.2.1-notes.md`.
 
 - **Preserve operator checkout data automatically during updates.** Before any
   participating Pleb, Kilix, Kilix 95, or initialized Kilix-submodule checkout
