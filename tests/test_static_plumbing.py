@@ -234,6 +234,29 @@ class PlebPlumbingTests(unittest.TestCase):
                 offenders.append(relative.decode())
         self.assertEqual(offenders, [])
 
+    def test_destructive_checkout_moves_recheck_cleanliness_adjacent_to_the_move(self):
+        update = (ROOT / "lib/update.sh").read_text()
+        restore_start = update.index("_restore_checkout_position()")
+        restore_end = update.index("_deinit_new_kilix_submodule()", restore_start)
+        self_restore_start = update.index("_pleb_self_update_restore()")
+        self_restore_end = update.index("_pleb_self_update_runnable()", self_restore_start)
+        self_update_start = update.index("_update_pleb_self()")
+        self_update_end = update.index("_kilix_go_ok_script()", self_update_start)
+        self.assertIn(
+            '_assert_still_clean "$dir" "$key"',
+            update[restore_start:restore_end],
+        )
+        self.assertIn(
+            '_assert_still_clean "$PLEB_ROOT" pleb',
+            update[self_restore_start:self_restore_end],
+        )
+        self.assertGreaterEqual(
+            update[self_update_start:self_update_end].count(
+                '_assert_still_clean "$PLEB_ROOT" pleb'
+            ),
+            3,
+        )
+
     def test_pinned_component_moves_are_reported_and_downgrades_shouted(self):
         common = (ROOT / "lib" / "common.sh").read_text()
         install = (ROOT / "lib" / "install.sh").read_text()

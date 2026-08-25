@@ -225,6 +225,30 @@ class SelfUpdateTests(unittest.TestCase):
             self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), base)
             self.assertIn("not the checkout this pleb runs from", result.stderr)
 
+    def test_self_update_rechecks_cleanliness_next_to_the_move(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            upstream, checkout, base, head = self._stack(tmp)
+            env = clean_env(tmp)
+            result = run_update_shell(
+                "_prepare_pleb_self_update\n"
+                "printf '\\noperator edit\\n' >>\"$PLEB_ROOT/VERSION\"\n"
+                f"git -C \"$PLEB_ROOT\" remote set-url origin {tmp / 'missing-origin'}\n"
+                "_update_pleb_self",
+                env,
+                PLEB_ROOT=str(checkout),
+                PLEB_DIR=str(checkout),
+                PLEB_REPO=str(upstream),
+                PLEB_REF=head,
+                PLEB_STATE_HOME=str(tmp / "state"),
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), base)
+            self.assertIn("operator edit", (checkout / "VERSION").read_text())
+            self.assertIn("changed after the update safety gate", result.stderr)
+            self.assertIn("no files were moved", result.stderr)
+            self.assertNotIn("fetch failed", result.stderr)
+
 
 class PinnedMoveReportingTests(unittest.TestCase):
     """A pin that rewinds an installed component has to say so."""

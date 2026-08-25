@@ -264,11 +264,24 @@ _record_checkout_position() {
         || : >"$_UPDATE_TXN_DIR/$key.branch"
 }
 
+_assert_still_clean() {
+    local dir="$1" label="$2" status
+    status="$(git -C "$dir" status --porcelain --untracked-files=normal \
+        2>/dev/null)" \
+        || { err "could not re-check $label checkout at $dir"; return 1; }
+    if [ -n "$status" ]; then
+        err "$label checkout at $dir changed after the update safety gate; refusing to move it:"
+        printf '%s\n' "$status" >&2
+        return 1
+    fi
+}
+
 _restore_checkout_position() {
     local dir="$1" key="$2" head branch
     [ -f "$_UPDATE_TXN_DIR/$key.head" ] || return 0
     head="$(cat "$_UPDATE_TXN_DIR/$key.head")"
     branch="$(cat "$_UPDATE_TXN_DIR/$key.branch")"
+    _assert_still_clean "$dir" "$key" || return 1
     if [ -n "$branch" ]; then
         git -C "$dir" checkout -f "$branch" >/dev/null 2>&1 \
             && git -C "$dir" reset --hard "$head" >/dev/null 2>&1
@@ -910,6 +923,7 @@ _PLEB_SELF_UPDATE_OK=0
 
 _pleb_self_update_restore() {
     local head="$1" branch="$2"
+    _assert_still_clean "$PLEB_ROOT" pleb || return 1
     if [ -n "$branch" ]; then
         git -C "$PLEB_ROOT" checkout -f "$branch" >/dev/null 2>&1 \
             && git -C "$PLEB_ROOT" reset --hard "$head" >/dev/null 2>&1
@@ -987,6 +1001,8 @@ _update_pleb_self() {
     branch="$(git -C "$PLEB_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
 
     if [ -n "$PLEB_REF" ]; then
+        _assert_still_clean "$PLEB_ROOT" pleb \
+            || die "pleb checkout changed before self-update; no files were moved"
         checkout_fetched_ref "$PLEB_ROOT" "$PLEB_REF" "pleb" PLEB_REF
     else
         current="${PLEB_BRANCH:-$branch}"
@@ -994,6 +1010,8 @@ _update_pleb_self() {
         log "fetching latest pleb ($current) from origin"
         git -C "$PLEB_ROOT" fetch --prune origin "$current" || die "pleb fetch failed"
         if [ -n "$PLEB_BRANCH" ] && [ "$branch" != "$PLEB_BRANCH" ]; then
+            _assert_still_clean "$PLEB_ROOT" pleb \
+                || die "pleb checkout changed before self-update; no files were moved"
             if git -C "$PLEB_ROOT" show-ref --verify --quiet "refs/heads/$PLEB_BRANCH"; then
                 git -C "$PLEB_ROOT" checkout "$PLEB_BRANCH" \
                     || die "could not check out PLEB_BRANCH=$PLEB_BRANCH"
@@ -1003,6 +1021,8 @@ _update_pleb_self() {
             fi
         fi
         # fast-forward only — never silently clobber local work
+        _assert_still_clean "$PLEB_ROOT" pleb \
+            || die "pleb checkout changed before self-update; no files were moved"
         if ! git -C "$PLEB_ROOT" merge --ff-only "origin/$current"; then
             warn "cannot fast-forward $current (local commits/changes in $PLEB_ROOT?)."
             die "resolve there and re-run 'pleb update'."
