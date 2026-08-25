@@ -338,7 +338,7 @@ _remove_created_kilix95_checkout() {
     if [ ! -f "$_UPDATE_TXN_DIR/kilix95.created" ] \
         || [ ! -d "$KILIX95_DIR/.git" ] \
         || [ -L "$KILIX95_DIR/.git" ]; then
-        err "refusing to remove $KILIX95_DIR: this update did not record creating that checkout"
+        err "refusing Kilix 95 cleanup at $KILIX95_DIR: this update did not record creating that checkout"
         return 1
     fi
     expected="$(cat "$_UPDATE_TXN_DIR/kilix95.created-head")" || return 1
@@ -350,7 +350,7 @@ _remove_created_kilix95_checkout() {
         --untracked-files=all --ignored 2>/dev/null)" || return 1
     if [ "$actual" != "$expected" ] || [ "$actual_origin" != "$expected_origin" ] \
         || [ -n "$status" ]; then
-        err "refusing to remove $KILIX95_DIR: the update-created checkout changed"
+        err "refusing Kilix 95 cleanup at $KILIX95_DIR: the update-created checkout changed"
         return 1
     fi
     rm -rf -- "$KILIX95_DIR"

@@ -220,7 +220,11 @@ class PlebPlumbingTests(unittest.TestCase):
         for directory in (ROOT / "lib", ROOT / "bin"):
             for path in directory.iterdir():
                 if path.is_file():
-                    self.assertNotIn(removal_advice, path.read_text())
+                    text = path.read_text()
+                    self.assertNotIn(removal_advice, text)
+                    for line in text.splitlines():
+                        if "refus" in line.lower():
+                            self.assertNotIn("remove", line.lower())
 
         destructive_git = b"git " + b"clean"
         tracked = subprocess.check_output(
@@ -315,8 +319,7 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn('"$KILIX_DIR/kilix" pty --install-only', install)
         self.assertIn("third_party/kitty-pty-broker", install)
         self.assertIn('${PLEB_DEFER_PTY_BROKER:-0}', install)
-        self.assertIn(
-            "third_party/kitty-pty-broker kilix-pty-broker", update)
+        self.assertIn("_write_kilix_submodule_map committed", update)
         self.assertIn(
             '"$KILIX_PTY_BROKER_BUILD" kilix-pty-broker-build', update)
         self.assertIn("install_pty_broker", update)
