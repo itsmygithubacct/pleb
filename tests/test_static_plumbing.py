@@ -190,6 +190,31 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertLess(move, restart)
         self.assertIn("PLEB_SELF_UPDATE=0", readme)
 
+    def test_the_present_marker_is_written_after_the_copy(self):
+        update = (ROOT / "lib/update.sh").read_text()
+        start = update.index("_snapshot_update_path()")
+        end = update.index("_restore_update_path()", start)
+        snapshot = update[start:end]
+        self.assertLess(
+            snapshot.index('cp -a -- "$path"'),
+            snapshot.index(': >"$_UPDATE_TXN_DIR/$key.present"'),
+        )
+        self.assertGreaterEqual(snapshot.count("|| die"), 2)
+
+    def test_the_rollback_submodule_set_is_not_hard_coded(self):
+        update = (ROOT / "lib/update.sh").read_text()
+        start = update.index("_update_transaction_begin()")
+        end = update.index("_update_transaction_commit()", start)
+        transaction = update[start:end]
+        for path in (
+            "third_party/kitty-frame-presenter",
+            "third_party/kilix-content",
+            "third_party/kitty-pty-broker",
+        ):
+            self.assertNotIn(path, transaction)
+        self.assertIn("HEAD:.gitmodules", update)
+        self.assertIn("$_UPDATE_TXN_DIR/submodules", transaction)
+
     def test_pinned_component_moves_are_reported_and_downgrades_shouted(self):
         common = (ROOT / "lib" / "common.sh").read_text()
         install = (ROOT / "lib" / "install.sh").read_text()

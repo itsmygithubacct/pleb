@@ -1349,7 +1349,7 @@ exit "$VOICE_INSTALL_EXIT"
                 "",
             )
 
-    def test_failed_update_transaction_restores_both_checkouts_and_fork_engine(self):
+    def test_rollback_restores_every_declared_submodule(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
 
@@ -1377,22 +1377,102 @@ exit "$VOICE_INSTALL_EXIT"
                 return before, after
 
             kilix = tmp / "kilix"
-            src = kilix / "src"
-            kilix_before, kilix_after = two_commit_repo(kilix, "src/\n")
-            src_before, src_after = two_commit_repo(
-                src, "kitty/launcher/kitty\nkitty/launcher/kitten\n"
+            subprocess.run(["git", "init", "-q", "-b", "main", str(kilix)], check=True)
+            subprocess.run(
+                ["git", "-C", str(kilix), "config", "user.name", "Pleb Test"],
+                check=True,
             )
             subprocess.run(
-                ["git", "-C", str(src), "checkout", "-q", "--detach", src_before], check=True
+                [
+                    "git", "-C", str(kilix), "config", "user.email",
+                    "pleb@example.invalid",
+                ],
+                check=True,
+            )
+            (kilix / "payload").write_text("before\n")
+            subprocess.run(["git", "-C", str(kilix), "add", "payload"], check=True)
+            subprocess.run(
+                ["git", "-C", str(kilix), "commit", "-q", "-m", "seed"],
+                check=True,
+            )
+
+            submodule_records = []
+            for path, source_name in (
+                ("src", "src-source"),
+                ("third_party/kitty-frame-presenter", "presenter-source"),
+                ("third_party/kilix-content", "content-source"),
+                ("third_party/kilix-state", "state-source"),
+                ("plugins/example.tool", "plugin-source"),
+            ):
+                source = tmp / source_name
+                before, after = two_commit_repo(source)
+                subprocess.run(
+                    ["git", "-C", str(source), "reset", "-q", "--hard", after],
+                    check=True,
+                )
+                subprocess.run(
+                    [
+                        "git", "-c", "protocol.file.allow=always", "-C", str(kilix),
+                        "submodule", "add", "-q", str(source), path,
+                    ],
+                    check=True,
+                )
+                checkout = kilix / path
+                subprocess.run(
+                    ["git", "-C", str(checkout), "checkout", "-q", "--detach", before],
+                    check=True,
+                )
+                submodule_records.append((path, checkout, before, after))
+            subprocess.run(["git", "-C", str(kilix), "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", str(kilix), "commit", "-q", "-m", "before"],
+                check=True,
+            )
+            kilix_before = subprocess.check_output(
+                ["git", "-C", str(kilix), "rev-parse", "HEAD"], text=True
+            ).strip()
+            for path, checkout, _, after in submodule_records:
+                subprocess.run(
+                    ["git", "-C", str(checkout), "checkout", "-q", "--detach", after],
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "-C", str(kilix), "add", "--", path], check=True
+                )
+            (kilix / "payload").write_text("after\n")
+            subprocess.run(["git", "-C", str(kilix), "add", "payload"], check=True)
+            subprocess.run(
+                ["git", "-C", str(kilix), "commit", "-q", "-m", "after"],
+                check=True,
+            )
+            kilix_after = subprocess.check_output(
+                ["git", "-C", str(kilix), "rev-parse", "HEAD"], text=True
+            ).strip()
+            subprocess.run(
+                [
+                    "git", "-C", str(kilix), "-c", "submodule.recurse=false",
+                    "reset", "-q", "--hard", kilix_before,
+                ],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git", "-c", "protocol.file.allow=always", "-C", str(kilix),
+                    "submodule", "update", "-q", "--init", "--recursive",
+                ],
+                check=True,
             )
             kilix95 = tmp / "kilix-95"
             kilix95_before, kilix95_after = two_commit_repo(kilix95)
-            presenter_source = tmp / "presenter-source"
-            two_commit_repo(presenter_source)
-            content_source = tmp / "content-source"
-            two_commit_repo(content_source)
-            broker_source = tmp / "broker-source"
-            two_commit_repo(broker_source)
+            subprocess.run(
+                [
+                    "git", "-C", str(kilix), "config",
+                    "submodule.third_party/kilix-state-py.url",
+                    "https://example.invalid/phantom.git",
+                ],
+                check=True,
+            )
+            recorded_submodules = tmp / "recorded-submodules"
             build = tmp / "kilix-storage" / "build"
             generations = build / "generations"
             old_current_generation = generations / "build.OldCurrent"
@@ -1447,14 +1527,9 @@ exit "$VOICE_INSTALL_EXIT"
                 . "$PLEB_CODE_ROOT/lib/update.sh"
                 _acquire_update_lock
                 _update_transaction_begin
+                cp -- "$_UPDATE_TXN_DIR/submodules" {recorded_submodules!s}
                 git -C "$KILIX_DIR" reset --hard {kilix_after!s} >/dev/null
-                git -c protocol.file.allow=always -C "$KILIX_DIR" submodule add \
-                    {presenter_source!s} third_party/kitty-frame-presenter >/dev/null
-                git -c protocol.file.allow=always -C "$KILIX_DIR" submodule add \
-                    {content_source!s} third_party/kilix-content >/dev/null
-                git -c protocol.file.allow=always -C "$KILIX_DIR" submodule add \
-                    {broker_source!s} third_party/kitty-pty-broker >/dev/null
-                git -C "$KILIX_DIR/src" reset --hard {src_after!s} >/dev/null
+                reconcile_kilix_submodules "$KILIX_DIR"
                 git -C "$KILIX95_DIR" reset --hard {kilix95_after!s} >/dev/null
                 mv {current!s} {previous!s}
                 mkdir -p {new_generation / 'src/kitty/launcher'!s}
@@ -1475,11 +1550,13 @@ exit "$VOICE_INSTALL_EXIT"
             )
             self.assertEqual(result.returncode, 73)
             self.assertIn("restoring the previous coherent", result.stderr)
-            for repo, expected, expected_branch in (
-                (kilix, kilix_before, "main"),
-                (src, src_before, None),
-                (kilix95, kilix95_before, "main"),
-            ):
+            expected_repos = [(kilix, kilix_before, "main")]
+            expected_repos.extend(
+                (checkout, before, None)
+                for _, checkout, before, _ in submodule_records
+            )
+            expected_repos.append((kilix95, kilix95_before, "main"))
+            for repo, expected, expected_branch in expected_repos:
                 actual = subprocess.check_output(
                     ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
                 ).strip()
@@ -1513,15 +1590,8 @@ exit "$VOICE_INSTALL_EXIT"
             self.assertEqual(stamp.read_text(), "old-stamp\n")
             self.assertEqual(legacy_stamp.read_text(), "legacy-stamp\n")
             self.assertEqual(list(state.glob("update-rollback.*")), [])
-            self.assertFalse(
-                (kilix / "third_party/kitty-frame-presenter/payload").exists()
-            )
-            self.assertFalse(
-                (kilix / "third_party/kilix-content/payload").exists()
-            )
-            self.assertFalse(
-                (kilix / "third_party/kitty-pty-broker/payload").exists()
-            )
+            for _, checkout, _, _ in submodule_records:
+                self.assertEqual((checkout / "payload").read_text(), "before\n")
             self.assertEqual(
                 (broker_build / "marker").read_text(), "old-broker\n"
             )
@@ -1532,15 +1602,26 @@ exit "$VOICE_INSTALL_EXIT"
                 ).strip(),
                 "",
             )
-            presenter_config = subprocess.run(
-                [
-                    "git", "-C", str(kilix), "config", "--local",
-                    "--get-regexp", r"^submodule\..*\.url$",
-                ],
-                text=True,
-                capture_output=True,
+            recorded = dict(
+                line.split("\t", 1)
+                for line in recorded_submodules.read_text().splitlines()
             )
-            self.assertNotEqual(presenter_config.returncode, 0)
+            expected_submodules = {
+                path: "submodule-" + path.replace("/", "-").replace(".", "-")
+                for path, _, _, _ in submodule_records
+            }
+            self.assertEqual(recorded, expected_submodules)
+            self.assertNotIn("third_party/kilix-state-py", recorded)
+            self.assertEqual(
+                subprocess.check_output(
+                    [
+                        "git", "-C", str(kilix), "config", "--local", "--get",
+                        "submodule.third_party/kilix-state-py.url",
+                    ],
+                    text=True,
+                ).strip(),
+                "https://example.invalid/phantom.git",
+            )
 
             committed = subprocess.run(
                 [
