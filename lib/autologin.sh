@@ -10,7 +10,7 @@ autologin_on() {
     [ -f "$XSESSION_DST" ] || die "session not installed yet — run: pleb install"
     local user="${1:-$(target_user)}" session
     session="$(_pleb_session_name)"
-    id "$user" >/dev/null 2>&1 || die "no such user: $user"
+    validate_regular_account "$user"
 
     log "enabling autologin: $user -> session '$session'"
     write_root "$AUTOLOGIN_CONF" <<EOF

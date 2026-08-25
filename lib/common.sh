@@ -356,9 +356,28 @@ write_root() {
 }
 
 # --- misc --------------------------------------------------------------------
-# the user the pleb session/autologin should belong to (the invoking user, even
-# under sudo).
-target_user() { echo "${SUDO_USER:-$(id -un)}"; }
+# The user the Pleb session/autologin should belong to (the invoking user, even
+# under sudo). Plebian-OS follows Debian adduser's restrictive default policy;
+# validate before a name reaches an INI file, path, group command, or sudo rule.
+validate_account_name() {
+    [[ "${1:-}" =~ ^[a-z][-a-z0-9_]{0,31}$ ]] \
+        || die "username must match Debian adduser policy: ${1:-<empty>}"
+}
+
+validate_regular_account() {
+    local user="${1:-}" uid
+    validate_account_name "$user"
+    uid="$(id -u -- "$user" 2>/dev/null)" \
+        || die "no such user: $user"
+    [ "$uid" -ge 1000 ] && [ "$uid" -lt 65534 ] \
+        || die "session user must be a regular non-root account: $user"
+}
+
+target_user() {
+    local user="${SUDO_USER:-$(id -un)}"
+    validate_regular_account "$user"
+    printf '%s\n' "$user"
+}
 
 desktop_enabled() {
     case "${KILIX_DESKTOP_PROVIDER:-auto}" in
