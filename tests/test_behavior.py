@@ -3,6 +3,7 @@ import hashlib
 import io
 import os
 import selectors
+import shutil
 import signal
 import stat
 import subprocess
@@ -3349,6 +3350,29 @@ class KilixEnginePark(unittest.TestCase):
             # `previous` is out of the way for the duration of the transaction.
             self.assertFalse((build / "previous").is_symlink())
 
+    def test_replaced_park_directory_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            build, kilix_state, state = self._build_tree(tmp)
+            result = self._run(
+                tmp, build, kilix_state, state,
+                """
+                _snapshot_kilix_engine_generation
+                _begin_kilix_engine_mutation
+                park="$(cat "$_UPDATE_TXN_DIR/kilix-engine.park")"
+                mv -- "$park" "$park.original"
+                ln -s -- "$park.original" "$park"
+                _kilix_engine_park_path
+                """,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            original = list(build.glob(".update-rollback.*.original"))
+            self.assertEqual(len(original), 1, original)
+            self.assertEqual(
+                os.readlink(original[0] / "previous.entry"),
+                "generations/build.OldPrevious",
+            )
+
     def test_parked_generation_is_restored_and_committed_from_that_shape(self):
         for outcome, expect_previous in (
             ("_restore_kilix_engine_generation", True),
@@ -3397,6 +3421,100 @@ class KilixEnginePark(unittest.TestCase):
                             "generations/build.OldCurrent")
                         self.assertFalse(
                             (build / "generations/build.OldPrevious").exists())
+
+    def test_collector_honors_every_engine_and_updater_reference_shape(self):
+        references = (
+            "current",
+            "previous",
+            "prepared",
+            ".current.Stale",
+            ".prepared.Stale",
+            ".previous.Stale",
+            ".update-rollback.Stale/recovery.entry",
+            ".pleb-update.Stale/previous",
+            ".plebian-os-update.Stale/previous",
+        )
+        for reference in references:
+            with self.subTest(reference=reference):
+                with tempfile.TemporaryDirectory() as td:
+                    tmp = Path(td)
+                    build, kilix_state, state = self._build_tree(tmp)
+                    generation = build / "generations/build.Referenced"
+                    generation.mkdir()
+                    entry = build / reference
+                    entry.parent.mkdir(parents=True, exist_ok=True)
+                    if entry.exists() or entry.is_symlink():
+                        entry.unlink()
+                    entry.symlink_to("generations/build.Referenced")
+
+                    result = self._run(
+                        tmp, build, kilix_state, state,
+                        """
+                        _kilix_collect_unreferenced_generation \\
+                            generations/build.Referenced
+                        """,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertTrue(entry.is_symlink())
+                    self.assertTrue(
+                        generation.is_dir(),
+                        f"collector ignored live reference {reference}",
+                    )
+
+    def test_collector_retains_a_generation_with_a_live_executable(self):
+        sleep = shutil.which("sleep")
+        if sleep is None or not Path("/proc").is_dir():
+            self.skipTest("live-generation check requires sleep and /proc")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            build, kilix_state, state = self._build_tree(tmp)
+            generation = build / "generations/build.Live"
+            generation.mkdir()
+            executable = generation / "sleeper"
+            shutil.copy2(sleep, executable)
+            process = subprocess.Popen([str(executable), "60"])
+            try:
+                self.assertIsNone(process.poll())
+                result = self._run(
+                    tmp, build, kilix_state, state,
+                    """
+                    _kilix_collect_unreferenced_generation \\
+                        generations/build.Live
+                    """,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIsNone(process.poll())
+                self.assertTrue(generation.is_dir())
+                self.assertIn("retaining live Kilix generation", result.stderr)
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+
+    def test_restore_refuses_an_unexpected_current_directory_without_deleting_it(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            build, kilix_state, state = self._build_tree(tmp)
+            result = self._run(
+                tmp, build, kilix_state, state,
+                """
+                _snapshot_kilix_engine_generation
+                _begin_kilix_engine_mutation
+                rm -f -- "$KILIX_BUILD_DIRECTORY/current"
+                mkdir "$KILIX_BUILD_DIRECTORY/current"
+                printf 'operator bytes\n' \
+                    >"$KILIX_BUILD_DIRECTORY/current/operator-data"
+                _restore_kilix_engine_generation
+                """,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(
+                (build / "current/operator-data").read_text(),
+                "operator bytes\n",
+            )
 
     def test_a_previous_entry_with_no_generation_left_is_repaired(self):
         # What a pre-fix updater left behind: the collector reclaimed the parked

@@ -565,20 +565,58 @@ _kilix_generation_target() {
     printf '%s\n' "$target"
 }
 
-_kilix_collect_unreferenced_generation() {
-    local target="$1" link path owner
-    [[ "$target" =~ ^generations/build\.[A-Za-z0-9]+$ ]] || return 1
-    for link in current previous prepared; do
-        if [ -L "$KILIX_BUILD_DIRECTORY/$link" ] \
-            && [ "$(readlink -- "$KILIX_BUILD_DIRECTORY/$link")" = "$target" ]; then
+_kilix_generation_target_is_referenced() {
+    local target="$1" ref
+    for ref in "$KILIX_BUILD_DIRECTORY/current" \
+               "$KILIX_BUILD_DIRECTORY/previous" \
+               "$KILIX_BUILD_DIRECTORY/prepared" \
+               "$KILIX_BUILD_DIRECTORY"/.current.* \
+               "$KILIX_BUILD_DIRECTORY"/.prepared.* \
+               "$KILIX_BUILD_DIRECTORY"/.previous.* \
+               "$KILIX_BUILD_DIRECTORY"/.update-rollback.*/*.entry \
+               "$KILIX_BUILD_DIRECTORY"/.pleb-update.*/previous \
+               "$KILIX_BUILD_DIRECTORY"/.plebian-os-update.*/previous; do
+        if [ -L "$ref" ] \
+            && [ "$(readlink -- "$ref" 2>/dev/null || true)" = "$target" ]; then
             return 0
         fi
     done
+    return 1
+}
+
+_kilix_generation_has_live_executable() {
+    local candidate="$1" proc_exe executable inspected=0
+    # Match Kilix's generation collector: /proc is the lease registry for
+    # running engines. If it cannot be inspected, retaining disk is safer than
+    # unlinking a generation that a live terminal still needs.
+    [ -d /proc ] || return 0
+    for proc_exe in /proc/[0-9]*/exe; do
+        [ -L "$proc_exe" ] || continue
+        executable="$(readlink -f -- "$proc_exe" 2>/dev/null || true)"
+        [ -n "$executable" ] || continue
+        inspected=1
+        case "$executable" in
+            "$candidate"|"$candidate"/*) return 0 ;;
+        esac
+    done
+    [ "$inspected" = 1 ] || return 0
+    return 1
+}
+
+_kilix_collect_unreferenced_generation() {
+    local target="$1" path owner candidate_root
+    [[ "$target" =~ ^generations/build\.[A-Za-z0-9]+$ ]] || return 1
+    _kilix_generation_target_is_referenced "$target" && return 0
     path="$KILIX_BUILD_DIRECTORY/$target"
     [ -e "$path" ] || [ -L "$path" ] || return 0
     _kilix_generation_target_is_contained "$target" || return 1
     owner="$(stat -c '%u' -- "$path" 2>/dev/null)" || return 1
     [ "$owner" = "$(id -u)" ] || return 1
+    candidate_root="$(cd "$path" && pwd -P)" || return 1
+    if _kilix_generation_has_live_executable "$candidate_root"; then
+        warn "retaining live Kilix generation: $candidate_root"
+        return 0
+    fi
     rm -rf -- "$path"
 }
 
@@ -595,11 +633,15 @@ _KILIX_ENGINE_PARK_TEMPLATE=".update-rollback.XXXXXX"
 _KILIX_ENGINE_PARK_ENTRY="previous.entry"
 
 _kilix_engine_park_path() {
-    local park
+    local park owner mode
     park="$(cat "$_UPDATE_TXN_DIR/kilix-engine.park" 2>/dev/null || true)"
     [ -n "$park" ] || return 1
     [ "$(dirname "$park")" = "$KILIX_BUILD_DIRECTORY" ] || return 1
     [[ "$(basename "$park")" =~ ^\.update-rollback\.[A-Za-z0-9]+$ ]] || return 1
+    [ -d "$park" ] && [ ! -L "$park" ] || return 1
+    owner="$(stat -c '%u' -- "$park" 2>/dev/null)" || return 1
+    mode="$(stat -c '%a' -- "$park" 2>/dev/null)" || return 1
+    [ "$owner" = "$(id -u)" ] && [ "$mode" = 700 ] || return 1
     printf '%s\n' "$park"
 }
 
@@ -656,7 +698,10 @@ _begin_kilix_engine_mutation() {
 _remove_kilix_generation_entry() {
     local entry="$1"
     if [ -d "$entry" ] && [ ! -L "$entry" ]; then
-        rm -rf -- "$entry"
+        # Current generation transactions publish symlinks. A directory here
+        # is either legacy recovery state or content that appeared while the
+        # transaction ran; retain it for inspection instead of recursing.
+        return 1
     elif [ -e "$entry" ] || [ -L "$entry" ]; then
         rm -f -- "$entry"
     fi
