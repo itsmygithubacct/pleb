@@ -504,5 +504,80 @@ class VoiceRefreshTests(unittest.TestCase):
             self.assertIn("previously installed closure is still in place", result.stderr)
 
 
+class OverrideMasksPersistedPinTests(unittest.TestCase):
+    """An override that moves a component forward must say what it is masking.
+
+    `PLEB_REF=<sha> pleb update` is the documented way off a stale pin, and the
+    precedence is deliberate: the environment wins for the run, the persisted
+    file remains the machine's declared state. The gap was silence. The move was
+    announced as "pinned by the environment" and nothing said the file still
+    held the old value, so the machine was left installed-new and pinned-old and
+    the next plain update walked it back. The existing rewind warning fires only
+    once that has happened, which is the wrong moment to find out.
+
+    Reproduced on a real 0.2.0 host before this was written.
+    """
+
+    def _fixture(self, tmp):
+        repo = Path(tmp) / "repo"
+        repo.mkdir()
+        run = lambda *a: subprocess.run(a, cwd=repo, check=True, capture_output=True)
+        run("git", "init", "-q", ".")
+        run("git", "config", "user.email", "t@e")
+        run("git", "config", "user.name", "t")
+        (repo / "f").write_text("a")
+        run("git", "add", "f")
+        run("git", "commit", "-qm", "a")
+        old = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, text=True,
+                             capture_output=True).stdout.strip()
+        (repo / "f").write_text("b")
+        run("git", "commit", "-qam", "b")
+        new = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, text=True,
+                             capture_output=True).stdout.strip()
+        cfg = Path(tmp) / "cfg"
+        cfg.mkdir()
+        session = cfg / "session.env"
+        session.write_text("PLEB_REF=%s\n" % old)
+        session.chmod(0o600)
+        return repo, session, old, new
+
+    def _announce(self, repo, session, old, new, override):
+        env = dict(os.environ)
+        env.update({
+            "PLEB_ENV_USER": str(session),
+            "PLEB_ENV_SYSTEM": "/nonexistent",
+            "PLEB_CLOSURE_SYSTEM": "/nonexistent",
+            "PLEB_CODE_ROOT": str(ROOT),
+        })
+        if override:
+            env["PLEB_REF"] = new
+        else:
+            env.pop("PLEB_REF", None)
+        script = (
+            '. "$PLEB_CODE_ROOT/lib/common.sh"\n'
+            'announce_component_move "%s" pleb "%s" "%s" PLEB_REF\n' % (repo, old, new)
+        )
+        return subprocess.run(["bash", "-c", script], cwd=ROOT, env=env,
+                              text=True, capture_output=True)
+
+    def test_a_forward_override_names_the_file_that_still_holds_the_old_pin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, session, old, new = self._fixture(tmp)
+            out = self._announce(repo, session, old, new, override=True)
+            combined = out.stdout + out.stderr
+            self.assertIn("pinned by the environment", combined)
+            # Names the exact file, because "a persisted file" is not actionable.
+            self.assertIn(str(session), combined)
+            self.assertIn(old[:12], combined)
+            self.assertIn("will walk it back", combined)
+
+    def test_a_move_decided_by_the_file_itself_stays_quiet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, session, old, new = self._fixture(tmp)
+            out = self._announce(repo, session, old, new, override=False)
+            combined = out.stdout + out.stderr
+            self.assertNotIn("will walk it back", combined)
+
+
 if __name__ == "__main__":
     unittest.main()
