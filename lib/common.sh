@@ -390,15 +390,132 @@ validate_checkout_origin() {
     fi
 }
 
+# Where untracked operator files are copied before a release hop. Outside every
+# checkout on purpose: a preserve directory inside the tree it protects would be
+# destroyed by the same checkout it exists to survive.
+PLEB_PRESERVE_ROOT="${PLEB_PRESERVE_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/pleb/preserved}"
+
+# _pleb_untracked_files DIR — NUL-separated untracked, non-ignored files.
+# `ls-files --others` lists files individually; `status --porcelain` collapses an
+# untracked directory to one `?? dir/` entry, which cannot be checksummed.
+_pleb_untracked_files() {
+    git -C "$1" ls-files --others --exclude-standard -z 2>/dev/null
+}
+
+# _pleb_tracked_changes DIR — porcelain lines for tracked files only.
+_pleb_tracked_changes() {
+    git -C "$1" status --porcelain --untracked-files=no 2>/dev/null
+}
+
+# require_clean_checkout DIR LABEL — refuse only on changes git can restore.
+#
+# The old form refused on ANY dirt, untracked included, and told the operator to
+# "commit, stash, or remove". All three were wrong for untracked files: `remove`
+# destroys data git has no copy of, `stash` silently skips untracked files
+# without `-u`, and `commit` pushes operator data into a release-controlled
+# checkout, which is the coupling this stream exists to break. Reproduced on a
+# live install against seven untracked camera scripts.
+#
+# Untracked files no longer block an update: they are preserved by checksummed
+# copy (see preserve_untracked_files) and restored after the hop.
 require_clean_checkout() {
-    local dir="$1" label="$2" status
+    local dir="$1" label="$2" tracked
     [ -d "$dir/.git" ] || return 0
-    status="$(git -C "$dir" status --porcelain --untracked-files=normal 2>/dev/null)" \
+    tracked="$(_pleb_tracked_changes "$dir")" \
         || die "could not inspect $label checkout at $dir"
-    if [ -n "$status" ]; then
-        err "$label checkout at $dir has local changes; refusing to update it:"
-        printf '%s\n' "$status" >&2
-        die "commit, stash, or remove those changes, then re-run 'pleb update'"
+    if [ -n "$tracked" ]; then
+        err "$label checkout at $dir has local changes to tracked files; refusing to update it:"
+        printf '%s\n' "$tracked" >&2
+        err "git has a copy of every file listed above, so both of these are recoverable:"
+        err "  git -C $dir stash push       # set aside, restore later with 'git stash pop'"
+        err "  git -C $dir checkout -- .    # discard local edits, keep the committed version"
+        die "resolve those changes, then re-run 'pleb update'"
+    fi
+}
+
+# preserve_untracked_files DIR LABEL — copy every untracked operator file out of
+# DIR, verify each copy by SHA-256, and set PLEB_PRESERVED_MANIFEST to the
+# manifest path (empty when there was nothing to preserve).
+#
+# The result is returned in a global rather than on stdout deliberately. `log`
+# writes to stdout, so a `$(preserve_untracked_files ...)` capture swallows the
+# progress line into the path and the later restore silently does nothing —
+# while still printing "preserved 7/7". That failure destroys operator data and
+# reports success, which is the exact shape of the defect this function exists
+# to fix, so the channel that allows it is not used.
+PLEB_PRESERVED_MANIFEST=""
+preserve_untracked_files() {
+    local dir="$1" label="$2" store manifest rel dest src_sha dest_sha count=0 slug
+    PLEB_PRESERVED_MANIFEST=""
+    [ -d "$dir/.git" ] || return 0
+    slug="$(printf '%s' "$label" | tr -c 'A-Za-z0-9._-' '-')"
+    store="$PLEB_PRESERVE_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-$slug-$$"
+    manifest="$store/MANIFEST.tsv"
+    while IFS= read -r -d '' rel; do
+        # A symlink or socket is not operator content we can checksum; skip it
+        # rather than pretend it was preserved.
+        [ -f "$dir/$rel" ] && [ ! -L "$dir/$rel" ] || continue
+        if [ "$count" -eq 0 ]; then
+            mkdir -p "$store/files" || die "could not create preserve directory $store"
+            printf 'sha256\tpath\n' >"$manifest" \
+                || die "could not write preserve manifest $manifest"
+        fi
+        dest="$store/files/$rel"
+        mkdir -p "$(dirname "$dest")" || die "could not stage $rel under $store"
+        cp -p -- "$dir/$rel" "$dest" || die "could not preserve $rel from $dir"
+        src_sha="$(sha256sum -- "$dir/$rel" | awk '{print $1}')"
+        dest_sha="$(sha256sum -- "$dest" | awk '{print $1}')"
+        # Verified before the hop, not after: an unverified copy is not a backup.
+        [ -n "$src_sha" ] && [ "$src_sha" = "$dest_sha" ] \
+            || die "preserved copy of $rel does not match the original; refusing to update $label"
+        printf '%s\t%s\n' "$src_sha" "$rel" >>"$manifest" \
+            || die "could not record $rel in $manifest"
+        count=$((count + 1))
+    done < <(_pleb_untracked_files "$dir")
+    [ "$count" -gt 0 ] || return 0
+    PLEB_PRESERVED_MANIFEST="$manifest"
+    log "$label: preserved $count/$count untracked file(s) to $store"
+}
+
+# restore_untracked_files DIR LABEL MANIFEST — put preserved files back.
+#
+# A path the hop left alone is already correct and is not rewritten. A path the
+# hop now occupies with different content is NOT overwritten: the release's file
+# stays and the operator's copy is named where it sits, because silently
+# clobbering either one is the failure this whole path exists to avoid.
+restore_untracked_files() {
+    local dir="$1" label="$2" manifest="$3"
+    local store sha rel now restored=0 intact=0 conflict=0 total=0
+    [ -n "$manifest" ] && [ -f "$manifest" ] || return 0
+    store="$(dirname "$manifest")"
+    while IFS="$(printf '\t')" read -r sha rel; do
+        [ "$sha" = sha256 ] && continue
+        [ -n "$rel" ] || continue
+        total=$((total + 1))
+        if [ ! -e "$dir/$rel" ]; then
+            mkdir -p "$(dirname "$dir/$rel")" \
+                || die "could not recreate $(dirname "$rel") in $dir"
+            cp -p -- "$store/files/$rel" "$dir/$rel" \
+                || die "could not restore $rel into $dir (copy kept at $store/files/$rel)"
+            now="$(sha256sum -- "$dir/$rel" | awk '{print $1}')"
+            [ "$now" = "$sha" ] \
+                || die "restored $rel does not match its preserved checksum (copy kept at $store/files/$rel)"
+            restored=$((restored + 1))
+        else
+            now="$(sha256sum -- "$dir/$rel" 2>/dev/null | awk '{print $1}')"
+            if [ "$now" = "$sha" ]; then
+                intact=$((intact + 1))
+            else
+                conflict=$((conflict + 1))
+                warn "$label: $rel now differs from your copy; kept the updated file"
+                warn "$label: your version is at $store/files/$rel"
+            fi
+        fi
+    done <"$manifest"
+    [ "$total" -gt 0 ] || return 0
+    log "$label: untracked files $intact/$total untouched, $restored/$total restored, $conflict/$total conflicted"
+    if [ "$conflict" -eq 0 ]; then
+        log "$label: preserved copies remain at $store"
     fi
 }
 
