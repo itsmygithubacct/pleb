@@ -3015,6 +3015,11 @@ validate_install_destinations() { :; }
 run_root() {
     "$SYSTEM_ENV" -i PATH="$TRUSTED_SYSTEM_PATH" HOME="$HOME" LC_ALL=C "$@"
 }
+# Mirror production, where /usr/local/bin precedes /usr/bin.  Without the
+# test override, install-go.sh's final PATH report executes the host Go binary
+# instead of the installed fixture and can race TemporaryDirectory cleanup by
+# creating Go telemetry state below the private test HOME.
+PATH="$GO_BIN_DIR:$PATH"
 do_install
 """
             result = subprocess.run(
@@ -3026,6 +3031,10 @@ do_install
                 check=True,
             )
             self.assertIn("go version go1.26.4 linux/amd64", result.stdout)
+            self.assertIn(
+                f"on PATH:   {bin_dir / 'go'} -> go version go1.26.4 linux/amd64",
+                result.stdout,
+            )
             self.assertEqual(
                 subprocess.check_output([str(bin_dir / "go")], text=True).strip(),
                 "go version go1.26.4 linux/amd64",
