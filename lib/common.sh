@@ -425,14 +425,34 @@ validate_checkout_origin() {
     fi
 }
 
+# require_clean_checkout DIR LABEL — refuse an install into a dirty checkout.
+#
+# The update path no longer calls this: it preserves and restores instead (see
+# lib/preserve.sh). `pleb install` still needs it, and the advice it prints has
+# to distinguish what git can restore from what it cannot.
+#
+# `git stash push` does NOT include untracked files. Advising a bare stash for a
+# `??` path tells the operator their file is safely set aside when it is not —
+# the file simply stays, and any later `clean` takes it. Reproduced on a live
+# install against seven untracked camera scripts, where the original advice was
+# "commit, stash, or remove": `remove` destroys files git has no copy of,
+# `stash` silently skips them, and `commit` puts operator data into a
+# release-controlled checkout.
 require_clean_checkout() {
-    local dir="$1" label="$2" status
+    local dir="$1" label="$2" status untracked
     [ -d "$dir/.git" ] || return 0
     status="$(git -C "$dir" status --porcelain --untracked-files=normal 2>/dev/null)" \
         || die "could not inspect $label checkout at $dir"
     if [ -n "$status" ]; then
         err "$label checkout at $dir has local changes; refusing to update it:"
         printf '%s\n' "$status" >&2
+        untracked="$(printf '%s\n' "$status" | grep -c '^??' || true)"
+        if [ "${untracked:-0}" -gt 0 ]; then
+            err "$untracked of those are untracked (??) — git holds no copy of them."
+            err "  git -C $dir stash push -u   # -u is required; a plain stash leaves them behind"
+            err "or move them somewhere outside the checkout. Do not delete them:"
+            err "nothing can restore an untracked file."
+        fi
         die "commit or stash those changes, then re-run 'pleb update'"
     fi
 }

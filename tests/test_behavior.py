@@ -2380,6 +2380,40 @@ exit "$VOICE_INSTALL_EXIT"
                 before,
             )
 
+    def test_untracked_refusal_advises_stash_u_and_never_deletion(self):
+        """`git stash push` does not include untracked files. Advising a bare
+        stash for a `??` path tells the operator the file is set aside when it
+        is not. Reproduced live against seven untracked camera scripts."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            checkout = tmp / "checkout"
+            subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+            subprocess.run(["git", "-C", str(checkout), "config", "user.name", "T"], check=True)
+            subprocess.run(
+                ["git", "-C", str(checkout), "config", "user.email", "t@example.invalid"],
+                check=True,
+            )
+            (checkout / "README").write_text("base\n")
+            subprocess.run(["git", "-C", str(checkout), "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", str(checkout), "-c", "commit.gpgsign=false", "commit", "-qm", "b"],
+                check=True,
+            )
+            names = ["backdrivecam", "drivecam", "g2", "garage", "gazebo", "poolcam", "tapo"]
+            for name in names:
+                (checkout / ("camera-%s.sh" % name)).write_text("echo %s\n" % name)
+            script = "set -euo pipefail\nPLEB_ROOT=%s\n. \"$PLEB_ROOT/lib/common.sh\"\nrequire_clean_checkout %s kilix\n" % (ROOT, checkout)
+            result = subprocess.run(
+                ["bash", "-c", script], env=clean_env(tmp), text=True, capture_output=True
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("7 of those are untracked", result.stderr)
+            # -u is the whole point: without it the stash silently skips them.
+            self.assertIn("stash push -u", result.stderr)
+            # Nothing may suggest destroying a file git cannot restore.
+            self.assertNotIn("remove those", result.stderr)
+            self.assertIn("nothing can restore an untracked file", result.stderr)
+
     def test_dirty_checkout_is_rejected_before_update(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
