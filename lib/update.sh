@@ -858,12 +858,21 @@ _prepare_pleb_self_update() {
     _PLEB_SELF_UPDATE_OK=1
 }
 
+# Set at file scope because bin/pleb runs under `set -u` and _update_pleb_self
+# is reachable without do_update having parsed anything.
+_UPDATE_LATEST="${_UPDATE_LATEST:-0}"
+_UPDATE_TARGET_REF="${_UPDATE_TARGET_REF:-}"
+
 _update_pleb_self() {
-    local before after branch current version
+    local before after branch current version preserved
     [ "$_PLEB_SELF_UPDATE_OK" = 1 ] || return 0
     before="$(git -C "$PLEB_ROOT" rev-parse --verify HEAD 2>/dev/null)" \
         || die "could not read the current pleb commit at $PLEB_ROOT"
     branch="$(git -C "$PLEB_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+    # Copied out before the hop, put back after it. Untracked files are operator
+    # data and git holds no copy of them.
+    preserve_untracked_files "$PLEB_ROOT" "pleb"
+    preserved="$PLEB_PRESERVED_MANIFEST"
 
     if [ -n "$PLEB_REF" ]; then
         checkout_fetched_ref "$PLEB_ROOT" "$PLEB_REF" "pleb" PLEB_REF
@@ -890,8 +899,12 @@ _update_pleb_self() {
 
     after="$(git -C "$PLEB_ROOT" rev-parse --verify HEAD 2>/dev/null)" \
         || die "could not verify the pleb commit after checkout"
+    restore_untracked_files "$PLEB_ROOT" "pleb" "$preserved"
     if [ "$before" = "$after" ]; then
         log "pleb already up to date at ${after:0:12}."
+        if [ -z "$PLEB_REF" ] && [ "$_UPDATE_LATEST" != 1 ] && [ -z "$_UPDATE_TARGET_REF" ]; then
+            log "pleb: that is this machine's pinned ref; name another with 'pleb update --to <release>' or take the branch tip with --latest"
+        fi
         return 0
     fi
     if ! _pleb_self_update_runnable; then
@@ -1199,18 +1212,62 @@ _rebuild_kilix_fork() {
     log "fork rebuilt."
 }
 
+# _pleb_resolve_target_ref DIR LABEL — resolve --to to a commit SHA in DIR.
+#
+# Accepts a release number (0.2.1), a tag (v0.2.1), a branch or a SHA. Resolving
+# to a SHA here means everything downstream — including the immutable-ref check —
+# sees a pinned commit and needs no special case.
+_pleb_resolve_target_ref() {
+    local dir="$1" label="$2" ref="$_UPDATE_TARGET_REF" sha cand
+    git -C "$dir" fetch --prune --tags origin >/dev/null 2>&1 || true
+    for cand in "$ref" "v$ref" "refs/tags/$ref" "refs/tags/v$ref" "origin/$ref"; do
+        sha="$(git -C "$dir" rev-parse --verify --quiet "${cand}^{commit}" 2>/dev/null)" || continue
+        if [ -n "$sha" ]; then
+            # stdout carries the SHA and nothing else: `log` writes to stdout,
+            # so an unredirected line here ends up inside the caller's
+            # KILIX_REF/PLEB_REF. Same failure mode as the preserve manifest.
+            log "$label: --to $ref resolves to ${sha:0:12} ($cand)" >&2
+            printf '%s\n' "$sha"
+            return 0
+        fi
+    done
+    die "$label: cannot resolve --to '$ref' in $dir (tried $ref, v$ref, and origin/$ref)"
+}
+
 do_update() {
     _UPDATE_YES=0
     _UPDATE_RESTART=ask
+    _UPDATE_LATEST=0
+    _UPDATE_TARGET_REF=""
     while [ $# -gt 0 ]; do
         case "$1" in
             -y|--yes) _UPDATE_YES=1; shift ;;
             --no-restart) _UPDATE_RESTART=no; shift ;;
             --restart) _UPDATE_RESTART=yes; shift ;;
-            -h|--help) info "usage: pleb update [-y|--yes] [--no-restart|--restart]"; return 0 ;;
+            --to) [ $# -ge 2 ] || die "--to needs a release or ref, e.g. --to 0.2.1"
+                  _UPDATE_TARGET_REF="$2"; shift 2 ;;
+            --to=*) _UPDATE_TARGET_REF="${1#*=}"
+                    [ -n "$_UPDATE_TARGET_REF" ] || die "--to needs a release or ref, e.g. --to 0.2.1"
+                    shift ;;
+            --latest) _UPDATE_LATEST=1; shift ;;
+            -h|--help)
+                info "usage: pleb update [-y|--yes] [--no-restart|--restart] [--to RELEASE|--latest]"
+                info "  --to RELEASE   update to a named release, tag or commit (e.g. --to 0.2.1)"
+                info "  --latest       ignore this machine's pinned refs and take the branch tip"
+                return 0 ;;
             *) die "unknown update option: $1" ;;
         esac
     done
+    if [ "$_UPDATE_LATEST" = 1 ] && [ -n "$_UPDATE_TARGET_REF" ]; then
+        die "--to and --latest are mutually exclusive: --to names a release, --latest takes the tip"
+    fi
+    # Both override the persisted pins for this run only. Without one of them a
+    # pinned machine fetches its own pin and correctly reports "already up to
+    # date" — which is why naming a target had to become expressible at all.
+    if [ "$_UPDATE_LATEST" = 1 ]; then
+        log "--latest: ignoring pinned refs for this run"
+        PLEB_REF=""; KILIX_REF=""; KILIX95_REF=""
+    fi
 
     _acquire_update_lock
     [ -d "$KILIX_DIR/.git" ] || die "no kilix git checkout at $KILIX_DIR — run 'pleb install' first"
@@ -1221,6 +1278,13 @@ do_update() {
     if [ ! -d "$KILIX95_DIR/.git" ] && kilix95_required \
         && [ -z "$KILIX95_REF" ] && [ "$KILIX95_ALLOW_UNPINNED_INSTALL" != 1 ]; then
         die "automatic Kilix 95 install requires an immutable KILIX95_REF commit SHA (set KILIX95_ALLOW_UNPINNED_INSTALL=1 only to allow an unpinned clone)"
+    fi
+    if [ -n "$_UPDATE_TARGET_REF" ]; then
+        KILIX_REF="$(_pleb_resolve_target_ref "$KILIX_DIR" "kilix")"
+        [ -d "$KILIX95_DIR/.git" ] \
+            && KILIX95_REF="$(_pleb_resolve_target_ref "$KILIX95_DIR" "kilix 95")"
+        [ -d "$PLEB_ROOT/.git" ] \
+            && PLEB_REF="$(_pleb_resolve_target_ref "$PLEB_ROOT" "pleb")"
     fi
     validate_checkout_origin "$KILIX_DIR" "$KILIX_REPO" "kilix"
     require_clean_checkout "$KILIX_DIR" "kilix"
@@ -1237,6 +1301,14 @@ do_update() {
     { [ -n "$branch" ] && [ "$branch" != HEAD ]; } || branch=main
     before="$(git -C "$KILIX_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
     src_before="$(git -C "$KILIX_DIR/src" rev-parse HEAD 2>/dev/null || echo none)"
+    local kilix_preserved kilix95_preserved
+    preserve_untracked_files "$KILIX_DIR" "kilix"
+    kilix_preserved="$PLEB_PRESERVED_MANIFEST"
+    kilix95_preserved=""
+    if [ -d "$KILIX95_DIR/.git" ]; then
+        preserve_untracked_files "$KILIX95_DIR" "kilix 95"
+        kilix95_preserved="$PLEB_PRESERVED_MANIFEST"
+    fi
     _update_transaction_begin
 
     if [ -n "$KILIX_REF" ]; then
@@ -1267,6 +1339,9 @@ do_update() {
         fi
     fi
     reconcile_kilix_submodules "$KILIX_DIR"
+    restore_untracked_files "$KILIX_DIR" "kilix" "$kilix_preserved"
+    [ -n "$kilix95_preserved" ] \
+        && restore_untracked_files "$KILIX95_DIR" "kilix 95" "$kilix95_preserved"
     after="$(git -C "$KILIX_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
     src_after="$(git -C "$KILIX_DIR/src" rev-parse HEAD 2>/dev/null || echo none)"
 

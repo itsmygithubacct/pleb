@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.1 — Unreleased
+
+- `pleb update` no longer refuses when the checkout contains untracked files.
+  They are operator data that git holds no copy of, so they are preserved by
+  checksummed copy before the release hop and restored afterwards. Where the
+  incoming release ships a file at the same path, the release's file is kept
+  and your copy is left in the preserve directory, named in the output.
+- The refusal for changes to *tracked* files no longer suggests `remove`. It
+  offers `git stash push` and `git checkout --`, both of which git can undo.
+- `pleb update --to RELEASE` updates to a named release, tag or commit, and
+  `pleb update --latest` ignores this machine's pinned refs and takes the
+  branch tip. Without either, a pinned machine fetches its own pin and
+  correctly reports "already up to date" — previously with no way to say
+  otherwise.
+
 ## 0.2.0 — Unreleased
 
 Selected for the coordinated Plebian-OS 0.2.0 candidate. The exact stack

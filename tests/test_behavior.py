@@ -1548,29 +1548,141 @@ exit "$VOICE_INSTALL_EXIT"
             self.assertEqual(committed.returncode, 0, committed.stderr)
             self.assertFalse(legacy_stamp.exists())
 
-    def test_dirty_checkout_is_rejected_before_update(self):
+    NAMES = ["backdrivecam", "drivecam", "g2", "garage", "gazebo", "poolcam", "tapo"]
+
+    @staticmethod
+    def _seed_repo(checkout):
+        subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+        subprocess.run(["git", "-C", str(checkout), "config", "user.name", "Pleb Test"], check=True)
+        subprocess.run(
+            ["git", "-C", str(checkout), "config", "user.email", "pleb@example.invalid"],
+            check=True,
+        )
+        (checkout / "tracked.txt").write_text("release content\n")
+        subprocess.run(["git", "-C", str(checkout), "add", "-A"], check=True)
+        subprocess.run(
+            ["git", "-C", str(checkout), "-c", "commit.gpgsign=false", "commit", "-qm", "base"],
+            check=True,
+        )
+
+    def _run_shell(self, body, tmp):
+        script = "set -euo pipefail\nPLEB_ROOT=%s\n. \"$PLEB_ROOT/lib/common.sh\"\n%s\n" % (ROOT, body)
+        env = clean_env(tmp)
+        env["XDG_STATE_HOME"] = str(tmp / "state")
+        return subprocess.run(["bash", "-c", script], env=env, text=True, capture_output=True)
+
+    def _seed_seven_untracked(self, checkout):
+        (checkout / "scripts").mkdir()
+        for name in self.NAMES:
+            (checkout / "scripts" / ("camera-%s.sh" % name)).write_text("echo %s\n" % name)
+
+    def test_tracked_changes_are_rejected_and_never_advised_to_be_removed(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             checkout = tmp / "checkout"
-            subprocess.run(["git", "init", "-q", str(checkout)], check=True)
-            (checkout / "local-notes.txt").write_text("do not overwrite\n")
-            script = textwrap.dedent(
-                f"""
-                set -euo pipefail
-                PLEB_ROOT={ROOT!s}
-                . "$PLEB_ROOT/lib/common.sh"
-                require_clean_checkout {checkout!s} kilix
-                """
-            )
-            result = subprocess.run(
-                ["bash", "-c", script],
-                env=clean_env(tmp),
-                text=True,
-                capture_output=True,
-            )
+            self._seed_repo(checkout)
+            (checkout / "tracked.txt").write_text("locally edited\n")
+            result = self._run_shell("require_clean_checkout %s kilix" % checkout, tmp)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("local-notes.txt", result.stderr)
+            self.assertIn("tracked.txt", result.stderr)
             self.assertIn("refusing to update", result.stderr)
+            # git holds a copy of every path listed here, so only recoverable
+            # remedies may be offered. "remove" destroys untracked operator data
+            # and must not appear anywhere in the advice.
+            self.assertNotIn("remove", result.stderr)
+            self.assertIn("stash push", result.stderr)
+
+    def test_untracked_operator_files_do_not_block_an_update(self):
+        """The live reproduction: seven untracked camera scripts refused the hop."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            checkout = tmp / "checkout"
+            self._seed_repo(checkout)
+            self._seed_seven_untracked(checkout)
+            result = self._run_shell(
+                "require_clean_checkout %s pleb; echo PROCEEDED" % checkout, tmp
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("PROCEEDED", result.stdout)
+
+    def test_untracked_files_survive_a_destructive_hop(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            checkout = tmp / "checkout"
+            self._seed_repo(checkout)
+            self._seed_seven_untracked(checkout)
+            # reset --hard plus clean -fd is the worst a hop can do to untracked
+            # files; what survives it survives any checkout.
+            body = "\n".join([
+                "preserve_untracked_files %s pleb" % checkout,
+                'manifest="$PLEB_PRESERVED_MANIFEST"',
+                "git -C %s reset --hard -q HEAD" % checkout,
+                "git -C %s clean -fdq" % checkout,
+                'restore_untracked_files %s pleb "$manifest"' % checkout,
+            ])
+            result = self._run_shell(body, tmp)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for name in self.NAMES:
+                path = checkout / "scripts" / ("camera-%s.sh" % name)
+                self.assertTrue(path.is_file(), "%s was not restored" % name)
+                self.assertEqual(path.read_text(), "echo %s\n" % name)
+            self.assertIn("7/7 restored", result.stdout)
+
+    def test_preserve_manifest_is_returned_in_a_global_not_on_stdout(self):
+        """`log` writes to stdout, so a `$(preserve_untracked_files ...)` capture
+        takes the progress line as the manifest path. The restore then silently
+        does nothing while still reporting that files were preserved: operator
+        data destroyed, success reported. The manifest travels in a global, and
+        no caller may capture the function."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            checkout = tmp / "checkout"
+            self._seed_repo(checkout)
+            self._seed_seven_untracked(checkout)
+            body = "\n".join([
+                "preserve_untracked_files %s pleb" % checkout,
+                'test -f "$PLEB_PRESERVED_MANIFEST" || { echo NO_MANIFEST; exit 1; }',
+                'printf "ROWS=%s\\n" "$(($(wc -l < "$PLEB_PRESERVED_MANIFEST") - 1))"',
+            ])
+            result = self._run_shell(body, tmp)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("ROWS=7", result.stdout)
+
+        # No caller may reintroduce the capture that made this silent. Comments
+        # are skipped: the explanation of the defect names the pattern.
+        for lib in sorted((ROOT / "lib").glob("*.sh")):
+            for lineno, line in enumerate(lib.read_text().splitlines(), 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                self.assertNotIn(
+                    "$(preserve_untracked_files",
+                    line,
+                    "%s:%d captures preserve_untracked_files; use PLEB_PRESERVED_MANIFEST"
+                    % (lib.name, lineno),
+                )
+
+    def test_release_file_wins_a_collision_and_the_operator_copy_is_kept(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            checkout = tmp / "checkout"
+            self._seed_repo(checkout)
+            (checkout / "collide.sh").write_text("OPERATOR VERSION\n")
+            body = "\n".join([
+                "preserve_untracked_files %s pleb" % checkout,
+                'manifest="$PLEB_PRESERVED_MANIFEST"',
+                "printf 'RELEASE VERSION\\n' > %s/collide.sh" % checkout,
+                'restore_untracked_files %s pleb "$manifest"' % checkout,
+                'printf "MANIFEST=%s\\n" "$manifest"',
+            ])
+            result = self._run_shell(body, tmp)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            # the release's file is not clobbered ...
+            self.assertEqual((checkout / "collide.sh").read_text(), "RELEASE VERSION\n")
+            # ... and the operator's copy survives at a path they were told.
+            line = [l for l in result.stdout.splitlines() if l.startswith("MANIFEST=")][0]
+            store = Path(line.split("=", 1)[1]).parent
+            self.assertEqual((store / "files" / "collide.sh").read_text(), "OPERATOR VERSION\n")
+            self.assertIn("1/1 conflicted", result.stdout)
 
     def test_pinned_checkout_uses_fetched_ref_not_poisoned_local_tag(self):
         with tempfile.TemporaryDirectory() as td:
