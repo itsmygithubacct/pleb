@@ -6,9 +6,10 @@
 #   pleb test [opts]        try it in a throwaway X server (see: pleb test --help)
 #   pleb autologin on|off   boot straight into Pleb (kiosk) / back to greeter
 #   pleb kiosk on|off       hard kiosk: respawn kilix if it exits / don't
-#   pleb update [-y] [--no-restart|--restart] [--preserve-only]
-#                           pull latest kilix and pleb, rebuild, optionally
-#                           restart kiosk; preserve-only takes verified backups
+#   pleb update [--show|--to X.Y.Z|--latest|--rollback] [--dry-run]
+#               [-y] [--no-restart|--restart] [--preserve-only]
+#                           revalidate or move the coordinated release closure,
+#                           preserving local data and rolling back on failure
 #   pleb status             show install + engine state
 #   pleb version            print the Plebian-OS release version
 #   pleb doctor             check prerequisites

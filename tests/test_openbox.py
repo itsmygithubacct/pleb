@@ -22,7 +22,15 @@ def _var_list(text, assignment):
     """Extract a space-separated shell variable list by its assignment name."""
     m = re.search(rf'^\s*{assignment}="([^"]+)"', text, re.M)
     assert m, f"could not find {assignment}= list"
-    return m.group(1).split()
+    values = []
+    for value in m.group(1).split():
+        if value.startswith("${") and value.endswith("}"):
+            values.extend(_var_list(text, value[2:-1]))
+        elif value.startswith("$"):
+            values.extend(_var_list(text, value[1:]))
+        else:
+            values.append(value)
+    return values
 
 
 class OpenboxProfileTests(unittest.TestCase):

@@ -361,6 +361,61 @@ exit "$VOICE_INSTALL_EXIT"
                 [f"{name}={persisted[name]}" for name in COORDINATED_STORAGE_VARS],
             )
 
+    def test_cli_and_session_resolve_the_same_split_closure(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            observed = tmp / "observed"
+            engine = tmp / "kilix"
+            write_executable(
+                engine,
+                "#!/usr/bin/env bash\n"
+                f"printf '%s\\n' \"$PLEBIAN_OS_VERSION\" \"$PLEB_REF\" "
+                f"\"$KILIX_REF\" >{observed!s}\n",
+            )
+            session = tmp / "session.env"
+            closure = tmp / "closure.env"
+            session.write_text(
+                f"KILIX={engine!s}\nPLEB_NO_FILL=1\nPLEB_WM=none\n"
+                f"PLEB_REF={'a' * 40}\nKILIX_REF={'b' * 40}\n"
+            )
+            closure.write_text(
+                "export PLEBIAN_OS_VERSION=0.2.1\n"
+                f"export PLEB_REF={'c' * 40}\nexport KILIX_REF={'d' * 40}\n"
+            )
+            env = clean_env(tmp)
+            env.update({
+                "PLEB_ENV_USER": str(session),
+                "PLEB_CLOSURE_USER": str(closure),
+                "PLEB_CLOSURE_SYSTEM": str(tmp / "absent-system-closure.env"),
+            })
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
+                . "$PLEB_ROOT/lib/common.sh"
+                printf '%s\n' "$PLEBIAN_OS_VERSION" "$PLEB_REF" "$KILIX_REF"
+                """
+            )
+            cli = subprocess.run(
+                ["bash", "-c", script], env=env, capture_output=True,
+                text=True, check=True,
+            )
+            expected = ["0.2.1", "c" * 40, "d" * 40]
+            self.assertEqual(cli.stdout.splitlines(), expected)
+            subprocess.run(
+                [str(ROOT / "bin/pleb-session")], env=env,
+                capture_output=True, text=True, check=True,
+            )
+            self.assertEqual(observed.read_text().splitlines(), expected)
+
+            explicit = dict(env, KILIX_REF="e" * 40)
+            subprocess.run(
+                [str(ROOT / "bin/pleb-session")], env=explicit,
+                capture_output=True, text=True, check=True,
+            )
+            self.assertEqual(observed.read_text().splitlines()[-1], "e" * 40)
+
     def test_gui_routing_policy_is_exported_with_default_and_precedence(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
