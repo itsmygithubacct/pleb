@@ -5,6 +5,8 @@
 
 # shellcheck source=/dev/null
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/preserve.sh"
+# shellcheck source=/dev/null
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/closure.sh"
 
 _UPDATE_LOCK_FD=""
 _UPDATE_LOCK_DIR=""
@@ -1676,7 +1678,7 @@ _rebuild_kilix_fork() {
 do_update() {
     _UPDATE_YES=0
     _UPDATE_RESTART=ask
-    local preserve_only=0
+    local preserve_only=0 hop_mode="" hop_target="" dry_run=0 offline=0
     _PLEB_SELF_INITIAL_PRESERVE=""
     _PLEB_SELF_PRESERVATIONS=()
     _PLEB_SELF_MOVE_ACTIVE=0
@@ -1688,10 +1690,59 @@ do_update() {
             --no-restart) _UPDATE_RESTART=no; shift ;;
             --restart) _UPDATE_RESTART=yes; shift ;;
             --preserve-only) preserve_only=1; shift ;;
-            -h|--help) info "usage: pleb update [-y|--yes] [--no-restart|--restart] [--preserve-only]"; return 0 ;;
+            --to)
+                [ "$#" -ge 2 ] || die "--to needs a release identifier"
+                [ -z "$hop_mode" ] || die "select only one of --to, --latest, --show, or --rollback"
+                hop_mode=to; hop_target="$2"; shift 2 ;;
+            --to=*)
+                [ -z "$hop_mode" ] || die "select only one of --to, --latest, --show, or --rollback"
+                hop_mode=to; hop_target="${1#--to=}"; shift ;;
+            --latest|--show|--rollback)
+                [ -z "$hop_mode" ] || die "select only one of --to, --latest, --show, or --rollback"
+                hop_mode="${1#--}"; shift ;;
+            --dry-run) dry_run=1; shift ;;
+            --offline) offline=1; shift ;;
+            -h|--help)
+                info "usage: pleb update [-y|--yes] [--no-restart|--restart] [--preserve-only]"
+                info "       pleb update --show"
+                info "       pleb update (--to X.Y.Z | --latest) [--dry-run] [--offline] [-y] [--no-restart|--restart]"
+                info "       pleb update --rollback [-y] [--no-restart|--restart]"
+                return 0 ;;
             *) die "unknown update option: $1" ;;
         esac
     done
+
+    if [ "$hop_mode" = show ]; then
+        [ "$dry_run" = 0 ] && [ "$offline" = 0 ] && [ "$preserve_only" = 0 ] \
+            || die "--show cannot be combined with --dry-run, --offline, or --preserve-only"
+        pleb_release_show
+        return 0
+    fi
+    if [ -n "$hop_mode" ]; then
+        [ "$preserve_only" = 0 ] || die "--preserve-only cannot be combined with a release hop"
+        if [ "$hop_mode" = rollback ]; then
+            [ "$dry_run" = 0 ] && [ "$offline" = 0 ] \
+                || die "--rollback cannot be combined with --dry-run or --offline"
+        elif [ "$hop_mode" != to ] && [ "$hop_mode" != latest ]; then
+            die "invalid release-hop mode: $hop_mode"
+        fi
+        _require_managed_source_layout
+        if [ "$dry_run" = 1 ]; then
+            pleb_release_hop "$hop_mode" "$hop_target" "$dry_run" "$offline" \
+                "$_UPDATE_YES" "$_UPDATE_RESTART"
+            return 0
+        fi
+        _acquire_update_lock
+        PLEB_UPDATE_LOCK_FD="$_UPDATE_LOCK_FD"
+        export PLEB_UPDATE_LOCK_FD
+        pleb_release_hop "$hop_mode" "$hop_target" "$dry_run" "$offline" \
+            "$_UPDATE_YES" "$_UPDATE_RESTART"
+        _release_update_lock
+        trap - EXIT INT TERM
+        return 0
+    fi
+    [ "$dry_run" = 0 ] && [ "$offline" = 0 ] \
+        || die "--dry-run and --offline require --to or --latest"
 
     _require_managed_source_layout
     _acquire_update_lock
@@ -1705,6 +1756,10 @@ do_update() {
         _release_update_lock
         trap - EXIT INT TERM
         return 0
+    fi
+    if [ "${PLEB_RELEASE_HOP_APPLY:-0}" != 1 ]; then
+        pleb_recover_incomplete_release_hop
+        pleb_report_newer_release
     fi
     require_immutable_ref "$KILIX_REF" "$KILIX_ALLOW_MUTABLE_REF" \
         KILIX_REF KILIX_ALLOW_MUTABLE_REF

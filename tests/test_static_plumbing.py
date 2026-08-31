@@ -207,6 +207,10 @@ class PlebPlumbingTests(unittest.TestCase):
         common = (ROOT / "lib" / "common.sh").read_text()
         update = (ROOT / "lib" / "update.sh").read_text()
         readme = (ROOT / "README.md").read_text()
+        load_surface = (
+            common.split("PLEB_RELEASE_CONTROLLED_KEYS=", 1)[1].split("\n", 1)[0]
+            + common.split("vars=", 1)[1].split("\n", 1)[0]
+        )
         for name in (
             "PLEB_DIR",
             "PLEB_REPO",
@@ -218,7 +222,7 @@ class PlebPlumbingTests(unittest.TestCase):
             # Both halves matter: a default the CLI derives, and a name the
             # session env file is allowed to supply.
             self.assertIn(f'{name}="${{{name}:-', common)
-            self.assertIn(name, common.split("vars=", 1)[1].split("\n", 1)[0])
+            self.assertIn(name, load_surface)
         self.assertIn(
             'checkout_fetched_ref "$PLEB_ROOT" "$PLEB_REF" "pleb" PLEB_REF', update)
         self.assertIn('merge --ff-only "origin/$current"', update)
@@ -356,6 +360,21 @@ class PlebPlumbingTests(unittest.TestCase):
         self.assertIn("sha256sum -c MANIFEST.sha256", recovery)
         self.assertIn(".from-<short-sha>", readme)
         self.assertIn(".local", readme)
+
+    def test_release_hop_flags_are_implemented_and_documented(self):
+        update = (ROOT / "lib/update.sh").read_text()
+        closure = (ROOT / "lib/closure.sh").read_text()
+        cli = (ROOT / "bin/pleb").read_text()
+        readme = (ROOT / "README.md").read_text()
+        recovery = (ROOT / "docs/RECOVERY.md").read_text()
+        for flag in ("--show", "--to", "--latest", "--dry-run", "--rollback"):
+            for text in (update, cli, readme):
+                self.assertIn(flag, text)
+        self.assertIn("--offline", update)
+        self.assertIn("--offline", closure)
+        self.assertIn("--rollback", recovery)
+        self.assertIn("PLEB_CLOSURE_SYSTEM", (ROOT / "lib/common.sh").read_text())
+        self.assertIn("PLEB_CLOSURE_SYSTEM", (ROOT / "bin/pleb-session").read_text())
 
     def test_pinned_component_moves_are_reported_and_downgrades_shouted(self):
         common = (ROOT / "lib" / "common.sh").read_text()

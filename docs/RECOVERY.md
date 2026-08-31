@@ -46,6 +46,31 @@ preferred fix when more than one prerequisite is missing.
 If you deliberately set `PLEB_SKIP_DEPS=1`, unset it before retrying, or install
 every prerequisite printed by the verifier yourself.
 
+## A named release hop was interrupted
+
+`pleb update --to` writes private active-state and selector identity under
+`~/.local/gpu_terminal/pleb/state/release-hop/` before it selects a target.
+Every normal error and handled signal restores the previous closure and stack
+before returning. If power loss or an uncatchable process kill leaves the
+durable phase as `selecting` or `selected`, the next mutating `pleb update`
+detects it before doing new work, invokes the exact cached target selector's
+rollback, reconciles the previous component refs, and removes the pending
+marker only after both succeed.
+
+Inspect the selected and previous closure without changing it with:
+
+```sh
+pleb update --show
+pleb update --rollback
+```
+
+Rollback is exactly one generation. On a standalone install, the closure
+transaction records are below the same `release-hop` state directory. On a
+Plebian-OS image they remain under `/var/lib/plebian-os/closure-rollback.*`.
+Do not delete those records or hand-edit `closure.env` while recovery is
+pending. If automatic recovery reports an incomplete closure or stack status,
+stop: its message names the retained directory and the F109 recovery owner.
+
 ## Debian/Ubuntu fallback for only libxxhash
 
 ```sh

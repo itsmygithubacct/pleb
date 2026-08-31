@@ -18,6 +18,19 @@ closure and acceptance evidence are owned by Plebian-OS in
   A checkout snapshot is capped at 1 GiB with a 64 MiB free-space reserve, and
   the last ten verified snapshots per checkout are retained. Updates never run
   Git's destructive clean operation or advise removing untracked work.
+- **Ship coordinated release hops for image and standalone installs.**
+  `pleb update --show`, `--to`, `--latest`, `--dry-run`, and one-generation
+  `--rollback` execute the selector from the exact published target tag,
+  enforce adjacent-hop policy, bind offline use to a recorded tag object,
+  verify public component commits, and report downgrade/divergence explicitly.
+  Managed images delegate to the target OS updater; standalone machines use a
+  private object cache and need neither an OS checkout nor installed OS tools.
+- **Separate operator choices from release pins.** Both runtime readers load
+  `session.env` plus `closure.env`; selection transactionally migrates release
+  keys into root-owned mode-0644 image configuration or user-owned mode-0600
+  standalone configuration while retaining comments and operator settings.
+  A durable outer phase record and the selector/component transactions restore
+  the previous coherent generation after failure or an interrupted hop.
 
 ## 0.2.0 — Unreleased
 

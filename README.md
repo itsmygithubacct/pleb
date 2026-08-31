@@ -368,12 +368,56 @@ root-owned or is writable by group/other users.
 ## Updating the stack
 
 ```sh
-pleb update              # fetch latest kilix + pleb, ff-only, rebuild the fork, offer restart
+pleb update              # revalidate the selected closure; never drift to a newer release
+pleb update --show       # print every selected release value and the file that supplied it
+pleb update --to 0.2.1 --dry-run # validate and report the exact published target; write no installed state
+pleb update --to 0.2.1   # select and apply one named, supported release hop
+pleb update --latest     # select the newest release only when that is an accepted adjacent hop
+pleb update --rollback   # restore the immediately previous closure and stack (one generation)
 pleb update -y           # ...and restart an active Pleb kiosk without asking
 pleb update --restart    # explicitly restart an active kiosk; never prompts
 pleb update --no-restart # update only; leave LightDM alone
 pleb update --preserve-only # verified snapshots only; move no checkout
 ```
+
+`--to` and `--latest` execute the selector extracted from the target's exact
+published Plebian-OS tag. They never read closure bytes from a branch or from a
+working tree. Pleb records and checks the remote tag-object identity, validates
+the manifest with that target selector, proves each exact component commit is
+reachable from an advertised public head or tag (fetch-by-SHA alone is not
+publication), compares component direction, and reports `DOWNGRADE` or `DIVERGED`
+without hiding it behind a rising release number. Release tags are currently
+unsigned; the explicit trust anchor is the tag object advertised by the
+configured HTTPS Git remote. Offline selection is allowed only after that
+exact object identity has been recorded in Pleb's private cache.
+
+The default supported path is one published release at a time. If `--latest`
+would skip a published release, it refuses and prints the exact adjacent
+`pleb update --to ...` command it will accept. A direct skip is allowed only
+when `upgrade-policy.json` names that start/target pair. A bare `pleb update`
+keeps its historical revalidation behavior; when a newer release exists it
+says so and names `--latest`, and when the publication check is offline it says
+the check was unknown instead of reporting the installation as current.
+
+Release-controlled pins no longer share an editable file with operator choices.
+On a Plebian-OS image, the selector migrates pins to root-owned mode-0644
+`/etc/pleb/closure.env`; on a standalone install they move to user-owned
+mode-0600 `~/.local/gpu_terminal/pleb/config/closure.env`. The adjacent
+`session.env` keeps comments, unknown keys, paths, kiosk settings, and other
+operator choices. Both the CLI and login session read the same pair, with an
+explicit process environment still taking precedence. Migration and rollback
+replace the pair transactionally, retain one prior generation, and leave a
+durable recovery record before the first write. Hand-editing `closure.env` is
+unsupported; use `pleb update` so the complete coordinated closure moves as a
+unit.
+
+The same command serves both installation shapes. A managed Plebian-OS image
+delegates the selected closure to the target `plebian-os-update`; a standalone
+Debian installation uses a private bare Plebian-OS object cache under
+`$PLEB_CACHE_HOME`, deploys no OS updater, and applies the selected Pleb, Kilix,
+and optional provider refs through Pleb's existing preservation transaction.
+No `/etc/pleb/session.env`, Plebian-OS source checkout, or installed
+`plebian-os-*` command is required for the standalone shape.
 
 `pleb update` fast-forwards or pins `~/.local/gpu_terminal/sources/kilix`, updates the optional
 `~/.local/gpu_terminal/sources/kilix-desktops/kilix-95`
