@@ -490,7 +490,15 @@ checkout_fetched_ref() {
         before_move="${5:-}" resolved actual before
     before="$(git -C "$dir" rev-parse --verify HEAD 2>/dev/null || true)"
     log "fetching exact $label ref $ref from origin"
-    git -C "$dir" fetch --no-tags origin "$ref" \
+    # reconcile_kilix_submodules sets submodule.recurse=true on this repository,
+    # and that setting applies to fetch as well as checkout. A recursive fetch
+    # resolves the gitlinks of every commit it brings down, not just $ref, so a
+    # submodule commit that some ANCESTOR once pointed at must still be servable
+    # -- and it is not, once that submodule rewrites history. The checkout below
+    # already opts out for this reason; the fetch has to as well, or an orphaned
+    # gitlink anywhere in the fetched history fails the whole upgrade.
+    git -C "$dir" -c submodule.recurse=false fetch \
+        --no-tags --no-recurse-submodules origin "$ref" \
         || die "$label fetch failed for ref $ref"
     resolved="$(git -C "$dir" rev-parse --verify 'FETCH_HEAD^{commit}' 2>/dev/null)" \
         || die "fetched $label ref $ref did not resolve to a commit"
