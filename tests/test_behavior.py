@@ -7,6 +7,7 @@ import shutil
 import signal
 import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
 import textwrap
@@ -16,6 +17,13 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# The suite's one environment sanitiser lives beside these modules. The tests
+# are run both as `discover -s tests` (bare module names) and as
+# `-m unittest tests.<module>` (package), so name its directory explicitly
+# rather than relying on either style's import roots.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _env_support import clean_env as _clean_env, world_writable_ancestor  # noqa: E402
 # Kilix deliberately launches with a private umask. Tests that create public
 # safety-sentinel directories must not inherit that interactive shell policy.
 os.umask(0o022)
@@ -33,37 +41,7 @@ COORDINATED_STORAGE_VARS = (
 
 
 def clean_env(home: Path) -> dict[str, str]:
-    env = os.environ.copy()
-    for key in list(env):
-        # BASH_FUNC_* carries *exported shell functions* into every child
-        # bash. Leaving them in means an operator who happens to have, say,
-        # `export -f tb` in their session silently changes what the probes
-        # under test can see -- the suite would then pass or fail on ambient
-        # state it never declared. A sanitizer that keeps them is not clean.
-        if key.startswith(("GPU_TERMINAL", "KILIX", "PLEB", "BASH_FUNC_")):
-            env.pop(key)
-    env["HOME"] = str(home)
-    env["GOTELEMETRY"] = "off"
-    env["PLEB_ENV_SYSTEM"] = str(home / "missing-system.env")
-    env["PLEB_ENV_USER"] = str(home / "missing-user.env")
-    return env
-
-
-def world_writable_ancestor(path: Path) -> Path | None:
-    """First ancestor of *path* (inclusive) that is group/world-writable.
-
-    The go-cache preflight walks ancestry and refuses at the first such
-    component, so a test asserting a *leaf* rule only reaches that rule when
-    every ancestor is already clean.
-    """
-    for candidate in [path, *path.parents]:
-        try:
-            mode = candidate.stat().st_mode
-        except OSError:
-            continue
-        if mode & (stat.S_IWGRP | stat.S_IWOTH):
-            return candidate
-    return None
+    return _clean_env(home, GOTELEMETRY="off")
 
 
 def write_executable(path: Path, content: str) -> None:
