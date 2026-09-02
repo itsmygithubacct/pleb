@@ -553,7 +553,14 @@ case "${PLEB_CLIPBOARD:-auto}" in
             _wanted="CLIPBOARD PRIMARY"
             [ "${PLEB_CLIPBOARD:-auto}" = clipboard ] && _wanted="CLIPBOARD"
             for _sel in $_wanted; do
-                if pgrep -u "$(id -u)" -fx "autocutsel -selection $_sel" \
+                # -f, not -fx: the forked process keeps its argv, so its line
+                # is "autocutsel -selection CLIPBOARD -fork" (or a full path),
+                # and an exact-line match without "-fork" can never succeed --
+                # which started a duplicate holder on every login. Anchored to
+                # the start of the line, so a shell whose command text merely
+                # contains these words (an editor, a test harness) is not
+                # mistaken for the holder.
+                if pgrep -u "$(id -u)" -f "^([^ ]*/)?autocutsel -selection $_sel( |\$)" \
                         >/dev/null 2>&1; then
                     echo "--- clipboard: autocutsel already holds $_sel ---"
                 else
