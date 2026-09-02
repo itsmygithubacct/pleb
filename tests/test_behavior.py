@@ -35,13 +35,35 @@ COORDINATED_STORAGE_VARS = (
 def clean_env(home: Path) -> dict[str, str]:
     env = os.environ.copy()
     for key in list(env):
-        if key.startswith(("GPU_TERMINAL", "KILIX", "PLEB")):
+        # BASH_FUNC_* carries *exported shell functions* into every child
+        # bash. Leaving them in means an operator who happens to have, say,
+        # `export -f tb` in their session silently changes what the probes
+        # under test can see -- the suite would then pass or fail on ambient
+        # state it never declared. A sanitizer that keeps them is not clean.
+        if key.startswith(("GPU_TERMINAL", "KILIX", "PLEB", "BASH_FUNC_")):
             env.pop(key)
     env["HOME"] = str(home)
     env["GOTELEMETRY"] = "off"
     env["PLEB_ENV_SYSTEM"] = str(home / "missing-system.env")
     env["PLEB_ENV_USER"] = str(home / "missing-user.env")
     return env
+
+
+def world_writable_ancestor(path: Path) -> Path | None:
+    """First ancestor of *path* (inclusive) that is group/world-writable.
+
+    The go-cache preflight walks ancestry and refuses at the first such
+    component, so a test asserting a *leaf* rule only reaches that rule when
+    every ancestor is already clean.
+    """
+    for candidate in [path, *path.parents]:
+        try:
+            mode = candidate.stat().st_mode
+        except OSError:
+            continue
+        if mode & (stat.S_IWGRP | stat.S_IWOTH):
+            return candidate
+    return None
 
 
 def write_executable(path: Path, content: str) -> None:
@@ -3147,6 +3169,17 @@ do_install
     def test_go_cache_preflight_rejects_traversal_and_unsafe_external_paths(self):
         # External-cache ancestry deliberately cannot live below /tmp: that
         # shared world-writable component is exactly what the preflight rejects.
+        # That makes this test's own $HOME a precondition, not a detail: if
+        # HOME itself sits below such a component the preflight stops there,
+        # long before the leaf rules asserted below. Say that plainly instead
+        # of failing an assertion that looks unrelated to the real cause.
+        unsafe = world_writable_ancestor(Path.home())
+        if unsafe is not None:
+            self.skipTest(
+                f"$HOME sits below a group/world-writable component ({unsafe}); "
+                "the preflight refuses at that ancestor before reaching the "
+                "leaf rules this test asserts"
+            )
         with tempfile.TemporaryDirectory(dir=Path.home()) as td:
             tmp = Path(td)
 
