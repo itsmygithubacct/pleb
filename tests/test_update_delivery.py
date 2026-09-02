@@ -16,6 +16,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -24,19 +25,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# The suite's one environment sanitiser lives beside these modules. The tests
+# are run both as `discover -s tests` (bare module names) and as
+# `-m unittest tests.<module>` (package), so name its directory explicitly
+# rather than relying on either style's import roots.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _env_support import clean_env as _clean_env  # noqa: E402
+
 
 def clean_env(home: Path) -> dict[str, str]:
-    env = os.environ.copy()
-    for key in list(env):
-        if key.startswith(("GPU_TERMINAL", "KILIX", "PLEB")):
-            env.pop(key)
-    env["HOME"] = str(home)
-    env["PLEB_ENV_SYSTEM"] = str(home / "missing-system.env")
-    env["PLEB_ENV_USER"] = str(home / "missing-user.env")
     # The system session launcher of the developer's own machine must never be
     # what a test compares against.
-    env["SESSION_BIN_DST"] = str(home / "no-such-session-launcher")
-    return env
+    return _clean_env(
+        home, SESSION_BIN_DST=str(home / "no-such-session-launcher")
+    )
 
 
 def git(*argv: str, cwd: Path | None = None) -> str:

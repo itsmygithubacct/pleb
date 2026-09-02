@@ -1,6 +1,7 @@
 import os
 import stat
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -8,6 +9,13 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# The suite's one environment sanitiser lives beside these modules. The tests
+# are run both as `discover -s tests` (bare module names) and as
+# `-m unittest tests.<module>` (package), so name its directory explicitly
+# rather than relying on either style's import roots.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _env_support import clean_env as _clean_env  # noqa: E402
 # Keep directory-mode assertions deterministic when invoked from Kilix, whose
 # runtime shell uses a private umask.
 os.umask(0o022)
@@ -15,18 +23,7 @@ CATEGORIES = ("config", "state", "cache", "session", "data")
 
 
 def clean_env(home: Path) -> dict[str, str]:
-    env = os.environ.copy()
-    for key in list(env):
-        if key.startswith(("GPU_TERMINAL", "KILIX", "PLEB")):
-            env.pop(key)
-    env.update(
-        {
-            "HOME": str(home),
-            "PLEB_ENV_SYSTEM": str(home / "missing-system.env"),
-            "PLEB_ENV_USER": str(home / "missing-user.env"),
-        }
-    )
-    return env
+    return _clean_env(home)
 
 
 def mode(path: Path) -> int:
