@@ -45,6 +45,11 @@
 #   PLEB_BG           root window solid colour     (default: #101010)
 #   PLEB_LOG          session log file (default: ~/.local/gpu_terminal/pleb/state/session.log)
 #   PLEB_RESPAWN      if =1, relaunch kilix if it exits (kiosk mode); default off
+#   PLEB_CLIPBOARD    clipboard manager policy     (default: auto)
+#                     auto      hold CLIPBOARD and PRIMARY, which also keeps
+#                               them in step with each other
+#                     clipboard hold CLIPBOARD only; PRIMARY stays independent
+#                     off       hold neither; copied content dies with the app
 #   PLEB_DESKTOP      if truthy, boot straight into `kilix desktop` instead of
 #                     a bare shell; default off
 #   KILIX_REF         optional full Kilix commit SHA for update/install flows
@@ -523,6 +528,46 @@ fi
 if command -v dbus-update-activation-environment >/dev/null 2>&1; then
     dbus-update-activation-environment --systemd DISPLAY XAUTHORITY 2>/dev/null || true
 fi
+
+# --- clipboard ownership -----------------------------------------------------
+# X has no clipboard *store*. A selection is owned by a live client and its
+# content is transferred on demand, so when the owning client exits the
+# selection ceases to exist: copy in a browser, close it, paste anywhere ->
+# nothing. Full desktops hide this behind a clipboard manager; a bare Openbox
+# session has none.
+#
+# autocutsel holds a selection on the session's behalf, so copied content
+# outlives the app that produced it. One process serves one selection, hence
+# two. Both keep their selection in step with CUTBUFFER0, which has the side
+# effect of syncing PRIMARY and CLIPBOARD -- so a mouse selection also becomes
+# the paste buffer. That is the usual expectation on a desktop, but it IS a
+# behaviour change, so PLEB_CLIPBOARD=off turns the whole thing off and
+# PLEB_CLIPBOARD=clipboard takes only CLIPBOARD and leaves PRIMARY independent.
+#
+# Best-effort throughout: a no-op when autocutsel is absent, which is every
+# install made before it joined the desktop package group.
+case "${PLEB_CLIPBOARD:-auto}" in
+    off|0|none) ;;
+    *)
+        if command -v autocutsel >/dev/null 2>&1; then
+            _wanted="CLIPBOARD PRIMARY"
+            [ "${PLEB_CLIPBOARD:-auto}" = clipboard ] && _wanted="CLIPBOARD"
+            for _sel in $_wanted; do
+                if pgrep -u "$(id -u)" -fx "autocutsel -selection $_sel" \
+                        >/dev/null 2>&1; then
+                    echo "--- clipboard: autocutsel already holds $_sel ---"
+                else
+                    echo "--- clipboard: holding $_sel (autocutsel) ---"
+                    autocutsel -selection "$_sel" -fork 2>/dev/null || true
+                fi
+            done
+            unset _sel _wanted
+        else
+            echo "--- clipboard: autocutsel absent; copied content will not" \
+                 "outlive the app that copied it ---"
+        fi
+        ;;
+esac
 
 # --- kiosk display setup -----------------------------------------------------
 # no screen blanking, no DPMS power-off, solid background.
