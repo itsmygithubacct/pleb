@@ -7,6 +7,7 @@ drive bin/pleb-session with a recording stub in place of autocutsel.
 """
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -104,6 +105,42 @@ class ClipboardOwnershipTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             _, calls, _log = self._run(Path(td), with_autocutsel=True)
             self.assertTrue(calls, "the recording stub captured nothing at all")
+
+
+class AlreadyRunningCheckTests(unittest.TestCase):
+    """The session must recognise a holder it started last login."""
+
+    def _pattern(self):
+        text = SESSION.read_text()
+        start = text.index('pgrep -u "$(id -u)" -f "')
+        pattern = text[start:].split('"')[3]     # [1] is $(id -u); the pattern follows -f
+        # In the script the dollar is escaped for the shell (\\$); pgrep sees $.
+        return pattern.replace("$_sel", "CLIPBOARD").replace("\\$", "$")
+
+    def test_the_check_uses_a_pattern_match_not_an_exact_line(self):
+        self.assertNotIn('-fx "autocutsel', SESSION.read_text())
+
+    def test_the_pattern_matches_a_forked_holder_as_ps_shows_it(self):
+        pattern = self._pattern()
+        for line in ("autocutsel -selection CLIPBOARD -fork",
+                     "/usr/bin/autocutsel -selection CLIPBOARD -fork",
+                     "autocutsel -selection CLIPBOARD"):
+            self.assertIsNotNone(re.search(pattern, line), (pattern, line))
+
+    def test_the_control_the_other_selection_does_not_match(self):
+        pattern = self._pattern()
+        self.assertIsNone(re.search(pattern, "autocutsel -selection PRIMARY -fork"))
+        self.assertIsNone(re.search(pattern, "autocutsel -selection CLIPBOARDX -fork"))
+
+    def test_a_shell_merely_mentioning_the_holder_is_not_the_holder(self):
+        # pgrep -f sees every process's whole command line. An editor or a
+        # test harness running a script that contains these words must not
+        # count as a running holder, or the session would never start one.
+        # It did, once: the first version of this check matched the very
+        # harness running these tests.
+        pattern = self._pattern()
+        self.assertIsNone(re.search(
+            pattern, "bash -c 'grep autocutsel -selection CLIPBOARD -fork x'"))
 
 
 class PackagingTests(unittest.TestCase):
