@@ -8,9 +8,11 @@ drive bin/pleb-session with a recording stub in place of autocutsel.
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -141,6 +143,70 @@ class AlreadyRunningCheckTests(unittest.TestCase):
         pattern = self._pattern()
         self.assertIsNone(re.search(
             pattern, "bash -c 'grep autocutsel -selection CLIPBOARD -fork x'"))
+
+
+class DisplayScopeTests(unittest.TestCase):
+    """A holder on another display is not a holder on this one."""
+
+    @classmethod
+    def setUpClass(cls):
+        # The fake holder must show EXACTLY "autocutsel -selection CLIPBOARD
+        # -fork" as its command line and stay alive. No shell utility ignores
+        # its arguments and lives -- sleep, tail and cat all reject "-selection"
+        # and exit, which left an earlier version of this test with no holder
+        # at all and a control that could not fail. Three lines of C do it.
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.holder_bin = Path(cls.tmp.name) / "holder"
+        src = Path(cls.tmp.name) / "holder.c"
+        src.write_text("#include <unistd.h>\nint main(void){pause();return 0;}\n")
+        if shutil.which("gcc") is None:
+            cls.holder_bin = None
+            return
+        subprocess.run(["gcc", "-o", str(cls.holder_bin), str(src)], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def _run_with_holder_on(self, display_of_holder, session_display):
+        if self.holder_bin is None:
+            self.skipTest("no C compiler to build a fake holder with the real command line")
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            holder = subprocess.Popen(
+                ["autocutsel", "-selection", "CLIPBOARD", "-fork"],
+                executable=str(self.holder_bin),          # argv[0] is the name pgrep sees
+                env={**os.environ, "DISPLAY": display_of_holder},
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                time.sleep(0.3)
+                self.assertIsNone(holder.poll(), "the fake holder did not stay alive")
+                record = home / "calls.log"
+                stubs = home / "stubs"; stubs.mkdir()
+                (stubs / "autocutsel").write_text(
+                    "#!/bin/sh\n" f'printf "%s\\n" "$*" >>"{record}"\n' "exit 0\n")
+                (stubs / "autocutsel").chmod(0o755)
+                engine = home / "kilix"; engine.write_text("#!/bin/sh\nexit 0\n"); engine.chmod(0o755)
+                env = clean_env(home)
+                env.update({"KILIX": str(engine), "PLEB_NO_FILL": "1",
+                            "PATH": f"{stubs}{os.pathsep}/usr/bin{os.pathsep}/bin",
+                            "PLEB_LOG": str(home / "session.log"),
+                            "DISPLAY": session_display, "PLEB_CLIPBOARD": "clipboard"})
+                subprocess.run([str(SESSION)], cwd=ROOT, env=env, text=True, capture_output=True)
+                log = (home / "session.log").read_text() if (home / "session.log").exists() else ""
+                return (record.read_text().splitlines() if record.exists() else []), log
+            finally:
+                holder.kill(); holder.wait()
+
+    def test_a_holder_on_another_display_does_not_count(self):
+        calls, log = self._run_with_holder_on(":97", ":98")
+        self.assertIn("-selection CLIPBOARD -fork", calls, log)
+
+    def test_the_control_a_holder_on_this_display_does_count(self):
+        calls, log = self._run_with_holder_on(":97", ":97")
+        self.assertNotIn("-selection CLIPBOARD -fork", calls, log)
+        self.assertIn("already holds CLIPBOARD on :97", log)
 
 
 class PackagingTests(unittest.TestCase):
