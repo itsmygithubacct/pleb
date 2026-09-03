@@ -560,15 +560,25 @@ case "${PLEB_CLIPBOARD:-auto}" in
                 # the start of the line, so a shell whose command text merely
                 # contains these words (an editor, a test harness) is not
                 # mistaken for the holder.
-                if pgrep -u "$(id -u)" -f "^([^ ]*/)?autocutsel -selection $_sel( |\$)" \
-                        >/dev/null 2>&1; then
-                    echo "--- clipboard: autocutsel already holds $_sel ---"
+                # ...and scoped to THIS display: a holder on :0 must not count
+                # for a session nested in Xephyr (`pleb test`) or on a stream
+                # Xvfb. pgrep cannot filter by environment, so each candidate's
+                # DISPLAY is read from /proc.
+                _held=0
+                for _pid in $(pgrep -u "$(id -u)" -f "^([^ ]*/)?autocutsel -selection $_sel( |\$)" 2>/dev/null); do
+                    if tr '\0' '\n' <"/proc/$_pid/environ" 2>/dev/null \
+                            | grep -qx "DISPLAY=${DISPLAY:-}"; then
+                        _held=1; break
+                    fi
+                done
+                if [ "$_held" = 1 ]; then
+                    echo "--- clipboard: autocutsel already holds $_sel on $DISPLAY ---"
                 else
                     echo "--- clipboard: holding $_sel (autocutsel) ---"
                     autocutsel -selection "$_sel" -fork 2>/dev/null || true
                 fi
             done
-            unset _sel _wanted
+            unset _sel _wanted _pid _held
         else
             echo "--- clipboard: autocutsel absent; copied content will not" \
                  "outlive the app that copied it ---"
