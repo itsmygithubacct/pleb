@@ -220,13 +220,18 @@ provision_tb_shell_alias() {
         return 0
     fi
     existing_kind="$(type -t tb || true)"
-    if [ -n "$existing_kind" ]; then
-        existing_path="$(command -v tb || true)"
-        warn "tb already exists as a $existing_kind${existing_path:+ ($existing_path)}; skipping the tb shell alias"
-        return 0
-    fi
+    existing_path="$(command -v tb || true)"
+    # This install's own tmux-cli command is the expected holder of the name,
+    # including its published link on PATH: not a conflict, so no warning.
     if [ -x "$TMUX_CLI_BIN" ] || [ -e "$TMUX_CLI_LINK" ] || [ -L "$TMUX_CLI_LINK" ]; then
-        warn "tb already exists as an installed command ($TMUX_CLI_BIN or $TMUX_CLI_LINK); skipping the tb shell alias"
+        if [ -z "$existing_kind" ] || [ "$existing_path" = "$TMUX_CLI_BIN" ] \
+            || [ "$existing_path" = "$TMUX_CLI_LINK" ]; then
+            log "tb is provided by the installed tmux-cli command ($TMUX_CLI_BIN or $TMUX_CLI_LINK); no shell alias needed"
+            return 0
+        fi
+    fi
+    if [ -n "$existing_kind" ]; then
+        warn "tb already exists as a $existing_kind${existing_path:+ ($existing_path)}; skipping the tb shell alias"
         return 0
     fi
     # The aliases file is the user's own dotfile. Never write through a
