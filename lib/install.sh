@@ -55,7 +55,7 @@ ensure_system_deps() {
         pulseaudio pulseaudio-utils pulsemixer alsa-utils ffmpeg xauth zenity
         zstd espeak-ng
         dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
-        fluidsynth fluid-soundfont-gm
+        libfluidsynth3 fluid-soundfont-gm
     )
     _install_missing_apt_packages "Pleb runtime dependencies" "${deps[@]}"
     # Read-aloud's optional quality tier: `mbrola` is contrib and its voice
