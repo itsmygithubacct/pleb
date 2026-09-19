@@ -68,6 +68,14 @@ _pleb_config_safe_to_source() {
 # silently reinstates whatever the persisted pin says.
 declare -A PLEB_ENV_ORIGIN=()
 
+# What the persisted files would have decided, for a value the environment then
+# overrode. The environment still wins — this exists only so an override can
+# name the state it is masking, because that state is what the next plain
+# update will reinstate.
+declare -A PLEB_ENV_PERSISTED=()
+declare -A PLEB_ENV_PERSISTED_ORIGIN=()
+declare -A PLEB_ENV_SUPPLIED_BY=()
+
 # The selector owns closure validation; this list is the shared read/report
 # surface.  Keeping it here makes `pleb update --show` and the login launcher
 # consume the same split closure without teaching the updater a second
@@ -108,11 +116,20 @@ load_pleb_session_env() {
                 if [ "${had[$var]}" = 0 ] && [[ ${!var+x} ]]; then
                     PLEB_ENV_ORIGIN[$var]="$cfg"
                 fi
+                # Tracked whether or not the environment will win, because an
+                # override has to be able to name the file to edit.
+                if [[ ${!var+x} ]]; then
+                    PLEB_ENV_SUPPLIED_BY[$var]="$cfg"
+                fi
             done
         fi
     done
     for var in $vars; do
         if [ "${had[$var]}" = 1 ]; then
+            if [[ ${!var+x} ]] && [ "${!var}" != "${saved[$var]}" ]; then
+                PLEB_ENV_PERSISTED[$var]="${!var}"
+                PLEB_ENV_PERSISTED_ORIGIN[$var]="${PLEB_ENV_SUPPLIED_BY[$var]:-a persisted file}"
+            fi
             printf -v "$var" '%s' "${saved[$var]}"
             PLEB_ENV_ORIGIN[$var]="the environment"
         elif [ "$var" = PLEB_UPDATE_LOCK_FD ] \
@@ -482,7 +499,24 @@ announce_component_move() {
         warn "$label: the installed commit was newer; export ${ref_name:-the ref} to keep it"
     else
         log "$label: ${before:0:12} -> ${after:0:12} (pinned by $origin)"
+        _warn_override_masks_persisted_pin "$label" "$ref_name" "$origin" "$after"
     fi
+}
+
+# An override that moves a component FORWARD leaves the machine installed-new
+# and pinned-old, and says nothing. The rewind warning above fires only once the
+# damage is done, which is the wrong moment to learn this. Say it here, while
+# the operator is still at the keyboard and can persist the pin.
+_warn_override_masks_persisted_pin() {
+    local label="$1" ref_name="$2" origin="$3" after="$4" persisted persisted_from
+    [ "$origin" = "the environment" ] || return 0
+    [ -n "$ref_name" ] || return 0
+    persisted="${PLEB_ENV_PERSISTED[$ref_name]:-}"
+    [ -n "$persisted" ] && [ "$persisted" != "$after" ] || return 0
+    persisted_from="${PLEB_ENV_PERSISTED_ORIGIN[$ref_name]:-a persisted file}"
+    warn "$label: $ref_name is still ${persisted:0:12} in $persisted_from"
+    warn "$label: this machine is now installed at ${after:0:12} but pinned to ${persisted:0:12}"
+    warn "$label: a plain 'pleb update' will walk it back; persist the pin to keep this"
 }
 
 checkout_fetched_ref() {

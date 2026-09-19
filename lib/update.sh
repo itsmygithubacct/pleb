@@ -1343,7 +1343,8 @@ _update_pleb_self() {
     log "the new pleb runs from the next 'pleb' command onwards."
     if [ -x "$SESSION_BIN_DST" ] && ! cmp -s "$PLEB_BIN_SRC" "$SESSION_BIN_DST"; then
         warn "the installed session launcher $SESSION_BIN_DST is now stale"
-        warn "publish it with 'pleb install' (needs root) before the next login"
+        warn "publish it with 'pleb install' before the next login"
+        warn "run it as your desktop user; it asks for root only where it needs it"
     fi
 }
 

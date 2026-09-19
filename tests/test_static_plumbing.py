@@ -665,6 +665,37 @@ ensure_system_deps
         )
         self.assertNotIn('PLEB_KILIX_ARGS="${PLEB_KILIX_ARGS:---start-as=fullscreen}"', text)
 
+    def test_no_advice_sends_the_operator_to_run_pleb_install_as_root(self):
+        """`pleb install` refuses to run as root, so no advice may ask for it.
+
+        `_pleb_validate_private_storage_layout` dies on uid 0 — private storage
+        has to be managed by the desktop user, and the privileged steps escalate
+        one at a time through `run_root`. Two messages told the operator the
+        opposite: the usage block said "(needs sudo)" and the post-update
+        warning said "(needs root)". Following either lands on a refusal, at the
+        exact moment the operator is trying to recover a stale launcher.
+        """
+        guard = (ROOT / "lib" / "storage.sh").read_text()
+        self.assertIn(
+            "must be managed as the desktop user; run Pleb without sudo", guard,
+            "the guard this test reasons about has moved; re-check the advice",
+        )
+
+        sources = [ROOT / "bin" / "pleb"] + sorted((ROOT / "lib").glob("*.sh"))
+        offenders = []
+        for path in sources:
+            for lineno, line in enumerate(path.read_text().splitlines(), 1):
+                if "pleb install" not in line:
+                    continue
+                low = line.lower()
+                if "needs sudo" in low or "needs root" in low or "sudo pleb install" in low:
+                    offenders.append("%s:%d: %s" % (path.name, lineno, line.strip()))
+        self.assertEqual(
+            [], offenders,
+            "advice tells the operator to run 'pleb install' with elevated "
+            "privileges, which storage.sh refuses:\n" + "\n".join(offenders),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # pleb — manage the "Pleb" kilix kiosk desktop session.
 #
-#   pleb install            add "Pleb" as a choosable LightDM session (needs sudo)
+#   pleb install            add "Pleb" as a choosable LightDM session (run as you)
 #   pleb uninstall          remove it
 #   pleb test [opts]        try it in a throwaway X server (see: pleb test --help)
 #   pleb autologin on|off   boot straight into Pleb (kiosk) / back to greeter
