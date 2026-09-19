@@ -536,37 +536,40 @@ class OverrideMasksPersistedPinTests(unittest.TestCase):
         run("git", "commit", "-qam", "b")
         new = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, text=True,
                              capture_output=True).stdout.strip()
-        cfg = Path(tmp) / "cfg"
-        cfg.mkdir()
-        session = cfg / "session.env"
-        session.write_text("PLEB_REF=%s\n" % old)
-        session.chmod(0o600)
-        return repo, session, old, new
+        return repo, old, new
 
-    def _announce(self, repo, session, old, new, override):
-        env = dict(os.environ)
-        env.update({
-            "PLEB_ENV_USER": str(session),
-            "PLEB_ENV_SYSTEM": "/nonexistent",
-            "PLEB_CLOSURE_SYSTEM": "/nonexistent",
-            "PLEB_CODE_ROOT": str(ROOT),
-        })
+    def _config(self, tmp, name, text):
+        path = Path(tmp) / "cfg" / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(text)
+        path.chmod(0o600)
+        return path
+
+    def _announce(self, tmp, repo, old, new, override, **files):
+        # clean_env drops every PLEB_* name the developer's session carries.
+        # Each of the four files this layout does not use names a path that
+        # does not exist.
+        env = clean_env(Path(tmp))
+        for name in ("PLEB_ENV_SYSTEM", "PLEB_ENV_USER",
+                     "PLEB_CLOSURE_SYSTEM", "PLEB_CLOSURE_USER"):
+            env[name] = str(files.get(name, Path(tmp) / ("absent-" + name)))
+        env["PLEB_CODE_ROOT"] = str(ROOT)
         if override:
             env["PLEB_REF"] = new
-        else:
-            env.pop("PLEB_REF", None)
         script = (
             '. "$PLEB_CODE_ROOT/lib/common.sh"\n'
             'announce_component_move "%s" pleb "%s" "%s" PLEB_REF\n' % (repo, old, new)
         )
-        return subprocess.run(["bash", "-c", script], cwd=ROOT, env=env,
-                              text=True, capture_output=True)
+        out = subprocess.run(["bash", "-c", script], cwd=ROOT, env=env,
+                             text=True, capture_output=True)
+        return out.stdout + out.stderr
 
     def test_a_forward_override_names_the_file_that_still_holds_the_old_pin(self):
         with tempfile.TemporaryDirectory() as tmp:
-            repo, session, old, new = self._fixture(tmp)
-            out = self._announce(repo, session, old, new, override=True)
-            combined = out.stdout + out.stderr
+            repo, old, new = self._fixture(tmp)
+            session = self._config(tmp, "session.env", "PLEB_REF=%s\n" % old)
+            combined = self._announce(tmp, repo, old, new, True,
+                                      PLEB_ENV_USER=session)
             self.assertIn("pinned by the environment", combined)
             # Names the exact file, because "a persisted file" is not actionable.
             self.assertIn(str(session), combined)
@@ -575,11 +578,59 @@ class OverrideMasksPersistedPinTests(unittest.TestCase):
 
     def test_a_move_decided_by_the_file_itself_stays_quiet(self):
         with tempfile.TemporaryDirectory() as tmp:
-            repo, session, old, new = self._fixture(tmp)
-            out = self._announce(repo, session, old, new, override=False)
-            combined = out.stdout + out.stderr
+            repo, old, new = self._fixture(tmp)
+            session = self._config(tmp, "session.env", "PLEB_REF=%s\n" % old)
+            combined = self._announce(tmp, repo, old, new, False,
+                                      PLEB_ENV_USER=session)
             self.assertNotIn("will walk it back", combined)
 
+    # The file named is the one that assigns the pin, not the last file that
+    # was read. Once the environment has set PLEB_REF it is set after every
+    # file, so that alone cannot say which file holds the masked value.
+
+    def test_the_system_pin_is_named_when_the_user_file_holds_other_choices(self):
+        # Plebian-OS keeps release refs in /etc/pleb/session.env and the
+        # operator's own choices in the per-user session.env.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, old, new = self._fixture(tmp)
+            system = self._config(tmp, "system-session.env", "PLEB_REF=%s\n" % old)
+            user = self._config(tmp, "user-session.env", "PLEB_WM=openbox\n")
+            combined = self._announce(tmp, repo, old, new, True,
+                                      PLEB_ENV_SYSTEM=system, PLEB_ENV_USER=user)
+            self.assertIn("PLEB_REF is still %s in %s" % (old[:12], system), combined)
+            self.assertNotIn(str(user), combined)
+
+    def test_a_closure_file_without_the_pin_is_not_named(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, old, new = self._fixture(tmp)
+            session = self._config(tmp, "user-session.env", "PLEB_REF=%s\n" % old)
+            closure = self._config(tmp, "user-closure.env", "KILIX_REF=%s\n" % old)
+            combined = self._announce(tmp, repo, old, new, True,
+                                      PLEB_ENV_USER=session, PLEB_CLOSURE_USER=closure)
+            self.assertIn("PLEB_REF is still %s in %s" % (old[:12], session), combined)
+            self.assertNotIn(str(closure), combined)
+
+    def test_of_two_files_holding_the_pin_the_later_one_is_named(self):
+        # The closure file loads last and decides; editing only the earlier
+        # copy would leave the machine pinned exactly as before.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, old, new = self._fixture(tmp)
+            session = self._config(tmp, "user-session.env", "PLEB_REF=%s\n" % old)
+            closure = self._config(tmp, "user-closure.env", "PLEB_REF=%s\n" % old)
+            combined = self._announce(tmp, repo, old, new, True,
+                                      PLEB_ENV_USER=session, PLEB_CLOSURE_USER=closure)
+            self.assertIn("PLEB_REF is still %s in %s" % (old[:12], closure), combined)
+            self.assertNotIn(str(session), combined)
+
+    def test_an_override_the_deciding_file_already_holds_stays_quiet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, old, new = self._fixture(tmp)
+            session = self._config(tmp, "user-session.env", "PLEB_REF=%s\n" % old)
+            closure = self._config(tmp, "user-closure.env", "PLEB_REF=%s\n" % new)
+            combined = self._announce(tmp, repo, old, new, True,
+                                      PLEB_ENV_USER=session, PLEB_CLOSURE_USER=closure)
+            self.assertIn("pinned by the environment", combined)
+            self.assertNotIn("will walk it back", combined)
 
 if __name__ == "__main__":
     unittest.main()
