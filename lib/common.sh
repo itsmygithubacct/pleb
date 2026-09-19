@@ -88,14 +88,36 @@ _pleb_value_origin() {
     printf '%s\n' "${PLEB_ENV_ORIGIN[$1]:-the built-in default}"
 }
 
+# _pleb_config_assigns CFG NAME... — print each NAME that sourcing CFG assigns,
+# for reporting only. The file is read again in a subshell with each NAME
+# holding a marker of its own, so nothing already loaded changes, and a file
+# that assigns the value already in force still counts as assigning it.
+_pleb_config_assigns() {
+    local cfg="$1" name
+    shift
+    (
+        for name in "$@"; do
+            printf -v "$name" '\001pleb-unassigned-%s\001' "$name"
+        done
+        # shellcheck source=/dev/null
+        . "$cfg" >/dev/null 2>&1 || true
+        for name in "$@"; do
+            [ "${!name-}" = $'\001pleb-unassigned-'"$name"$'\001' ] \
+                || printf '%s\n' "$name"
+        done
+    )
+}
+
 load_pleb_session_env() {
     local vars var cfg
+    local -a overridden=() assigned=()
     vars="$PLEB_RELEASE_CONTROLLED_KEYS PLEBIAN_OS_DIR PLEB_DIR PLEB_ALLOW_MUTABLE_REF PLEB_SELF_UPDATE GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_TRANSCRIPT_DIR KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL PLEB_INSTALL_KILIX95 PLEB_SKIP_DEPS PLEBIAN_OS_MANAGED_INSTALL PLEB_UPDATE_LOCK_FD KILIX_TRANSACTION_LOCK_FD KILIX_TRANSACTION_LOCK_PATH"
     declare -A had saved
     for var in $vars; do
         if [[ ${!var+x} ]]; then
             had[$var]=1
             saved[$var]="${!var}"
+            overridden+=("$var")
         else
             had[$var]=0
         fi
@@ -108,6 +130,16 @@ load_pleb_session_env() {
             "$PLEB_CLOSURE_SYSTEM" "$PLEB_CLOSURE_USER"; do
         # shellcheck source=/dev/null
         if [ -r "$cfg" ] && _pleb_config_safe_to_source "$cfg"; then
+            # An override has to be able to name the file to edit: the last
+            # file that assigns the value it masks. Once the environment has
+            # set a name, that name is set after every file, so being set
+            # proves nothing about which file assigned it.
+            if [ "${#overridden[@]}" -gt 0 ]; then
+                mapfile -t assigned < <(_pleb_config_assigns "$cfg" "${overridden[@]}")
+                for var in "${assigned[@]}"; do
+                    PLEB_ENV_SUPPLIED_BY[$var]="$cfg"
+                done
+            fi
             . "$cfg"
             # Record the last file that supplied each value. The caller's
             # environment is restored below and wins, exactly as before; this
@@ -115,11 +147,6 @@ load_pleb_session_env() {
             for var in $vars; do
                 if [ "${had[$var]}" = 0 ] && [[ ${!var+x} ]]; then
                     PLEB_ENV_ORIGIN[$var]="$cfg"
-                fi
-                # Tracked whether or not the environment will win, because an
-                # override has to be able to name the file to edit.
-                if [[ ${!var+x} ]]; then
-                    PLEB_ENV_SUPPLIED_BY[$var]="$cfg"
                 fi
             done
         fi
