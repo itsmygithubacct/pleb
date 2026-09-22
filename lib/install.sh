@@ -66,6 +66,7 @@ ensure_system_deps() {
     # add libfluidsynth-dev here either: it hard-depends on the player (a
     # versioned Depends, which --no-install-recommends cannot drop), and Amp's
     # build prerequisites belong to Kilix's own installer, not this list.
+    # tests/test_audio_dependencies.py resolves this request with apt itself.
     _install_missing_apt_packages "Pleb runtime dependencies" "${deps[@]}"
     # Read-aloud's optional quality tier: `mbrola` is contrib and its voice
     # databases are non-free, so a stock Debian with neither component enabled
