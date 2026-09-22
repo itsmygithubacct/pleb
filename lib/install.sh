@@ -55,8 +55,17 @@ ensure_system_deps() {
         pulseaudio pulseaudio-utils pulsemixer alsa-utils ffmpeg xauth zenity
         zstd espeak-ng
         dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
-        fluidsynth fluid-soundfont-gm
+        libfluidsynth3 fluid-soundfont-gm
     )
+    # Kilix Amp renders MIDI in-process through the FluidSynth *library* and a
+    # General MIDI SoundFont. It never runs the FluidSynth player and never
+    # talks to its daemon. On Debian (checked on 13) the package named
+    # `fluidsynth` is that player, and it ships a per-user unit that the
+    # package enables for every login, which then holds the default sound card
+    # that dictation records from. So name the library, not the player. Do not
+    # add libfluidsynth-dev here either: it hard-depends on the player (a
+    # versioned Depends, which --no-install-recommends cannot drop), and Amp's
+    # build prerequisites belong to Kilix's own installer, not this list.
     _install_missing_apt_packages "Pleb runtime dependencies" "${deps[@]}"
     # Read-aloud's optional quality tier: `mbrola` is contrib and its voice
     # databases are non-free, so a stock Debian with neither component enabled

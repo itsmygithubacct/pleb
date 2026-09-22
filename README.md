@@ -147,8 +147,11 @@ therefore retain their kittens-fire wallpaper default.
   including `build-essential` and `cmake` (the model store compiles its CPU
   inference runtime locally), NetworkManager's `nmtui` for the top-bar
   network/Wi-Fi widget, `pulsemixer` for its volume widget, and the
-  FluidSynth/SoundFont runtime used by kilix-amp MIDI playback (the same
-  runtime its headless backend decodes with).
+  FluidSynth library and General MIDI SoundFont used by kilix-amp MIDI
+  playback (the same runtime its headless backend decodes with). It installs
+  `libfluidsynth3`, not the `fluidsynth` player package, whose per-user
+  service Debian enables at every login and which then holds the sound card
+  that dictation needs.
   Before a fork build, `pleb update` runs Kilix's own complete cross-distro
   dependency verifier and installer (including the `libxxhash` pkg-config
   module). Set `PLEB_SKIP_DEPS=1` to prevent package-manager changes; an update
