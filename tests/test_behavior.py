@@ -2123,6 +2123,66 @@ exit "$VOICE_INSTALL_EXIT"
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse(kilix95.exists())
 
+    @staticmethod
+    def _recurse_fixture_git(*args: str, cwd: Path) -> str:
+        return subprocess.check_output(
+            ["git", "-c", "protocol.file.allow=always", "-C", str(cwd), *args],
+            text=True, stderr=subprocess.STDOUT,
+        ).strip()
+
+    def _embedded_worktree_submodule_fixture(self, tmp: Path) -> tuple[Path, str]:
+        """A parent moved one commit ahead, as a failed update leaves it.
+
+        The parent has submodule.recurse=true and an embedded-gitdir submodule
+        with a linked worktree, which a recursive checkout cannot relocate.
+        Returns the parent and the commit to roll back to.
+        """
+        git = self._recurse_fixture_git
+        source = tmp / "engine-source"
+        parent = tmp / "parent"
+        for repo in (source, parent):
+            subprocess.run(["git", "init", "-q", "-b", "main", str(repo)],
+                           check=True)
+            git("config", "user.name", "Pleb Test", cwd=repo)
+            git("config", "user.email", "pleb@example.invalid", cwd=repo)
+        (source / "engine").write_text("old\n")
+        git("add", "engine", cwd=source)
+        git("commit", "-q", "-m", "old", cwd=source)
+        git("clone", "-q", str(source), "src", cwd=parent)
+        git("submodule", "add", str(source), "src", cwd=parent)
+        for name in ("a-early", "z-late"):
+            (parent / name).write_text("old\n")
+        git("add", ".", cwd=parent)
+        git("commit", "-q", "-m", "old", cwd=parent)
+        before = git("rev-parse", "HEAD", cwd=parent)
+        git("config", "--local", "submodule.recurse", "true", cwd=parent)
+        git("worktree", "add", "-q", "--detach", str(tmp / "engine-wt"),
+            cwd=parent / "src")
+        engine = parent / "src"
+        git("config", "user.name", "Pleb Test", cwd=engine)
+        git("config", "user.email", "pleb@example.invalid", cwd=engine)
+        (engine / "engine").write_text("new\n")
+        git("commit", "-qam", "new", cwd=engine)
+        for name in ("a-early", "z-late"):
+            (parent / name).write_text("new\n")
+        git("add", ".", cwd=parent)
+        git("commit", "-q", "-m", "new", cwd=parent)
+        git("-c", "submodule.recurse=false", "checkout", "-q", "--detach",
+            "HEAD", cwd=parent)
+        return parent, before
+
+    def _assert_parent_whole_at(self, parent: Path, before: str) -> None:
+        git = self._recurse_fixture_git
+        self.assertEqual(git("rev-parse", "HEAD", cwd=parent), before)
+        self.assertEqual(git("symbolic-ref", "--short", "HEAD", cwd=parent),
+                         "main")
+        for name in ("a-early", "z-late"):
+            self.assertEqual((parent / name).read_text(), "old\n")
+        self.assertEqual(
+            git("status", "--porcelain", "--ignore-submodules=all", cwd=parent),
+            "",
+        )
+
     def test_rollback_restores_the_parent_whole_despite_submodule_recurse(self):
         # reconcile_kilix_submodules sets submodule.recurse=true on Kilix. A
         # recursive checkout that could not move an embedded submodule gitdir
@@ -2130,48 +2190,7 @@ exit "$VOICE_INSTALL_EXIT"
         # while half the parent tree had been rewritten to the old commit.
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-
-            def git(*args: str, cwd: Path) -> str:
-                return subprocess.check_output(
-                    ["git", "-c", "protocol.file.allow=always", "-C", str(cwd),
-                     *args],
-                    text=True, stderr=subprocess.STDOUT,
-                ).strip()
-
-            source = tmp / "engine-source"
-            parent = tmp / "kilix"
-            for repo in (source, parent):
-                subprocess.run(["git", "init", "-q", "-b", "main", str(repo)],
-                               check=True)
-                git("config", "user.name", "Pleb Test", cwd=repo)
-                git("config", "user.email", "pleb@example.invalid", cwd=repo)
-            (source / "engine").write_text("old\n")
-            git("add", "engine", cwd=source)
-            git("commit", "-q", "-m", "old", cwd=source)
-            # An embedded .git directory, as in a developer's engine checkout.
-            git("clone", "-q", str(source), "src", cwd=parent)
-            git("submodule", "add", str(source), "src", cwd=parent)
-            for name in ("a-early", "z-late"):
-                (parent / name).write_text("old\n")
-            git("add", ".", cwd=parent)
-            git("commit", "-q", "-m", "old", cwd=parent)
-            before = git("rev-parse", "HEAD", cwd=parent)
-            git("config", "--local", "submodule.recurse", "true", cwd=parent)
-            git("worktree", "add", "-q", "--detach", str(tmp / "engine-wt"),
-                cwd=parent / "src")
-
-            engine = parent / "src"
-            git("config", "user.name", "Pleb Test", cwd=engine)
-            git("config", "user.email", "pleb@example.invalid", cwd=engine)
-            (engine / "engine").write_text("new\n")
-            git("commit", "-qam", "new", cwd=engine)
-            for name in ("a-early", "z-late"):
-                (parent / name).write_text("new\n")
-            git("add", ".", cwd=parent)
-            git("commit", "-q", "-m", "new", cwd=parent)
-            git("-c", "submodule.recurse=false", "checkout", "-q", "--detach",
-                "HEAD", cwd=parent)
-
+            parent, before = self._embedded_worktree_submodule_fixture(tmp)
             transaction = tmp / "transaction"
             transaction.mkdir()
             (transaction / "kilix.head").write_text(before + "\n")
@@ -2194,16 +2213,33 @@ exit "$VOICE_INSTALL_EXIT"
                 capture_output=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(git("rev-parse", "HEAD", cwd=parent), before)
-            self.assertEqual(git("symbolic-ref", "--short", "HEAD", cwd=parent),
-                             "main")
-            for name in ("a-early", "z-late"):
-                self.assertEqual((parent / name).read_text(), "old\n")
-            self.assertEqual(
-                git("status", "--porcelain", "--ignore-submodules=all",
-                    cwd=parent),
-                "",
+            self._assert_parent_whole_at(parent, before)
+
+    def test_self_update_restore_does_not_recurse_either(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            parent, before = self._embedded_worktree_submodule_fixture(tmp)
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
+                . "$PLEB_CODE_ROOT/lib/common.sh"
+                . "$PLEB_CODE_ROOT/lib/update.sh"
+                # Preservation is not under test; the restore itself is.
+                _preserve_before_forced_restore() {{ :; }}
+                PLEB_ROOT={parent!s}
+                _pleb_self_update_restore {before} main
+                """
             )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self._assert_parent_whole_at(parent, before)
 
     def test_checkout_dirtied_after_the_gate_is_not_force_restored(self):
         with tempfile.TemporaryDirectory() as td:
