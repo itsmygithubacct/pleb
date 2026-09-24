@@ -3775,12 +3775,13 @@ class TbShellAliasTests(unittest.TestCase):
         return target
 
     def _provision(self, tmp: Path, *, path: str = "/usr/bin:/bin",
-                   source_home: Path | None = None) -> subprocess.CompletedProcess:
+                   source_home: Path | None = None,
+                   link: Path | None = None) -> subprocess.CompletedProcess:
         env = clean_env(tmp)
         # The host may carry a real `tb` on PATH and at the published link
         # location; both must stay invisible to the sandbox.
         env["PATH"] = path
-        env["TMUX_CLI_LINK"] = str(tmp / "absent-usr-local" / "tb")
+        env["TMUX_CLI_LINK"] = str(link or tmp / "absent-usr-local" / "tb")
         if source_home is not None:
             env["GPU_TERMINAL_SOURCE_HOME"] = str(source_home)
         script = textwrap.dedent(
@@ -3862,7 +3863,29 @@ class TbShellAliasTests(unittest.TestCase):
             write_executable(local_bin / "tb", "#!/bin/sh\nexit 0\n")
             result = self._provision(tmp, source_home=source_home)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("already exists as an installed command", result.stderr)
+            self.assertIn("provided by the installed tmux-cli command", result.stdout)
+            self.assertNotIn("tb already exists", result.stderr)
+            self.assertFalse((tmp / ".bash_aliases").exists())
+
+    def test_published_tb_link_on_path_is_not_reported_as_a_conflict(self):
+        # On a provisioned machine the published link is itself on PATH. The
+        # alias step once warned that this install's own link "already exists
+        # as a file".
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            source_home = tmp / "sources"
+            logger = self._write_stub_logger(source_home)
+            bindir = tmp / "usr-local-bin"
+            bindir.mkdir()
+            link = bindir / "tb"
+            link.symlink_to(logger)
+            result = self._provision(
+                tmp, path=f"{bindir}:/usr/bin:/bin", source_home=source_home,
+                link=link,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("tb already exists", result.stderr)
+            self.assertIn("provided by the installed tmux-cli command", result.stdout)
             self.assertFalse((tmp / ".bash_aliases").exists())
 
     def test_a_user_defined_tb_is_never_clobbered(self):
