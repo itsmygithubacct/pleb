@@ -504,6 +504,15 @@ link_command() {
             log "$label command already linked at $dest"
             return 0
         fi
+        # The same file reached through another path, e.g. a checkout that a
+        # developer layout reaches through a symlinked source directory. It is
+        # already the expected command; rewrite only the link text so later
+        # runs compare equal.
+        if [ -e "$target" ] && [ "$dest" -ef "$target" ]; then
+            log "$label command at $dest reaches $target through $existing; relinking it directly"
+            run_root ln -sfn "$target" "$dest"
+            return
+        fi
     elif [ -e "$dest" ]; then
         existing="$dest"
     fi
