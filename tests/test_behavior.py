@@ -2071,6 +2071,88 @@ exit "$VOICE_INSTALL_EXIT"
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse(kilix95.exists())
 
+    def test_rollback_restores_the_parent_whole_despite_submodule_recurse(self):
+        # reconcile_kilix_submodules sets submodule.recurse=true on Kilix. A
+        # recursive checkout that could not move an embedded submodule gitdir
+        # with linked worktrees once died part-way: HEAD stayed on the target
+        # while half the parent tree had been rewritten to the old commit.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+
+            def git(*args: str, cwd: Path) -> str:
+                return subprocess.check_output(
+                    ["git", "-c", "protocol.file.allow=always", "-C", str(cwd),
+                     *args],
+                    text=True, stderr=subprocess.STDOUT,
+                ).strip()
+
+            source = tmp / "engine-source"
+            parent = tmp / "kilix"
+            for repo in (source, parent):
+                subprocess.run(["git", "init", "-q", "-b", "main", str(repo)],
+                               check=True)
+                git("config", "user.name", "Pleb Test", cwd=repo)
+                git("config", "user.email", "pleb@example.invalid", cwd=repo)
+            (source / "engine").write_text("old\n")
+            git("add", "engine", cwd=source)
+            git("commit", "-q", "-m", "old", cwd=source)
+            # An embedded .git directory, as in a developer's engine checkout.
+            git("clone", "-q", str(source), "src", cwd=parent)
+            git("submodule", "add", str(source), "src", cwd=parent)
+            for name in ("a-early", "z-late"):
+                (parent / name).write_text("old\n")
+            git("add", ".", cwd=parent)
+            git("commit", "-q", "-m", "old", cwd=parent)
+            before = git("rev-parse", "HEAD", cwd=parent)
+            git("config", "--local", "submodule.recurse", "true", cwd=parent)
+            git("worktree", "add", "-q", "--detach", str(tmp / "engine-wt"),
+                cwd=parent / "src")
+
+            engine = parent / "src"
+            git("config", "user.name", "Pleb Test", cwd=engine)
+            git("config", "user.email", "pleb@example.invalid", cwd=engine)
+            (engine / "engine").write_text("new\n")
+            git("commit", "-qam", "new", cwd=engine)
+            for name in ("a-early", "z-late"):
+                (parent / name).write_text("new\n")
+            git("add", ".", cwd=parent)
+            git("commit", "-q", "-m", "new", cwd=parent)
+            git("-c", "submodule.recurse=false", "checkout", "-q", "--detach",
+                "HEAD", cwd=parent)
+
+            transaction = tmp / "transaction"
+            transaction.mkdir()
+            (transaction / "kilix.head").write_text(before + "\n")
+            (transaction / "kilix.branch").write_text("main\n")
+            script = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PLEB_CODE_ROOT={ROOT!s}
+                PLEB_ROOT="$PLEB_CODE_ROOT"
+                . "$PLEB_CODE_ROOT/lib/common.sh"
+                . "$PLEB_CODE_ROOT/lib/update.sh"
+                _UPDATE_TXN_DIR={transaction!s}
+                _restore_checkout_position {parent!s} kilix
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                env=clean_env(tmp),
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git("rev-parse", "HEAD", cwd=parent), before)
+            self.assertEqual(git("symbolic-ref", "--short", "HEAD", cwd=parent),
+                             "main")
+            for name in ("a-early", "z-late"):
+                self.assertEqual((parent / name).read_text(), "old\n")
+            self.assertEqual(
+                git("status", "--porcelain", "--ignore-submodules=all",
+                    cwd=parent),
+                "",
+            )
+
     def test_checkout_dirtied_after_the_gate_is_not_force_restored(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
