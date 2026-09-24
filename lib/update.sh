@@ -391,18 +391,31 @@ _assert_still_clean() {
 }
 
 _restore_checkout_position() {
-    local dir="$1" key="$2" head branch
+    local dir="$1" key="$2" head branch log_file
     [ -f "$_UPDATE_TXN_DIR/$key.head" ] || return 0
     head="$(cat "$_UPDATE_TXN_DIR/$key.head")"
     branch="$(cat "$_UPDATE_TXN_DIR/$key.branch")"
     _assert_still_clean "$dir" "$key" || return 1
+    # Never recurse: reconcile_kilix_submodules sets submodule.recurse=true on
+    # Kilix, and a recursive checkout that dies inside a submodule (an embedded
+    # gitdir with linked worktrees cannot be relocated) stops after rewriting
+    # part of the parent tree while HEAD stays on the target. The rollback
+    # restores each recorded submodule itself afterwards.
+    log_file="$_UPDATE_TXN_DIR/$key.restore.log"
     if [ -n "$branch" ]; then
-        git -C "$dir" checkout -f "$branch" >/dev/null 2>&1 \
-            && git -C "$dir" reset --hard "$head" >/dev/null 2>&1
+        git -C "$dir" -c submodule.recurse=false checkout -f "$branch" \
+            >"$log_file" 2>&1 \
+            && git -C "$dir" -c submodule.recurse=false reset --hard "$head" \
+                >>"$log_file" 2>&1
     else
-        git -C "$dir" checkout -f --detach "$head" >/dev/null 2>&1 \
-            && git -C "$dir" reset --hard "$head" >/dev/null 2>&1
-    fi
+        git -C "$dir" -c submodule.recurse=false checkout -f --detach "$head" \
+            >"$log_file" 2>&1 \
+            && git -C "$dir" -c submodule.recurse=false reset --hard "$head" \
+                >>"$log_file" 2>&1
+    fi || {
+        err "could not return $key to $head; git said: $(tail -n 3 -- "$log_file" | tr '\n' ' ')"
+        return 1
+    }
 }
 
 _deinit_new_kilix_submodule() {
