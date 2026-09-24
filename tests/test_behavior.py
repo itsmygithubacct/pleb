@@ -59,11 +59,12 @@ def make_go_archive(path: Path, version: str = "go1.26.4") -> None:
         scripts = {
             "go/bin/go": f"#!/bin/sh\necho 'go version {version} linux/amd64'\n",
             "go/bin/gofmt": "#!/bin/sh\nexit 0\n",
+            "go/VERSION": f"{version}\n",
         }
         for name, content in scripts.items():
             data = content.encode()
             entry = tarfile.TarInfo(name)
-            entry.mode = 0o755
+            entry.mode = 0o644 if name == "go/VERSION" else 0o755
             entry.size = len(data)
             archive.addfile(entry, io.BytesIO(data))
 
@@ -3099,6 +3100,8 @@ do_install
             )
             runner = """
 set -euo pipefail
+# plebian-os-update runs the whole update under umask 077.
+umask 077
 source "$GO_INSTALL_SCRIPT"
 validate_install_destinations() { :; }
 run_root() {
@@ -3135,6 +3138,16 @@ do_install
                 f"go1.26.4\namd64\n{checksum}\n",
             )
             self.assertEqual((install_dir / ".pleb-source").stat().st_mode & 0o777, 0o444)
+            # The shared toolchain must be usable by every user even though
+            # the installer ran under umask 077.
+            for path, mode in (
+                (install_dir, 0o755),
+                (install_dir / "bin", 0o755),
+                (install_dir / "bin/go", 0o755),
+                (install_dir / "bin/gofmt", 0o755),
+                (install_dir / "VERSION", 0o644),
+            ):
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode, path)
             self.assertEqual(list((tmp / "local").glob(".pleb-go-stage.*")), [])
             storage = tmp / ".local/gpu_terminal/pleb"
             for path in (
