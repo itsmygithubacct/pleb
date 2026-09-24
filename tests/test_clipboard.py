@@ -47,6 +47,14 @@ class ClipboardOwnershipTests(unittest.TestCase):
                 "exit 0\n"
             )
             stub.chmod(0o755)
+        # The session needs the host's tools, but a host autocutsel (every
+        # rc2 install has one) must not stand in for the stub or its absence.
+        system = home / "system-bin"
+        system.mkdir()
+        for directory in ("/usr/bin", "/bin"):
+            for tool in os.scandir(directory):
+                if tool.name != "autocutsel" and not os.path.lexists(system / tool.name):
+                    (system / tool.name).symlink_to(tool.path)
         engine = home / "kilix"
         engine.write_text("#!/bin/sh\nexit 0\n")
         engine.chmod(0o755)
@@ -54,7 +62,7 @@ class ClipboardOwnershipTests(unittest.TestCase):
         env.update({
             "KILIX": str(engine),
             "PLEB_NO_FILL": "1",
-            "PATH": f"{stubs}{os.pathsep}/usr/bin{os.pathsep}/bin",
+            "PATH": f"{stubs}{os.pathsep}{system}",
             "PLEB_LOG": str(home / "session.log"),
         })
         env.update(extra)
