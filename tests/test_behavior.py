@@ -119,6 +119,58 @@ exit "$VOICE_INSTALL_EXIT"
             recorded = calls.read_text().splitlines() if calls.exists() else []
             return result, recorded
 
+    def _link_command(self, tmp: Path, target: Path, dest: Path,
+                      **extra: str) -> subprocess.CompletedProcess[str]:
+        env = clean_env(tmp)
+        env.update(extra)
+        script = textwrap.dedent(
+            f"""
+            set -euo pipefail
+            PLEB_CODE_ROOT={ROOT!s}
+            PLEB_ROOT="$PLEB_CODE_ROOT"
+            . "$PLEB_ROOT/lib/common.sh"
+            . "$PLEB_ROOT/lib/install.sh"
+            run_root() {{ "$@"; }}
+            link_command {str(target)!r} {str(dest)!r} kilix
+            """
+        )
+        return subprocess.run(["bash", "-c", script], cwd=ROOT, env=env,
+                              text=True, capture_output=True)
+
+    def test_link_to_the_same_file_by_another_path_is_relinked(self):
+        # A developer layout reached the stock checkout through a symlinked
+        # source directory; the command was already right, only its text was
+        # not, and the whole update stopped on it.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            checkout = tmp / "sources" / "kilix"
+            checkout.mkdir(parents=True)
+            target = checkout / "kilix"
+            write_executable(target, "#!/bin/sh\n")
+            (tmp / "dev").symlink_to(tmp / "sources", target_is_directory=True)
+            dest = tmp / "bin" / "kilix"
+            dest.parent.mkdir()
+            dest.symlink_to(tmp / "dev" / "kilix" / "kilix")
+            result = self._link_command(tmp, target, dest)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(os.readlink(dest), str(target))
+
+    def test_link_to_a_different_file_is_still_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            target = tmp / "sources" / "kilix"
+            other = tmp / "elsewhere" / "kilix"
+            for path in (target, other):
+                path.parent.mkdir(parents=True)
+                write_executable(path, "#!/bin/sh\n")
+            dest = tmp / "bin" / "kilix"
+            dest.parent.mkdir()
+            dest.symlink_to(other)
+            result = self._link_command(tmp, target, dest)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("is not the expected kilix symlink", result.stderr)
+            self.assertEqual(os.readlink(dest), str(other))
+
     def test_version_command_reports_release_file(self):
         with tempfile.TemporaryDirectory() as td:
             result = subprocess.run(
