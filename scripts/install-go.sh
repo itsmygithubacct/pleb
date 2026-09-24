@@ -423,6 +423,10 @@ do_install() {
     run_root mkdir "$_INSTALL_STAGE/extract"
     run_root tar --no-same-owner --no-same-permissions \
         -C "$_INSTALL_STAGE/extract" -xzf "$_INSTALL_STAGE/archive.tar.gz"
+    # --no-same-permissions applies the caller's umask, and plebian-os-update
+    # runs under umask 077: without this the shared toolchain is root-only and
+    # every user's Go version check fails.
+    run_root chmod -R u+rwX,go+rX,go-w "$_INSTALL_STAGE/extract/go"
     run_root test -x "$_INSTALL_STAGE/extract/go/bin/go" \
         || die "archive did not contain an executable go/bin/go"
     run_root test -x "$_INSTALL_STAGE/extract/go/bin/gofmt" \
