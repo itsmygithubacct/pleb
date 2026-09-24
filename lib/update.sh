@@ -1216,16 +1216,24 @@ _update_kilix95() {
 _PLEB_SELF_UPDATE_OK=0
 
 _pleb_self_update_restore() {
-    local head="$1" branch="$2"
+    local head="$1" branch="$2" output
     _preserve_before_forced_restore "$PLEB_ROOT" pleb || return 1
     _assert_still_clean "$PLEB_ROOT" pleb || return 1
+    # Never recurse, for the reason given in _restore_checkout_position.
     if [ -n "$branch" ]; then
-        git -C "$PLEB_ROOT" checkout -f "$branch" >/dev/null 2>&1 \
-            && git -C "$PLEB_ROOT" reset --hard "$head" >/dev/null 2>&1
+        output="$(git -C "$PLEB_ROOT" -c submodule.recurse=false \
+                checkout -f "$branch" 2>&1 \
+            && git -C "$PLEB_ROOT" -c submodule.recurse=false \
+                reset --hard "$head" 2>&1)"
     else
-        git -C "$PLEB_ROOT" checkout -f --detach "$head" >/dev/null 2>&1 \
-            && git -C "$PLEB_ROOT" reset --hard "$head" >/dev/null 2>&1
-    fi
+        output="$(git -C "$PLEB_ROOT" -c submodule.recurse=false \
+                checkout -f --detach "$head" 2>&1 \
+            && git -C "$PLEB_ROOT" -c submodule.recurse=false \
+                reset --hard "$head" 2>&1)"
+    fi || {
+        err "could not return pleb to $head; git said: $(printf '%s\n' "$output" | tail -n 3 | tr '\n' ' ')"
+        return 1
+    }
 }
 
 # Everything the next `pleb` invocation needs before the moved checkout is
@@ -1312,10 +1320,11 @@ _update_pleb_self() {
             _assert_still_clean "$PLEB_ROOT" pleb \
                 || die "pleb checkout changed while its preservation snapshot was prepared"
             if git -C "$PLEB_ROOT" show-ref --verify --quiet "refs/heads/$PLEB_BRANCH"; then
-                git -C "$PLEB_ROOT" checkout "$PLEB_BRANCH" \
+                git -C "$PLEB_ROOT" -c submodule.recurse=false checkout "$PLEB_BRANCH" \
                     || die "could not check out PLEB_BRANCH=$PLEB_BRANCH"
             else
-                git -C "$PLEB_ROOT" checkout --track -b "$PLEB_BRANCH" "origin/$PLEB_BRANCH" \
+                git -C "$PLEB_ROOT" -c submodule.recurse=false \
+                    checkout --track -b "$PLEB_BRANCH" "origin/$PLEB_BRANCH" \
                     || die "could not track PLEB_BRANCH=$PLEB_BRANCH"
             fi
         fi
