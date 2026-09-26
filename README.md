@@ -680,3 +680,14 @@ code (it clones kilix separately on install). kilix and kitty are licensed under
 the **GPLv3** by their respective authors. The bundled Plebian wallpaper is a
 separate GPL-2.0-or-later artwork distribution; its preserved notices and the
 complete GPL version 2 text are in [`assets/`](assets/README.md).
+# Native-window diagnostic log
+
+When a window manager is active, the session starts Kilix's
+`scripts/native-window-log.py` using the system Python and stops it with the
+session. The watcher writes private, rotating JSON lines under
+`$PLEB_STATE_HOME/native-windows.jsonl` (normally
+`~/.local/gpu_terminal/pleb/state/native-windows.jsonl`). Native window opens
+and focus changes include available executable, argv, cwd, parent processes,
+and WM_COMMAND so later versions can route those launch paths into Kilix.
+It does not reroute or close windows. See Kilix's native-window routing
+diagnostics documentation for capture limits and retention.

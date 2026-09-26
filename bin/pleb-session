@@ -910,12 +910,25 @@ fi
 # and `pleb test --check` can still kill it surgically by $!.
 
 PLEB_KILIX_PID=""
+PLEB_NATIVE_LOG_PID=""
+
+# Observe host-display windows independently of the tab bar. Nested application
+# displays used by Kilix are deliberately outside this watcher's scope.
+if [ "$HAVE_WM" = 1 ] && [ -r "$KILIX_DIR/scripts/native-window-log.py" ]; then
+    /usr/bin/python3 "$KILIX_DIR/scripts/native-window-log.py" \
+        --state-dir "$PLEB_STATE_HOME" --parent-pid "$$" &
+    PLEB_NATIVE_LOG_PID=$!
+fi
 
 # Kill only what this instance started. An adopted WM belongs to someone else's
 # desktop and must survive us.
 _pleb_cleanup() {
     local rc=$?          # preserve the status the session is exiting with
     trap - EXIT HUP INT TERM
+    if [ -n "$PLEB_NATIVE_LOG_PID" ]; then
+        kill "$PLEB_NATIVE_LOG_PID" 2>/dev/null || true
+        wait "$PLEB_NATIVE_LOG_PID" 2>/dev/null || true
+    fi
     if [ -n "$PLEB_KILIX_PID" ] && kill -0 "$PLEB_KILIX_PID" 2>/dev/null; then
         kill "$PLEB_KILIX_PID" 2>/dev/null || true
         wait "$PLEB_KILIX_PID" 2>/dev/null || true
