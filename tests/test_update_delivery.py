@@ -37,7 +37,9 @@ def clean_env(home: Path) -> dict[str, str]:
     # The system session launcher of the developer's own machine must never be
     # what a test compares against.
     return _clean_env(
-        home, SESSION_BIN_DST=str(home / "no-such-session-launcher")
+        home, SESSION_BIN_DST=str(home / "no-such-session-launcher"),
+        PLEB_CLOSURE_SYSTEM=str(home / "no-such-system-closure.env"),
+        PLEB_CLOSURE_USER=str(home / "no-such-user-closure.env"),
     )
 
 

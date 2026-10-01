@@ -62,6 +62,9 @@ class ClipboardOwnershipTests(unittest.TestCase):
         env.update({
             "KILIX": str(engine),
             "PLEB_NO_FILL": "1",
+            # An existing desktop holder on the developer's DISPLAY must not
+            # make this private recording stub appear already started.
+            "DISPLAY": ":991",
             "PATH": f"{stubs}{os.pathsep}{system}",
             "PLEB_LOG": str(home / "session.log"),
         })

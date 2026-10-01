@@ -692,6 +692,143 @@ PLEB_WM_OWNED=0
 PLEB_WM_PID=""
 PLEB_WM_ACTIVE=""
 
+# Arm ownership before the first window-manager or engine launch. Cleanup is
+# restricted to direct children of this session; adopted desktop services and
+# deliberately persistent broker payloads are not session-owned children.
+PLEB_KILIX_PID=""
+PLEB_KILIX_START=""
+PLEB_NATIVE_LOG_PID=""
+PLEB_NATIVE_LOG_START=""
+PLEB_WM_START=""
+_pleb_launching=0
+_pleb_pending_signal=""
+
+_pleb_record_identity() {
+    local pid="$1" destination="$2" record
+    local -a fields=()
+    printf -v "$destination" '%s' ''
+    [ -r "/proc/$pid/stat" ] || return 1
+    IFS= read -r -d '' record <"/proc/$pid/stat" || true
+    read -r -a fields <<<"${record##*) }"
+    [ "${fields[0]:-}" != Z ] && [ "${fields[0]:-}" != X ] || return 1
+    [[ "${fields[19]:-}" =~ ^[0-9]+$ ]] || return 1
+    printf -v "$destination" '%s' "${fields[19]}"
+}
+
+_pleb_owned_alive() {
+    local observed
+    [ -n "$2" ] && _pleb_record_identity "$1" observed && [ "$observed" = "$2" ]
+}
+
+_pleb_require_process_cleanup() {
+    /usr/bin/python3 -I -c 'import os,signal; assert hasattr(os,"pidfd_open") and hasattr(signal,"pidfd_send_signal")' \
+        || { echo "FATAL: owned session processes require Python pidfd support" >&2; exit "$PLEB_EX_CONFIG"; }
+}
+
+_pleb_launch_owned() {
+    local pid_name="$1" start_name="$2" child
+    shift 2
+    # A catchable signal may arrive between fork and publishing the identity.
+    # Defer exit until both the PID and start tick have been recorded.
+    _pleb_launching=1
+    "$@" &
+    child=$!
+    printf -v "$pid_name" '%s' "$child"
+    _pleb_record_identity "$child" "$start_name" || true
+    _pleb_launching=0
+    [ -z "$_pleb_pending_signal" ] || exit "$_pleb_pending_signal"
+}
+
+_pleb_signal() {
+    if [ "$_pleb_launching" = 1 ]; then
+        _pleb_pending_signal="$1"
+    else
+        exit "$1"
+    fi
+}
+
+_pleb_stop_owned() {
+    [ "$#" -gt 0 ] || return 0
+    # Hold kernel process handles before signaling. A vanished/reused numeric
+    # PID must never select a different process. Waits are bounded even when a
+    # child ignores TERM; Bash reaps SIGCHLD without a later ambiguous PID wait.
+    /usr/bin/python3 -I - "$BASHPID" "$@" <<'PY_STOP'
+import os, select, signal, sys, time
+parent = int(sys.argv[1])
+held = []
+try:
+    for value in sys.argv[2:]:
+        pid_text, expected = value.split(':', 1)
+        if not expected:
+            continue
+        pid = int(pid_text)
+        if pid in (os.getpid(), parent):
+            continue
+        try:
+            fd = os.pidfd_open(pid)
+        except ProcessLookupError:
+            continue
+        try:
+            with open(f"/proc/{pid}/stat") as stream:
+                fields = stream.read().rsplit(")", 1)[1].split()
+            if int(fields[1]) != parent or fields[19] != expected:
+                os.close(fd)
+                continue
+        except FileNotFoundError:
+            os.close(fd)
+            continue
+        held.append(fd)
+    for sig, seconds in ((signal.SIGTERM, 2.0), (signal.SIGKILL, 2.0)):
+        for fd in held:
+            try:
+                signal.pidfd_send_signal(fd, sig)
+            except ProcessLookupError:
+                pass
+        deadline = time.monotonic() + seconds
+        while held and time.monotonic() < deadline:
+            ready, _, _ = select.select(held, [], [], max(0, deadline-time.monotonic()))
+            for fd in ready:
+                held.remove(fd)
+                os.close(fd)
+        if not held:
+            break
+    if held:
+        sys.exit("session cleanup incomplete: owned child did not exit")
+finally:
+    for fd in held:
+        os.close(fd)
+PY_STOP
+}
+
+_pleb_cleanup() {
+    local rc=$?
+    local -a owned=()
+    trap - EXIT HUP INT TERM
+    [ -z "$PLEB_NATIVE_LOG_PID" ] || owned+=("$PLEB_NATIVE_LOG_PID:$PLEB_NATIVE_LOG_START")
+    [ -z "$PLEB_KILIX_PID" ] || owned+=("$PLEB_KILIX_PID:$PLEB_KILIX_START")
+    if [ "$PLEB_WM_OWNED" = 1 ] && [ -n "$PLEB_WM_PID" ]; then
+        owned+=("$PLEB_WM_PID:$PLEB_WM_START")
+    fi
+    if ! _pleb_stop_owned "${owned[@]}"; then
+        echo "FATAL: owned session cleanup incomplete; retain session log" >&2
+        rc=1
+    fi
+    return "$rc"
+}
+_pleb_recovery_terminal() {
+    _pleb_require_process_cleanup
+    _pleb_launch_owned PLEB_KILIX_PID PLEB_KILIX_START xterm "$@"
+    wait "$PLEB_KILIX_PID"
+    local rc=$?
+    PLEB_KILIX_PID=""
+    PLEB_KILIX_START=""
+    return "$rc"
+}
+trap '_pleb_cleanup; exit $?' EXIT
+trap '_pleb_signal 129' HUP
+trap '_pleb_signal 130' INT
+trap '_pleb_signal 143' TERM
+
 PLEB_WM_ACTIVE="$(_pleb_wm_window)" || PLEB_WM_ACTIVE=""
 if [ -n "$PLEB_WM_ACTIVE" ]; then
     HAVE_WM=1
@@ -742,16 +879,16 @@ else
         printf -- '--- starting WM:'
         printf ' %q' "${PLEB_WM_ARGV[@]}"
         printf ' ---\n'
-        "${PLEB_WM_ARGV[@]}" &
-        PLEB_WM_PID=$!
+        _pleb_require_process_cleanup
         PLEB_WM_OWNED=1
+        _pleb_launch_owned PLEB_WM_PID PLEB_WM_START "${PLEB_WM_ARGV[@]}"
 
         # Poll the complete readiness check. Watch the process on every
         # iteration too, so a WM that cannot open the display fails in
         # milliseconds instead of waiting out the whole timeout.
         _pleb_wm_ticks=$((PLEB_WM_TIMEOUT * 10))
         while [ "$_pleb_wm_ticks" -gt 0 ]; do
-            if ! kill -0 "$PLEB_WM_PID" 2>/dev/null; then
+            if ! _pleb_owned_alive "$PLEB_WM_PID" "$PLEB_WM_START"; then
                 _pleb_wm_fail="window manager exited during startup"
                 break
             fi
@@ -769,9 +906,12 @@ else
                  "pid=$PLEB_WM_PID window=$PLEB_WM_ACTIVE config=$PLEB_OPENBOX_CONFIG ---"
         else
             # Do not leave a half-started WM behind.
-            kill "$PLEB_WM_PID" 2>/dev/null || true
-            wait "$PLEB_WM_PID" 2>/dev/null || true
+            if ! _pleb_stop_owned "$PLEB_WM_PID:$PLEB_WM_START"; then
+                echo "FATAL: window-manager startup cleanup incomplete" >&2
+                exit "$PLEB_EX_CONFIG"
+            fi
             PLEB_WM_PID=""
+            PLEB_WM_START=""
             PLEB_WM_OWNED=0
         fi
         unset _pleb_wm_ticks
@@ -782,7 +922,7 @@ else
             echo "FATAL: PLEB_WM=$PLEB_WM but $_pleb_wm_fail" >&2
             # don't strand the user on a black screen — drop to a terminal if we can
             if command -v xterm >/dev/null 2>&1; then
-                xterm -geometry 100x30 -e sh -c \
+                _pleb_recovery_terminal -geometry 100x30 -e sh -c \
                     'printf "%s\n\n" "pleb: window manager failed to start; see $1"; exec "${SHELL:-/bin/sh}"' sh "$PLEB_LOG" \
                     || true
             fi
@@ -954,67 +1094,40 @@ fi
 # kilix, so the session process IS kitty, its exit status is the session status,
 # and `pleb test --check` can still kill it surgically by $!.
 
-PLEB_KILIX_PID=""
-PLEB_NATIVE_LOG_PID=""
-
 # Observe host-display windows independently of the tab bar. Nested application
 # displays used by Kilix are deliberately outside this watcher's scope.
 if [ "$HAVE_WM" = 1 ] && [ -r "$KILIX_DIR/scripts/native-window-log.py" ]; then
-    /usr/bin/python3 "$KILIX_DIR/scripts/native-window-log.py" \
-        --state-dir "$PLEB_STATE_HOME" --parent-pid "$$" &
-    PLEB_NATIVE_LOG_PID=$!
+    _pleb_record_identity "$$" _pleb_session_start
+    # shellcheck disable=SC2154 # _pleb_record_identity assigns via printf -v.
+    _pleb_launch_owned PLEB_NATIVE_LOG_PID PLEB_NATIVE_LOG_START \
+        /usr/bin/python3 "$KILIX_DIR/scripts/native-window-log.py" \
+        --state-dir "$PLEB_STATE_HOME" --parent-pid "$$" \
+        --parent-start-tick "$_pleb_session_start"
 fi
-
-# Kill only what this instance started. An adopted WM belongs to someone else's
-# desktop and must survive us.
-_pleb_cleanup() {
-    local rc=$?          # preserve the status the session is exiting with
-    trap - EXIT HUP INT TERM
-    if [ -n "$PLEB_NATIVE_LOG_PID" ]; then
-        kill "$PLEB_NATIVE_LOG_PID" 2>/dev/null || true
-        wait "$PLEB_NATIVE_LOG_PID" 2>/dev/null || true
-    fi
-    if [ -n "$PLEB_KILIX_PID" ] && kill -0 "$PLEB_KILIX_PID" 2>/dev/null; then
-        kill "$PLEB_KILIX_PID" 2>/dev/null || true
-        wait "$PLEB_KILIX_PID" 2>/dev/null || true
-    fi
-    if [ "$PLEB_WM_OWNED" = 1 ] && [ -n "$PLEB_WM_PID" ] \
-        && kill -0 "$PLEB_WM_PID" 2>/dev/null; then
-        echo "--- stopping pleb-owned WM (pid $PLEB_WM_PID) ---"
-        kill "$PLEB_WM_PID" 2>/dev/null || true
-        wait "$PLEB_WM_PID" 2>/dev/null || true
-    fi
-    return "$rc"
-}
 
 # Run kilix in the background and wait for it, watching the Pleb-owned WM too.
 # Sets PLEB_KILIX_RC. Returns 0 if kilix exited on its own, 1 if the WM died
 # first.
 _pleb_run_kilix_supervised() {
-    "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}" &
-    PLEB_KILIX_PID=$!
+    _pleb_launch_owned PLEB_KILIX_PID PLEB_KILIX_START \
+        "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
     while :; do
-        if ! kill -0 "$PLEB_KILIX_PID" 2>/dev/null; then
+        if ! _pleb_owned_alive "$PLEB_KILIX_PID" "$PLEB_KILIX_START"; then
             wait "$PLEB_KILIX_PID"
             PLEB_KILIX_RC=$?
             PLEB_KILIX_PID=""
+            PLEB_KILIX_START=""
             return 0
         fi
-        if ! kill -0 "$PLEB_WM_PID" 2>/dev/null; then
+        if [ "$PLEB_WM_OWNED" = 1 ] && ! _pleb_owned_alive "$PLEB_WM_PID" "$PLEB_WM_START"; then
             return 1
         fi
         sleep 0.5
     done
 }
 
-if [ "$PLEB_WM_OWNED" = 1 ]; then
-    trap '_pleb_cleanup' EXIT
-    trap '_pleb_cleanup; exit 129' HUP
-    trap '_pleb_cleanup; exit 130' INT
-    trap '_pleb_cleanup; exit 143' TERM
-fi
-
 if [ "$PLEB_RESPAWN" = 1 ]; then
+    _pleb_require_process_cleanup
     # kiosk: keep a kilix alive for the life of the X session
     crashes=0
     delay=1
@@ -1023,16 +1136,11 @@ if [ "$PLEB_RESPAWN" = 1 ]; then
         printf -- '--- launching'
         printf ' %q' "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
         printf ' (%s) ---\n' "$(date)"
-        if [ "$PLEB_WM_OWNED" = 1 ]; then
-            if ! _pleb_run_kilix_supervised; then
-                echo "FATAL: window manager (pid $PLEB_WM_PID) exited; ending the session" >&2
-                exit "$PLEB_EX_CONFIG"
-            fi
-            rc=$PLEB_KILIX_RC
-        else
-            "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
-            rc=$?
+        if ! _pleb_run_kilix_supervised; then
+            echo "FATAL: window manager (pid $PLEB_WM_PID) exited; ending the session" >&2
+            exit "$PLEB_EX_CONFIG"
         fi
+        rc=$PLEB_KILIX_RC
         runtime=$(($(date +%s) - start))
         echo "kilix exited rc=$rc after ${runtime}s"
         if [ "$runtime" -lt 10 ]; then
@@ -1045,8 +1153,8 @@ if [ "$PLEB_RESPAWN" = 1 ]; then
         if [ "$crashes" -ge 5 ]; then
             echo "FATAL: kilix crashed too quickly five times; stopping respawn" >&2
             if command -v xterm >/dev/null 2>&1; then
-                exec xterm -geometry 100x30 -e sh -c \
-                    'printf "%s\n\n" "pleb: kilix is crash-looping; see $1"; exec "${SHELL:-/bin/sh}"' sh "$PLEB_LOG"
+                _pleb_recovery_terminal -geometry 100x30 -e sh -c \
+                    'printf "%s\n\n" "pleb: kilix is crash-looping; see $1"; exec "${SHELL:-/bin/sh}"' sh "$PLEB_LOG" || true
             fi
             exit "$rc"
         fi
