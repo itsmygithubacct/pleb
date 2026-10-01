@@ -1088,6 +1088,7 @@ fi
 # displays used by Kilix are deliberately outside this watcher's scope.
 if [ "$HAVE_WM" = 1 ] && [ -r "$KILIX_DIR/scripts/native-window-log.py" ]; then
     _pleb_record_identity "$$" _pleb_session_start
+    # shellcheck disable=SC2154 # _pleb_record_identity assigns via printf -v.
     _pleb_launch_owned PLEB_NATIVE_LOG_PID PLEB_NATIVE_LOG_START \
         /usr/bin/python3 "$KILIX_DIR/scripts/native-window-log.py" \
         --state-dir "$PLEB_STATE_HOME" --parent-pid "$$" \
