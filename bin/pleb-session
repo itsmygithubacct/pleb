@@ -794,6 +794,16 @@ else
 fi
 
 # --- screen-fill strategy ----------------------------------------------------
+# Restore only layouts the user previously confirmed for these exact monitors.
+# The installed helper follows this process identity (also across exec) and its
+# original X connection, and exits when either ends. No helper is started on
+# installations without saved layouts. It does not modify Kilix windows.
+if [ -r /usr/local/lib/pleb/displays.py ] \
+        && compgen -G "$PLEB_CONFIG_HOME/displays/*.json" >/dev/null; then
+    python3 /usr/local/lib/pleb/displays.py restore || true
+    python3 /usr/local/lib/pleb/displays.py watch --parent-pid "$$" &
+fi
+
 # Decided only now that the WM state is final: maximize without host
 # decorations when a window manager is present, fixed screen-fill geometry
 # when not — never both. Native fullscreen is intentionally excluded because

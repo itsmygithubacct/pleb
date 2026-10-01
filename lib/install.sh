@@ -51,7 +51,7 @@ ensure_system_deps() {
         lightdm xinit x11-xserver-utils x11-utils xterm openbox
         libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
         fontconfig fonts-dejavu-core
-        python3-pil python3-xlib python3-websockets python3-venv
+        python3-pil python3-xlib python3-websockets python3-venv python3-tk
         pulseaudio pulseaudio-utils pulsemixer alsa-utils ffmpeg xauth zenity
         zstd espeak-ng
         dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
@@ -845,6 +845,7 @@ do_install() {
     install_openbox_profile
 
     log "installing session launcher -> $SESSION_BIN_DST"
+    run_root install -D -m 0644 "$PLEB_ROOT/lib/displays.py" "$PLEB_DISPLAYS_DST"
     run_root install -D -m 0755 "$PLEB_BIN_SRC" "$SESSION_BIN_DST"
 
     log "installing xsession entry -> $XSESSION_DST"
@@ -899,7 +900,7 @@ do_install() {
 do_uninstall() {
     local removed=0
     for f in "$XSESSION_DST" "$SESSION_BIN_DST" "$PLEB_RECOVERY_DOC_DST" \
-            "$OPENBOX_CONFIG_DST"; do
+            "$OPENBOX_CONFIG_DST" "$PLEB_DISPLAYS_DST"; do
         if [ -e "$f" ] || [ -L "$f" ]; then
             log "removing $f"
             run_root rm -f "$f"
