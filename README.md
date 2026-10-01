@@ -11,6 +11,17 @@ LightDM login screen, so your normal desktop session is left untouched. The
 session integration is removable; cloned checkouts and packages installed as
 dependencies are intentionally retained for explicit cleanup.
 
+The session tracks the window manager, engine, native-window observer, and
+recovery terminal that it starts. Cleanup is armed before startup, including
+no-WM kiosk mode. On normal exit or HUP/INT/TERM, it checks each recorded process
+start time and direct-parent relationship, holds a Linux pidfd, requests TERM,
+and escalates after two seconds before reporting any incomplete cleanup. Adopted
+window managers and persistent broker sessions retain their existing lifetimes.
+Owned-process supervision requires Python's Linux pidfd support. The native
+observer must support `--parent-start-tick`; select the matching Kilix lifecycle
+update with this session change. SIGKILL cannot run shell cleanup; private test
+launchers additionally need process-namespace containment.
+
 ```
 log out ──▶ LightDM greeter ──▶ pick "Pleb" ──▶ screen-filling Kilix
 ```
