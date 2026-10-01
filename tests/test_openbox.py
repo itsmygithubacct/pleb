@@ -166,7 +166,7 @@ class OpenboxWiringTests(unittest.TestCase):
 
     def test_readiness_watches_the_wm_process_each_iteration(self):
         text = SESSION.read_text()
-        self.assertIn('kill -0 "$PLEB_WM_PID"', text)
+        self.assertIn('_pleb_owned_alive "$PLEB_WM_PID" "$PLEB_WM_START"', text)
         self.assertIn("PLEB_WM_TIMEOUT", text)
 
     def test_cleanup_only_kills_a_wm_this_instance_started(self):
