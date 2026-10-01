@@ -216,6 +216,7 @@ OPENBOX_CONFIG_SRC="$PLEB_ROOT/share/openbox/rc.xml"
 
 # install destinations (system-wide, so LightDM/other users can see them)
 SESSION_BIN_DST="${SESSION_BIN_DST:-/usr/local/bin/pleb-session}"
+PLEB_DISPLAYS_DST="${PLEB_DISPLAYS_DST:-/usr/local/lib/pleb/displays.py}"
 XSESSION_DST="${XSESSION_DST:-/usr/share/xsessions/pleb.desktop}"
 AUTOLOGIN_CONF="${AUTOLOGIN_CONF:-/etc/lightdm/lightdm.conf.d/50-pleb-autologin.conf}"
 # `kilix` command on PATH (so `kilix desktop`, `kilix serve`, … work out of the

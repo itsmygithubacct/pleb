@@ -26,7 +26,52 @@ stack series (1920×1080, 2m46s, 9.3 MB; published as a
 small). The [full series](https://github.com/itsmygithubacct/plebian-os#watch-the-series) (31m22s)
 lives on `plebian-os` and plays at [plebian-os.com](https://plebian-os.com/#watch).
 
+## RC5: monitor layouts
+
+Pleb owns physical display configuration; **Kilix Settings → Tools → Displays**
+opens `pleb displays gui`. The graphical arranger runs inside a Kilix app tab,
+with draggable monitor cards, edge snapping, primary selection, resolution,
+refresh rate and rotation controls. Its private UI display is separate from
+the physical X server it controls. This feature targets local X11 sessions using
+XRandR. Run it as the desktop user, without sudo.
+
+```sh
+pleb displays list                      # outputs, resolutions and refresh rates
+pleb displays gui                       # graphical arranger in a Kilix tab
+pleb displays configure                 # interactive layout editor
+pleb displays snapshot > layout.json     # optional JSON editing workflow
+pleb displays preview layout.json       # 15-second confirmation deadline
+pleb displays restore                   # restore a previously confirmed layout
+```
+
+Choose enabled outputs, resolution, refresh rate, rotation, horizontal/vertical
+position and one primary monitor. For side-by-side monitors, put the left one
+at `0,0` and the right one at `left-monitor-width,0`. Equal positions mirror
+outputs. Scaling, reflection and panning are currently refused; native Wayland
+and forwarded SSH displays are unsupported.
+
+Choose **Keep this layout** within 20 seconds in the graphical arranger (or type
+`yes` within 15 seconds in the terminal editor) to save it. Timeout, cancellation, a closed
+settings terminal or a failed apply restores the previous layout through an
+independent worker. Hardware removal during preview triggers recovery on the
+remaining outputs. As with any X11 tool, recovery requires a responsive X server
+and a working driver; power loss or killing the worker cannot be recovered in
+that session. The baseline is retained under `$PLEB_STATE_HOME/displays`.
+
+Confirmed profiles live in `$PLEB_CONFIG_HOME/displays` (private JSON files).
+They match both EDID identity and connector, with no guessing after recabling.
+Automatic restore is skipped when an output has no EDID. A future installed RC5
+Pleb session restores matching profiles at login and on connector/monitor changes;
+the watcher exits with its session or X server. Ordinary manual layout changes
+do not trigger it. Unknown monitor combinations are left as configured by X11.
+This sets the RandR primary output; existing application windows are not moved.
+
+The installed session uses `/usr/local/lib/pleb/displays.py`, published by
+`pleb install`; changing a source checkout alone does not enable the login hook.
+No release pins or version labels are changed by this feature.
+
 ## Layout
+
 
 ```
 ~/.local/gpu_terminal/sources/pleb/
