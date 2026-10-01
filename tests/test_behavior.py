@@ -898,7 +898,9 @@ exit "$VOICE_INSTALL_EXIT"
                 capture_output=True,
                 timeout=15,
             )
-            self.assertEqual(result.returncode, -signal.SIGTERM)
+            # The session now traps TERM to reap its owned children before
+            # exiting with the shell's conventional 128 + signal status.
+            self.assertEqual(result.returncode, 128 + signal.SIGTERM)
             self.assertEqual(count.read_text().count("launch"), 2)
 
             count.unlink()
