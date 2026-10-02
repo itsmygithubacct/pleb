@@ -413,9 +413,58 @@ class DisplaysTests(unittest.TestCase):
         self.assertEqual(restore.call_count, 2)
 
     def test_watcher_retries_a_busy_restore_without_another_topology_change(self):
-        restore = mock.Mock(side_effect=[d.DisplayError("Another display operation is running"), None])
+        restore = mock.Mock(side_effect=[d.RetryableDisplayError("Another display operation is running"), None])
         self.run_watcher(2, restore)
         self.assertEqual(restore.call_count, 2)
+
+    def test_restore_marks_only_pre_apply_unavailability_retryable(self):
+        with d.locked(self.state):
+            with self.assertRaises(d.RetryableDisplayError):
+                d.restore(self.backend, self.config, self.state)
+        with mock.patch.object(self.backend, "query", side_effect=d.NoConnectedOutputs("disconnected")):
+            with self.assertRaises(d.RetryableDisplayError):
+                d.restore(self.backend, self.config, self.state)
+        self.assertEqual(self.backend.applied, [])
+        # An error from the operation body must not be mistaken for flock
+        # contention after display changes may already have been attempted.
+        with self.assertRaises(BlockingIOError):
+            with d.locked(self.state):
+                raise BlockingIOError("operation failed")
+
+    def test_watcher_does_not_repeat_rejected_apply_and_rollback(self):
+        apply = self.backend.apply
+        def reject_target(layout):
+            apply(layout)
+            if layout == self.target:
+                raise d.DisplayError("driver rejected profile")
+        with mock.patch.object(self.backend, "apply", side_effect=reject_target):
+            self.run_watcher(4, d.restore)
+            self.assertEqual(self.backend.applied, [self.target, self.before])
+            self.assertEqual(d.snapshot(self.backend.query()), self.before)
+            # An explicit action remains available without restarting watch.
+            with self.assertRaisesRegex(d.DisplayError, "driver rejected"):
+                d.restore(self.backend, self.config, self.state)
+        self.assertEqual(self.backend.applied, [self.target, self.before] * 2)
+
+    def test_watcher_restores_returning_topology_after_intervening_failure(self):
+        a = self.backend.query()
+        b = copy.deepcopy(a)
+        b["outputs"].pop()
+        for failure in (d.RetryableDisplayError("busy"), d.DisplayError("apply failed")):
+            with self.subTest(failure=type(failure).__name__):
+                restore = mock.Mock(side_effect=[None, failure, None])
+                with mock.patch.object(self.backend, "query", side_effect=[a, b, a, a]):
+                    self.run_watcher(4, restore)
+                self.assertEqual(restore.call_count, 3)
+
+    def test_watcher_rearms_failed_topology_after_transition(self):
+        a = self.backend.query()
+        b = copy.deepcopy(a)
+        b["outputs"].pop()
+        restore = mock.Mock(side_effect=[d.DisplayError("apply failed"), None, None])
+        with mock.patch.object(self.backend, "query", side_effect=[a, a, b, a]):
+            self.run_watcher(4, restore)
+        self.assertEqual(restore.call_count, 3)
 
     def test_watcher_stops_on_an_x_connection_failure(self):
         with mock.patch.object(self.backend, "query", side_effect=OSError("connection lost")):

@@ -44,6 +44,11 @@ def dimensions(output):
     width, height = math.ceil(width * factor), math.ceil(height * factor)
     return (height, width) if output["rotation"] in ("left", "right") else (width, height)
 
+
+class RetryableDisplayError(DisplayError):
+    """Temporary unavailability before any display changes were attempted."""
+
+
 class NoConnectedOutputs(DisplayError):
     """A valid RandR topology with all outputs temporarily disconnected."""
 
@@ -296,10 +301,11 @@ def locked(state, display=None):
     name = hashlib.sha256(display.encode()).hexdigest()[:20]
     fd = os.open(state / (name + ".lock"), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RetryableDisplayError("Another display operation is running") from None
         yield
-    except BlockingIOError:
-        raise DisplayError("Another display operation is running") from None
     finally:
         os.close(fd)
 
@@ -523,7 +529,10 @@ def configure(state):
 
 def restore(backend, config, state):
     with locked(state, getattr(backend, "env", {}).get("DISPLAY")):
-        current = backend.query()
+        try:
+            current = backend.query()
+        except NoConnectedOutputs as exc:
+            raise RetryableDisplayError(str(exc)) from exc
         if any(o["identity"] == hashlib.sha256(b"").hexdigest() for o in current["outputs"]):
             # Connector alone cannot identify a replacement monitor reliably.
             return
@@ -560,7 +569,8 @@ def watch(parent_pid, backend, config, state):
     if not identity or not list(config.glob("*.json")):
         return
     connection = Display()
-    previous = None
+    observed = None
+    pending = False
     try:
         while process_identity(parent_pid) == identity:
             # A server reset/disconnect ends this watcher; no stale session
@@ -570,19 +580,26 @@ def watch(parent_pid, backend, config, state):
                 current = topology(backend.query())
             except NoConnectedOutputs:
                 # Reconnecting the same monitor set still needs restoration.
-                previous = None
+                observed = None
+                pending = False
                 time.sleep(2)
                 continue
-            if current != previous:
+            if current != observed:
+                observed = current
+                pending = True
+            if pending:
                 try:
                     restore(backend, config, state)
+                except RetryableDisplayError as exc:
+                    print(f"pleb displays watch: {exc}", file=sys.stderr, flush=True)
                 except DisplayError as exc:
+                    # Applying (and possibly rolling back) a rejected profile
+                    # must not repeat every poll. A topology transition or an
+                    # explicit restore can try again.
+                    pending = False
                     print(f"pleb displays watch: {exc}", file=sys.stderr, flush=True)
                 else:
-                    # A preview may hold the display lock while a cable
-                    # changes. Retry this topology after that worker finishes.
-
-                    previous = current
+                    pending = False
             time.sleep(2)
     except Exception as exc:
         raise DisplayError(f"Session display watcher stopped: {exc}") from exc

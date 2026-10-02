@@ -182,6 +182,9 @@ Automatic restore is skipped when an output has no EDID. A future installed RC5
 Pleb session restores matching profiles at login and on connector/monitor changes;
 the watcher exits with its session or X server. Ordinary manual layout changes
 do not trigger it. Unknown monitor combinations are left as configured by X11.
+Lock contention or disconnected outputs before an apply are retried. A rejected
+layout is not repeatedly applied: retry it explicitly with `pleb displays restore`
+or reconnect the monitors to trigger a new topology transition.
 This sets the RandR primary output; existing application windows are not moved.
 
 The installed session uses `/usr/local/lib/pleb/displays.py`, published by
