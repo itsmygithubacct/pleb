@@ -44,10 +44,14 @@ def dimensions(output):
     width, height = math.ceil(width * factor), math.ceil(height * factor)
     return (height, width) if output["rotation"] in ("left", "right") else (width, height)
 
+class NoConnectedOutputs(DisplayError):
+    """A valid RandR topology with all outputs temporarily disconnected."""
+
 
 def parse_query(text):
     """Read layouts with uniform zoom, rejecting unsupported transforms."""
     outputs = []
+    saw_output = False
     current = mode = None
     edid = []
     reading_edid = False
@@ -59,6 +63,7 @@ def parse_query(text):
             maximum = list(map(int, match.groups()))
         match = re.match(r"^(\S+) (connected|disconnected)\b(.*)", line)
         if match:
+            saw_output = True
             if current:
                 current["edid"] = "".join(edid)
             edid, transforms = [], []
@@ -128,8 +133,10 @@ def parse_query(text):
             mode = None
     if current:
         current["edid"] = "".join(edid)
-    if not outputs or not all(maximum):
-        raise DisplayError("No connected RandR outputs or unrecognized server response")
+    if not all(maximum) or not saw_output:
+        raise DisplayError("Unrecognized RandR server response")
+    if not outputs:
+        raise NoConnectedOutputs("No connected RandR outputs")
     for output in outputs:
         if output["filter"] not in ("", "nearest", "bilinear") or (output["scale"] != 1 and not output["filter"]):
             output["safe"] = False
@@ -559,7 +566,13 @@ def watch(parent_pid, backend, config, state):
             # A server reset/disconnect ends this watcher; no stale session
             # process can restore a layout on the next user's X server.
             connection.sync()
-            current = topology(backend.query())
+            try:
+                current = topology(backend.query())
+            except NoConnectedOutputs:
+                # Reconnecting the same monitor set still needs restoration.
+                previous = None
+                time.sleep(2)
+                continue
             if current != previous:
                 try:
                     restore(backend, config, state)
@@ -568,6 +581,7 @@ def watch(parent_pid, backend, config, state):
                 else:
                     # A preview may hold the display lock while a cable
                     # changes. Retry this topology after that worker finishes.
+
                     previous = current
             time.sleep(2)
     except Exception as exc:

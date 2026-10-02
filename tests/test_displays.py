@@ -388,6 +388,40 @@ class DisplaysTests(unittest.TestCase):
         self.assertEqual(restore.call_count, 1)
         connection.close.assert_called_once()
 
+    def run_watcher(self, polls, restore):
+        d.save(self.config, self.target)
+        connection = mock.Mock()
+        module = types.ModuleType("Xlib.display")
+        module.Display = mock.Mock(return_value=connection)
+        with mock.patch.dict(sys.modules, {"Xlib": types.ModuleType("Xlib"), "Xlib.display": module}), \
+                mock.patch.object(d, "process_identity", side_effect=["start"] * (polls + 1) + ["reused"]), \
+                mock.patch.object(d.time, "sleep"), \
+                mock.patch.object(d, "restore", restore):
+            d.watch(123, self.backend, self.config, self.state)
+        connection.close.assert_called_once()
+
+    def test_watcher_restores_after_all_outputs_disconnect_and_reconnect(self):
+        connected = self.backend.query()
+        polls = iter(("connected", "disconnected", "connected"))
+        def poll():
+            if next(polls) == "disconnected":
+                return d.parse_query("Screen 0: minimum 8 x 8, current 8 x 8, maximum 32767 x 32767\nDP-1 disconnected\n")
+            return connected
+        restore = mock.Mock()
+        with mock.patch.object(self.backend, "query", side_effect=poll):
+            self.run_watcher(3, restore)
+        self.assertEqual(restore.call_count, 2)
+
+    def test_watcher_retries_a_busy_restore_without_another_topology_change(self):
+        restore = mock.Mock(side_effect=[d.DisplayError("Another display operation is running"), None])
+        self.run_watcher(2, restore)
+        self.assertEqual(restore.call_count, 2)
+
+    def test_watcher_stops_on_an_x_connection_failure(self):
+        with mock.patch.object(self.backend, "query", side_effect=OSError("connection lost")):
+            with self.assertRaisesRegex(d.DisplayError, "connection lost"):
+                self.run_watcher(1, mock.Mock())
+
     def test_missing_edid_never_automatically_restores(self):
         self.backend.state["outputs"][0]["identity"] = d.hashlib.sha256(b"").hexdigest()
         layout = d.snapshot(self.backend.query())
