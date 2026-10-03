@@ -88,9 +88,11 @@ class OpenboxProfileTests(unittest.TestCase):
 
     def test_no_desktop_switching_or_launchers_or_screenshots(self):
         actions = {a.get("name") for a in self.tree.findall(".//o:action", NS)}
-        for forbidden in ("GoToDesktop", "SendToDesktop", "Execute",
+        for forbidden in ("GoToDesktop", "SendToDesktop",
                           "ToggleShowDesktop", "DirectionalCycleWindows"):
             self.assertNotIn(forbidden, actions, f"{forbidden} must not be bound")
+        commands = [e.text for e in self.tree.findall(".//o:command", NS)]
+        self.assertEqual(commands, ["pleb-lock", "pleb-lock"])
 
     def test_no_application_rules_and_kilix_is_not_pinned_above(self):
         # Pinning Kilix to the 'above' layer would recreate the exact bug this

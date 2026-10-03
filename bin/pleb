@@ -16,6 +16,9 @@
 #   pleb screen-size ...    show/increase/decrease/reset Kilix terminal scale
 #   pleb settings           configure shared Kilix chrome in a terminal UI
 #   pleb displays ...      configure X11 monitors with timed preview rollback
+#   pleb lock              lock the whole desktop using the account password
+#   pleb devices TOOL      open power, bluetooth, storage, printers, audio,
+#                          input-method or accessibility settings
 #   pleb session            exec the session now (for the current $DISPLAY)
 #
 # Non-destructive: your current desktop session is untouched; "Pleb" is another choice
@@ -351,6 +354,8 @@ main() {
                     cmd_screen_size "$@" ;;
         settings)   cmd_settings "$@" ;;
         displays)   exec python3 "$PLEB_ROOT/lib/displays.py" "${@:-configure}" ;;
+        lock)       exec "$PLEB_ROOT/bin/pleb-lock" "$@" ;;
+        devices)    exec python3 "$PLEB_ROOT/lib/devices.py" "$@" ;;
         session)    exec "$PLEB_BIN_SRC" ;;
         version|--version|-V)
                     echo "pleb $(cat "$PLEB_ROOT/VERSION" 2>/dev/null || echo unknown)" ;;

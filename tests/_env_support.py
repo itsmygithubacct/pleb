@@ -37,6 +37,9 @@ def clean_env(home: Path, **overrides: str) -> dict[str, str]:
     env["HOME"] = str(home)
     env["PLEB_ENV_SYSTEM"] = str(home / "missing-system.env")
     env["PLEB_ENV_USER"] = str(home / "missing-user.env")
+    # Session fixtures must never lock or change power policy on the host.
+    env["PLEB_SESSION_SERVICES"] = "off"
+    env["PLEB_LOCK_DST"] = str(home / "missing-pleb-lock")
     env.update(overrides)
     return env
 

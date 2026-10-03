@@ -21,8 +21,7 @@ ACCENT = "#65d6c4"
 
 
 def dimensions(output):
-    width, height = map(int, (output["mode"] or "1920x1080").split("x"))
-    return (height, width) if output["rotation"] in ("left", "right") else (width, height)
+    return core.dimensions(output)
 
 
 def normalize(outputs):
@@ -43,7 +42,7 @@ class Arranger:
         self.preview_deadline = None
         root.title("Displays · RC5 preview")
         root.geometry("1100x740")
-        root.minsize(850, 620)
+        root.minsize(850, 680)
         root.configure(bg=BG)
         style = ttk.Style(root)
         style.theme_use("clam")
@@ -67,41 +66,43 @@ class Arranger:
         root.option_add("*TCombobox*Listbox.selectBackground", "#395273")
         outer = ttk.Frame(root, padding=26)
         outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text="Arrange your displays", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(outer, text="Drag monitors to match your desk. Changes apply only when you preview.", style="Muted.TLabel").pack(anchor="w", pady=(7, 20))
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(3, weight=1)
+        ttk.Label(outer, text="Arrange your displays", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(outer, text="Drag monitors to match your desk. Changes apply only when you preview.", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(7, 20))
         tools = ttk.Frame(outer)
-        tools.pack(fill="x", pady=(0, 12))
+        tools.grid(row=2, column=0, sticky="ew", pady=(0, 12))
         for text, command in (("Extend →", self.extend), ("Mirror", self.mirror), ("Reset draft", self.reload)):
             ttk.Button(tools, text=text, command=command).pack(side="left", padx=(0, 9))
         self.canvas = tk.Canvas(outer, bg=PANEL, height=300, highlightthickness=0, cursor="hand2")
-        self.canvas.pack(fill="both", expand=True)
+        self.canvas.grid(row=3, column=0, sticky="nsew")
         self.canvas.bind("<Configure>", lambda event: self.draw())
         self.canvas.bind("<ButtonPress-1>", self.press)
         self.canvas.bind("<B1-Motion>", self.motion)
         self.canvas.bind("<ButtonRelease-1>", self.release)
         controls = ttk.Frame(outer)
-        controls.pack(fill="x", pady=18)
+        controls.grid(row=4, column=0, sticky="ew", pady=18)
         self.selected_label = ttk.Label(controls, text="", font=("DejaVu Sans", 12, "bold"))
         self.selected_label.grid(row=0, column=0, sticky="w", columnspan=4, pady=(0, 10))
         self.monitor = ttk.Combobox(controls, state="readonly", width=20)
         self.monitor.grid(row=0, column=2, sticky="w", padx=(0, 18), pady=(0, 10))
         self.monitor.bind("<<ComboboxSelected>>", self.choose_monitor)
-        self.mode, self.rate, self.rotation = tk.StringVar(), tk.StringVar(), tk.StringVar()
+        self.mode, self.rate, self.rotation, self.zoom = (tk.StringVar() for _ in range(4))
         self.enabled = tk.BooleanVar()
         self.boxes = []
-        for column, (label, variable) in enumerate((("Resolution", self.mode), ("Refresh rate (Hz)", self.rate), ("Rotation", self.rotation))):
+        for column, (label, variable) in enumerate((("Resolution", self.mode), ("Refresh rate (Hz)", self.rate), ("Rotation", self.rotation), ("Scale", self.zoom))):
             ttk.Label(controls, text=label, style="Muted.TLabel").grid(row=1, column=column, sticky="w", padx=(0, 18))
-            box = ttk.Combobox(controls, textvariable=variable, state="readonly", width=20)
+            box = ttk.Combobox(controls, textvariable=variable, state="readonly", width=16)
             box.grid(row=2, column=column, sticky="w", padx=(0, 18), pady=(6, 0))
             box.bind("<<ComboboxSelected>>", lambda event: self.edit())
             self.boxes.append(box)
         self.boxes[2]["values"] = ("normal", "left", "right", "inverted")
-        ttk.Checkbutton(controls, text="Enabled", variable=self.enabled, command=self.edit).grid(row=1, column=3, sticky="w")
-        ttk.Button(controls, text="Make primary", command=self.make_primary).grid(row=2, column=3, sticky="w")
+        ttk.Checkbutton(controls, text="Enabled", variable=self.enabled, command=self.edit).grid(row=3, column=0, sticky="w", pady=(12, 0))
+        ttk.Button(controls, text="Make primary", command=self.make_primary).grid(row=3, column=1, sticky="w", pady=(12, 0))
         self.status = tk.StringVar(value="")
-        ttk.Label(outer, textvariable=self.status, style="Muted.TLabel", wraplength=1000).pack(anchor="w", pady=(0, 14))
+        ttk.Label(outer, textvariable=self.status, style="Muted.TLabel", wraplength=1000).grid(row=5, column=0, sticky="w", pady=(0, 14))
         footer = ttk.Frame(outer)
-        footer.pack(fill="x")
+        footer.grid(row=6, column=0, sticky="ew")
         ttk.Label(footer, text="RC5 TEST BUILD  ·  X11", style="Muted.TLabel").pack(side="left")
         self.apply_button = ttk.Button(footer, text="Preview changes", style="Accent.TButton", command=self.apply)
         self.apply_button.pack(side="right")
@@ -137,6 +138,11 @@ class Arranger:
         self.boxes[1]["values"] = rates
         self.rate.set(output["rate"] or (rates[0] if rates else ""))
         self.rotation.set(output["rotation"])
+        self.zoom_choices = {f"{100 * scale:g}%": scale for scale in core.SCALES}
+        current_zoom = f'{100 * output["scale"]:.10g}%'
+        self.zoom_choices[current_zoom] = output["scale"]
+        self.boxes[3]["values"] = tuple(self.zoom_choices)
+        self.zoom.set(current_zoom)
         self.enabled.set(output["enabled"])
 
     def choose_monitor(self, event):
@@ -155,6 +161,9 @@ class Arranger:
         if self.rate.get() not in rates:
             self.rate.set(rates[0] if rates else "")
         self.boxes[1]["values"] = rates
+        zoom = self.zoom_choices[self.zoom.get()]
+        if zoom != o["scale"]:
+            o.update(scale=zoom, filter="" if zoom == 1 else "bilinear")
         o.update(mode=self.mode.get(), rate=self.rate.get(), rotation=self.rotation.get(), enabled=self.enabled.get())
         if not o["enabled"]:
             o["primary"] = False
@@ -189,7 +198,7 @@ class Arranger:
         for o in self.layout["outputs"]:
             o["x"], o["y"] = 0, 0
         self.draw()
-        self.status.set("Mirroring uses equal positions. Select the same resolution on both monitors for matching edges.")
+        self.status.set("Mirroring uses equal positions. Match each monitor's logical size using its resolution and scale.")
 
     def draw(self):
         if not hasattr(self, "layout"):
@@ -220,7 +229,7 @@ class Arranger:
             if o["enabled"]:
                 c.create_text(cx, cy-30, text=str(i+1), font=("DejaVu Sans", 28, "bold"), fill=TEXT)
                 c.create_text(cx, cy+7, text=o["name"] + ("  ★ PRIMARY" if o["primary"] else ""), font=("DejaVu Sans", 10, "bold"), fill=TEXT)
-                c.create_text(cx, cy+30, text=f'{o["mode"]}  ·  {o["rate"]} Hz', font=("DejaVu Sans", 10), fill=MUTED)
+                c.create_text(cx, cy+30, text=f'{o["mode"]}  ·  {o["rate"]} Hz  ·  {100 * o["scale"]:g}%', font=("DejaVu Sans", 10), fill=MUTED)
             else:
                 c.create_text(cx, cy, text=o["name"]+" · off", fill=MUTED)
 

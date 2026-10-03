@@ -8,6 +8,7 @@ import copy
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -24,8 +25,28 @@ class DisplayError(Exception):
     pass
 
 
+SCALES = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 3.0, 3.5, 4.0)
+
+
+def transform_factor(scale):
+    """User zoom is the inverse of RandR's 16.16 framebuffer transform."""
+    if type(scale) not in (int, float) or not math.isfinite(scale) or not 0.5 <= scale <= 4:
+        raise DisplayError("Scale must be a number from 0.5 to 4 (50%..400%)")
+    # Use the protocol value for both the request and its logical bounds.
+    # The tiny allowance prevents a reciprocal read back from losing a bit.
+    return math.floor(65536 / scale + 1e-9) / 65536
+
+
+def dimensions(output):
+    """Logical framebuffer bounds, including zoom and rotation."""
+    width, height = map(int, (output["mode"] or "1920x1080").split("x"))
+    factor = transform_factor(output.get("scale", 1))
+    width, height = math.ceil(width * factor), math.ceil(height * factor)
+    return (height, width) if output["rotation"] in ("left", "right") else (width, height)
+
+
 def parse_query(text):
-    """Parse verbose RandR output, retaining only ordinary unscaled CRTCs."""
+    """Read layouts with uniform zoom, rejecting unsupported transforms."""
     outputs = []
     current = mode = None
     edid = []
@@ -53,7 +74,8 @@ def parse_query(text):
                            enabled=bool(geometry), x=int(geometry[3]) if geometry else 0,
                            y=int(geometry[4]) if geometry else 0,
                            rotation=rotation[1] if rotation else "normal",
-                           mode=None, rate=None, modes={}, safe=True, edid="")
+                           mode=None, rate=None, modes={}, scale=1.0, filter="",
+                           safe=True, edid="")
             if geometry and re.search(r"\) (?:normal|left|right|inverted).*?\b[xy] axis\b", rest.split("(normal")[0]):
                 current["safe"] = False
             outputs.append(current)
@@ -73,9 +95,24 @@ def parse_query(text):
         elif transforms and len(transforms) < 9:
             transforms += line.split()
         if len(transforms) == 9:
-            if transforms != ["1.000000", "0.000000", "0.000000", "0.000000", "1.000000", "0.000000", "0.000000", "0.000000", "1.000000"]:
+            try:
+                matrix = [float(value) for value in transforms]
+                if not all(math.isfinite(value) for value in matrix):
+                    raise ValueError("Nonfinite transform")
+                # xrandr prints six decimal places; recover the exact 16.16
+                # value before comparing or retaining the rollback baseline.
+                fixed = [round(value * 65536) for value in matrix]
+                if fixed[0] != fixed[4] or fixed[0] <= 0 or any(fixed[i] for i in (1, 2, 3, 5, 6, 7)) or fixed[8] != 65536:
+                    raise ValueError("Not a uniform scaling transform")
+                scale = 65536 / fixed[0]
+                transform_factor(scale)  # supported zoom range
+                current["scale"] = next((s for s in SCALES if transform_factor(s) == fixed[0] / 65536), scale)
+            except (ValueError, DisplayError):
                 current["safe"] = False
             transforms = []
+        match = re.match(r"\s*filter:\s*(\S*)", line)
+        if match:
+            current["filter"] = match[1]
         if re.search(r"(?:Panning|panning):", line) and not re.search(r"\b0x0\b", line):
             current["safe"] = False
         match = re.match(r"^  (\S+) \(0x[0-9a-f]+\) .+", line)
@@ -94,6 +131,8 @@ def parse_query(text):
     if not outputs or not all(maximum):
         raise DisplayError("No connected RandR outputs or unrecognized server response")
     for output in outputs:
+        if output["filter"] not in ("", "nearest", "bilinear") or (output["scale"] != 1 and not output["filter"]):
+            output["safe"] = False
         output["identity"] = hashlib.sha256(bytes.fromhex(output.pop("edid"))).hexdigest()
         if output["enabled"] and output["mode"] is None:
             raise DisplayError("Cannot read the current mode for " + output["name"])
@@ -103,6 +142,7 @@ def parse_query(text):
 class RandR:
     def __init__(self, env=None):
         self.env = dict(os.environ if env is None else env)
+        self._transforms = None
 
     def run(self, args):
         result = subprocess.run(["xrandr", *args], capture_output=True, text=True,
@@ -112,9 +152,13 @@ class RandR:
         return result.stdout
 
     def query(self):
-        return parse_query(self.run(["--verbose"]))
+        state = parse_query(self.run(["--verbose"]))
+        self._transforms = {o["name"]: (transform_factor(o["scale"]), o["filter"], o["safe"]) for o in state["outputs"]}
+        return state
 
     def apply(self, layout):
+        if self._transforms is None:
+            self.query()
         # --noprimary is GLOBAL, unlike the per-output --primary switch.
         # Emitting it for a secondary output clears the selected primary.
         args = [] if any(o["enabled"] and o["primary"] for o in layout["outputs"]) else ["--noprimary"]
@@ -125,17 +169,45 @@ class RandR:
             else:
                 args += ["--mode", output["mode"], "--rate", output["rate"],
                          "--pos", f'{output["x"]}x{output["y"]}',
-                         "--rotate", output["rotation"]]
+                         "--rotate", output["rotation"], "--reflect", "normal"]
+                factor = transform_factor(output.get("scale", 1))
+                filter_name = output.get("filter", "")
+                observed = self._transforms.get(output["name"], (None, None, False))
+                if not observed[2]:
+                    args += ["--panning", "0x0"]
+                if (factor, filter_name) != observed[:2] or not observed[2]:
+                    if factor == 1 and not filter_name:
+                        args += ["--transform", "none"]
+                    else:
+                        args += ["--scale", f"{factor!r}x{factor!r}", "--filter", filter_name]
                 if output["primary"]:
                     args += ["--primary"]
+        self._transforms = None
         self.run(args)
 
 
-FIELDS = ("name", "identity", "enabled", "primary", "mode", "rate", "x", "y", "rotation")
+LEGACY_FIELDS = ("name", "identity", "enabled", "primary", "mode", "rate", "x", "y", "rotation")
+FIELDS = (*LEGACY_FIELDS, "scale", "filter")
 
 
 def snapshot(state):
-    return {"version": 1, "outputs": [{key: o[key] for key in FIELDS} for o in state["outputs"]]}
+    return {"version": 2, "outputs": [{key: o[key] for key in FIELDS} for o in state["outputs"]]}
+
+
+def normalized(layout):
+    """Migrate legacy profiles in memory; confirmation writes the new format."""
+    if not isinstance(layout, dict) or type(layout.get("version")) is not int or layout["version"] not in (1, 2):
+        raise DisplayError("Unsupported layout format")
+    outputs = layout.get("outputs")
+    fields = LEGACY_FIELDS if layout["version"] == 1 else FIELDS
+    if not isinstance(outputs, list) or not outputs or any(not isinstance(o, dict) or set(o) != set(fields) for o in outputs):
+        raise DisplayError("Invalid output records")
+    result = copy.deepcopy(layout)
+    if result["version"] == 1:
+        for output in result["outputs"]:
+            output.update(scale=1.0, filter="")
+        result["version"] = 2
+    return result
 
 
 def topology(layout):
@@ -145,11 +217,8 @@ def topology(layout):
 
 
 def validate(layout, state):
-    if not isinstance(layout, dict) or layout.get("version") != 1:
-        raise DisplayError("Unsupported layout format")
-    outputs = layout.get("outputs")
-    if not isinstance(outputs, list) or not outputs or any(not isinstance(o, dict) or set(o) != set(FIELDS) for o in outputs):
-        raise DisplayError("Invalid output records")
+    layout = normalized(layout)
+    outputs = layout["outputs"]
     if topology(layout) != topology(state):
         raise DisplayError("Connected monitors differ from the saved layout")
     actual = {o["name"]: o for o in state["outputs"]}
@@ -160,7 +229,10 @@ def validate(layout, state):
         if type(o["enabled"]) is not bool or type(o["primary"]) is not bool:
             raise DisplayError("Output flags must be booleans")
         if not actual[o["name"]]["safe"]:
-            raise DisplayError("Scaling, reflection or panning is active; this layout cannot be safely previewed")
+            raise DisplayError("An unsupported transform, filter, reflection or panning is active; this layout cannot be safely previewed")
+        factor = transform_factor(o["scale"])
+        if o["filter"] not in ("", "nearest", "bilinear") or (factor != 1 and not o["filter"]):
+            raise DisplayError("Scaled outputs require a nearest or bilinear filter")
         if not o["enabled"]:
             if o["primary"]:
                 raise DisplayError("A disabled output cannot be primary")
@@ -174,21 +246,24 @@ def validate(layout, state):
             raise DisplayError("Unsupported mode/rate for " + o["name"])
         if any(type(o[k]) is not int or o[k] < 0 for k in ("x", "y")):
             raise DisplayError("Positions must be nonnegative integers")
-        width, height = map(int, o["mode"].split("x"))
-        if o["rotation"] in ("left", "right"):
-            width, height = height, width
+        width, height = dimensions(o)
         if o["x"] + width > state["maximum"][0] or o["y"] + height > state["maximum"][1]:
             raise DisplayError("Layout exceeds the server framebuffer limit")
     if not active or sum(o["primary"] for o in active) != 1:
         raise DisplayError("Select at least one enabled output and exactly one primary")
+    return layout
 
 
 def matches(layout, state):
+    layout = normalized(layout)
     if topology(layout) != topology(state):
         return False
     actual = {o["name"]: o for o in state["outputs"]}
     return all(all(o[k] == actual[o["name"]][k] for k in
                    (("enabled", "primary", "mode", "rate", "x", "y", "rotation") if o["enabled"] else ("enabled",)))
+               and (not o["enabled"] or (actual[o["name"]]["safe"]
+                    and transform_factor(o["scale"]) == transform_factor(actual[o["name"]]["scale"])
+                    and o["filter"] == actual[o["name"]]["filter"]))
                for o in layout["outputs"])
 
 
@@ -238,9 +313,12 @@ def save(config, layout):
 
 
 def rollback(backend, before):
+    before = normalized(before)
     state = backend.query()
     if topology(before) == topology(state):
         backend.apply(before)
+        if not matches(before, backend.query()):
+            raise DisplayError("The X server did not restore the previous layout")
     else:
         # A cable can disappear during a preview. Preserve remaining baseline
         # outputs, but ensure there is an active monitor even if it was off.
@@ -252,7 +330,15 @@ def rollback(backend, before):
                 available["outputs"][i] = copy.deepcopy(previous)
         active = [o for o in available["outputs"] if o["enabled"]]
         if not active:
-            backend.run(["--output", state["outputs"][0]["name"], "--auto", "--pos", "0x0", "--primary"])
+            source = state["outputs"][0]
+            args = ["--output", source["name"], "--auto", "--pos", "0x0", "--rotate", "normal", "--primary"]
+            if not source["safe"] or source["scale"] != 1 or source["filter"]:
+                args += ["--transform", "none"]
+            backend.run(args)
+            restored = next(o for o in backend.query()["outputs"] if o["name"] == source["name"])
+            if not (restored["enabled"] and restored["primary"] and restored["safe"] and restored["x"] == restored["y"] == 0
+                    and restored["rotation"] == "normal" and restored["scale"] == 1 and not restored["filter"]):
+                raise DisplayError("The X server did not enable a usable recovery monitor")
             return
         min_x, min_y = min(o["x"] for o in active), min(o["y"] for o in active)
         for o in available["outputs"]:
@@ -261,6 +347,8 @@ def rollback(backend, before):
                 o["x"] -= min_x
                 o["y"] -= min_y
         backend.apply(available)
+        if not matches(available, backend.query()):
+            raise DisplayError("The X server did not restore the remaining monitors")
 
 
 def transaction(channel, backend, layout, config, state, timeout):
@@ -271,7 +359,7 @@ def transaction(channel, backend, layout, config, state, timeout):
     try:
         with locked(state, getattr(backend, "env", {}).get("DISPLAY")):
             current = backend.query()
-            validate(layout, current)
+            layout = validate(layout, current)
             before = snapshot(current)
             # Preserve baseline before any RandR request for recovery diagnostics.
             save(state, before)
@@ -280,12 +368,22 @@ def transaction(channel, backend, layout, config, state, timeout):
                 if not matches(layout, backend.query()):
                     raise DisplayError("The X server did not apply the requested layout")
                 channel.send(b"ready")
-                ready, _, _ = select.select([channel], [], [], timeout)
-                if ready and channel.recv(32) == b"confirm":
-                    if not matches(layout, backend.query()):
-                        raise DisplayError("Layout changed before confirmation")
-                    save(config, layout)
-                    committed = True
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    ready, _, _ = select.select([channel], [], [], min(.5, max(0, deadline - time.monotonic())))
+                    if ready:
+                        if channel.recv(32) == b"confirm":
+                            if time.monotonic() >= deadline:
+                                break
+                            if not matches(layout, backend.query()):
+                                raise DisplayError("Layout changed before confirmation")
+                            save(config, layout)
+                            committed = True
+                        break
+                    if time.monotonic() >= deadline:
+                        break
+                    if topology(layout) != topology(backend.query()):
+                        raise DisplayError("Connected monitors changed during preview")
             finally:
                 if not committed:
                     rollback(backend, before)
@@ -392,6 +490,10 @@ def configure(state):
         o["mode"], o["rate"] = choices[choice - 1]
         o["enabled"], o["primary"] = True, False
         o["rotation"] = input(f'Rotation normal/left/right/inverted [{o["rotation"]}]: ').strip() or o["rotation"]
+        value = input(f'Scale percent (50..400) [{o["scale"] * 100:g}]: ').strip()
+        if value:
+            o["scale"] = float(value) / 100
+            o["filter"] = "" if o["scale"] == 1 else "bilinear"
         o["x"] = int(input(f'Horizontal position [{o["x"]}]: ').strip() or o["x"])
         o["y"] = int(input(f'Vertical position [{o["y"]}]: ').strip() or o["y"])
         active.append(o)
@@ -406,7 +508,7 @@ def configure(state):
 
 
 def restore(backend, config, state):
-    with locked(state):
+    with locked(state, getattr(backend, "env", {}).get("DISPLAY")):
         current = backend.query()
         if any(o["identity"] == hashlib.sha256(b"").hexdigest() for o in current["outputs"]):
             # Connector alone cannot identify a replacement monitor reliably.
@@ -415,7 +517,7 @@ def restore(backend, config, state):
             layout = json.loads(path.read_text())
             if topology(layout) != topology(current):
                 continue
-            validate(layout, current)
+            layout = validate(layout, current)
             if matches(layout, current):
                 return
             before = snapshot(current)
@@ -456,7 +558,10 @@ def watch(parent_pid, backend, config, state):
                     restore(backend, config, state)
                 except DisplayError as exc:
                     print(f"pleb displays watch: {exc}", file=sys.stderr, flush=True)
-                previous = current
+                else:
+                    # A preview may hold the display lock while a cable
+                    # changes. Retry this topology after that worker finishes.
+                    previous = current
             time.sleep(2)
     except Exception as exc:
         raise DisplayError(f"Session display watcher stopped: {exc}") from exc
