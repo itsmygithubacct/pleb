@@ -39,6 +39,19 @@ lives on `plebian-os` and plays at [plebian-os.com](https://plebian-os.com/#watc
 
 ## RC5: desktop services
 
+Pleb supplies a consent-based X11 Screenshot and ScreenCast backend for
+`xdg-desktop-portal`. Every capture asks the user to select a display or window;
+screen sharing shows a **Stop sharing** control. Cancellation publishes no
+video source, and closing the portal session tears down its producer. Saved
+permissions are not accepted as automatic capture grants.
+
+Plebian-OS supplies PipeWire and WirePlumber's `video-only` profile for this
+transport, while PulseAudio continues to handle sound. Standalone Pleb uses
+the host's existing PipeWire session manager; it installs the capture backend
+without replacing another desktop's audio policy. The pane application's
+private D-Bus connection still needs the desktop portal bridge; that integration
+is not established by the native capture backend alone.
+
 Normal login sessions start supervised lock, idle-inhibition, power, PolicyKit,
 Bluetooth, removable-media and input-method services. `pleb install` supplies
 their Debian dependencies. Plebian-OS enables them for the normal desktop;

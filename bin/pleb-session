@@ -532,7 +532,8 @@ fi
 # and make DISPLAY/XAUTHORITY visible on the bus, so the notification daemon —
 # started on demand when the first notification arrives — can reach our X server.
 if command -v dbus-update-activation-environment >/dev/null 2>&1; then
-    dbus-update-activation-environment --systemd DISPLAY XAUTHORITY 2>/dev/null || true
+    dbus-update-activation-environment --systemd DISPLAY XAUTHORITY \
+        XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP 2>/dev/null || true
 fi
 
 # --- clipboard ownership -----------------------------------------------------

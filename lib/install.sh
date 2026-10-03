@@ -55,6 +55,8 @@ ensure_system_deps() {
         pulseaudio pulseaudio-utils pulsemixer alsa-utils ffmpeg xauth zenity
         zstd espeak-ng
         python3-dbus python3-gi dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
+        pipewire pipewire-bin gstreamer1.0-pipewire gstreamer1.0-x
+        gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gst-plugins-base-1.0 gir1.2-gtk-3.0 python3-gi-cairo
         xdg-utils desktop-file-utils shared-mime-info xfce4-notifyd libnotify-bin
         xss-lock i3lock xssproxy xfce4-power-manager xfconf lxpolkit
         blueman pulseaudio-module-bluetooth udisks2 udiskie gnome-disk-utility
@@ -80,7 +82,7 @@ ensure_system_deps() {
     # transaction. Kept out of the required set and tolerated here, because
     # espeak-ng alone is the default engine and Kilix falls back to it when an
     # mbrola voice is missing. `unzip` above extracts the checksum-pinned Vosk
-    # wheel and acoustic-model archive. Capture needs no new package:
+    # wheel and acoustic-model archive. Microphone capture needs no new package:
     # pulseaudio-utils (parec/pacat) is already installed for the volume widget.
     _install_missing_apt_packages "read-aloud mbrola voices" mbrola mbrola-us1 \
         || warn "mbrola voices unavailable (enable Debian's contrib and non-free components to install them); read-aloud uses espeak-ng"
@@ -818,6 +820,26 @@ install_openbox_profile() {
 
 # do_install — ensure kilix is present, copy pleb-session to /usr/local/bin, and
 # drop the xsession entry so LightDM lists "Pleb" as a choosable session.
+install_capture_portal() {
+    local module
+    for module in displays.py capture_sources.py capture_worker.py capture_portal.py; do
+        run_root install -D -m 0644 "$PLEB_ROOT/lib/$module" "/usr/local/lib/pleb/$module"
+    done
+    run_root install -D -m 0644 "$PLEB_ROOT/share/portals/pleb.portal" \
+        /usr/local/share/xdg-desktop-portal/portals/pleb.portal
+    run_root install -D -m 0644 "$PLEB_ROOT/share/portals/org.freedesktop.impl.portal.desktop.pleb.service" \
+        /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service
+    # The distribution owns this audio/video policy. A standalone Pleb install
+    # uses its host's session manager and must not change another desktop's
+    # WirePlumber profile or portal preferences.
+    if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
+        run_root install -D -m 0644 "$PLEB_ROOT/share/portals/50pleb-video-only.conf" \
+            /etc/wireplumber/wireplumber.conf.d/50pleb-video-only.conf
+        run_root install -D -m 0644 "$PLEB_ROOT/share/portals/pleb-portals.conf" \
+            /etc/xdg-desktop-portal/pleb-portals.conf
+    fi
+}
+
 do_install() {
     [ -f "$PLEB_BIN_SRC" ]    || die "missing $PLEB_BIN_SRC"
     [ -f "$PLEB_DESKTOP_IN" ] || die "missing $PLEB_DESKTOP_IN"
@@ -853,6 +875,7 @@ do_install() {
     log "installing session launcher -> $SESSION_BIN_DST"
     run_root install -D -m 0644 "$PLEB_ROOT/lib/displays.py" "$PLEB_DISPLAYS_DST"
     run_root install -D -m 0755 "$PLEB_ROOT/bin/pleb-lock" "$PLEB_LOCK_DST"
+    install_capture_portal
     run_root install -D -m 0755 "$PLEB_BIN_SRC" "$SESSION_BIN_DST"
 
     log "installing xsession entry -> $XSESSION_DST"
@@ -908,6 +931,16 @@ do_uninstall() {
     local removed=0
     for f in "$XSESSION_DST" "$SESSION_BIN_DST" "$PLEB_RECOVERY_DOC_DST" \
             "$OPENBOX_CONFIG_DST" "$PLEB_DISPLAYS_DST" "$PLEB_LOCK_DST"; do
+        if [ -e "$f" ] || [ -L "$f" ]; then
+            log "removing $f"
+            run_root rm -f "$f"
+            removed=1
+        fi
+    done
+    for f in /usr/local/lib/pleb/displays.py /usr/local/lib/pleb/capture_sources.py /usr/local/lib/pleb/capture_worker.py \
+            /usr/local/lib/pleb/capture_portal.py \
+            /usr/local/share/xdg-desktop-portal/portals/pleb.portal \
+            /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service; do
         if [ -e "$f" ] || [ -L "$f" ]; then
             log "removing $f"
             run_root rm -f "$f"

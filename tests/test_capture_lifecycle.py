@@ -1,0 +1,103 @@
+from pathlib import Path
+import sys
+import types
+import unittest
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+import capture_portal as capture
+
+
+class CaptureLifecycleTests(unittest.TestCase):
+    def test_backend_introspection_advertises_its_actual_properties(self):
+        portal = object.__new__(capture.Portal)
+        connection = mock.Mock()
+        connection.list_exported_child_objects.return_value = []
+        from xml.etree import ElementTree as ET
+        xml = ET.fromstring(portal.Introspect(capture.ROOT, connection))
+        screen = xml.find("./interface[@name='org.freedesktop.impl.portal.ScreenCast']")
+        self.assertEqual({p.attrib["name"] for p in screen.findall("property")},
+                         {"version", "AvailableSourceTypes", "AvailableCursorModes"})
+
+    def test_backend_accepts_only_the_current_frontend_owner(self):
+        portal = object.__new__(capture.Portal)
+        portal.bus = mock.Mock()
+        portal.bus.get_name_owner.return_value = ":1.100"
+        portal.authenticate(":1.100")
+        for sender in (None, ":1.101", capture.FRONTEND):
+            with self.subTest(sender=sender), self.assertRaises(capture.dbus.exceptions.DBusException):
+                portal.authenticate(sender)
+
+    def test_session_lookup_does_not_allow_another_application(self):
+        portal = object.__new__(capture.Portal)
+        session = types.SimpleNamespace(app="app.one", closed=False)
+        portal.sessions = {"/session": session}
+        self.assertIs(portal.session("/session", "app.one"), session)
+        with self.assertRaises(capture.CaptureError):
+            portal.session("/session", "app.two")
+        session.closed = True
+        with self.assertRaises(capture.CaptureError):
+            portal.session("/session", "app.one")
+
+    def test_session_close_cancels_consent_and_stops_every_producer(self):
+        session = object.__new__(capture.Session)
+        session.closed, session.path = False, "/session"
+        session.producers = [mock.Mock(), mock.Mock()]
+        request, indicator = mock.Mock(), mock.Mock()
+        session.pending, session.indicator = request, indicator
+        session.portal = types.SimpleNamespace(sessions={session.path: session})
+        session.Closed = mock.Mock()
+        session.remove_from_connection = mock.Mock()
+        session.close()
+        session.close()
+        for producer in session.producers:
+            producer.close.assert_called_once_with()
+        request.finish.assert_called_once_with(1)
+        indicator.destroy.assert_called_once_with()
+        session.Closed.assert_called_once_with()
+        self.assertEqual(session.portal.sessions, {})
+
+    def test_request_completion_is_one_shot_and_removes_the_dialog(self):
+        request = object.__new__(capture.Request)
+        request.done, request.path = False, "/request"
+        request.success, request.dialog = mock.Mock(), mock.Mock()
+        dialog = request.dialog
+        request.portal = types.SimpleNamespace(requests={request.path: request})
+        request.remove_from_connection = mock.Mock()
+        request.finish(1)
+        request.finish(0, {"uri": "file:///unexpected"})
+        request.success.assert_called_once()
+        self.assertEqual(int(request.success.call_args.args[0]), 1)
+        dialog.destroy.assert_called_once_with()
+        self.assertEqual(request.portal.requests, {})
+
+    def test_capture_failure_is_reported_as_failure_and_stops_the_session(self):
+        session = object.__new__(capture.Session)
+        request = mock.Mock()
+        session.pending = request
+        session.close = mock.Mock()
+        session.fail()
+        request.finish.assert_called_once_with(2)
+        session.close.assert_called_once_with()
+
+    def test_disconnected_reply_does_not_interrupt_cleanup(self):
+        request = object.__new__(capture.Request)
+        request.done, request.path, request.dialog = False, "/request", None
+        request.success = mock.Mock(side_effect=capture.dbus.exceptions.DBusException("Connection gone"))
+        request.portal = types.SimpleNamespace(requests={request.path: request})
+        request.remove_from_connection = mock.Mock()
+        request.finish(1)
+        self.assertTrue(request.done)
+        self.assertEqual(request.portal.requests, {})
+
+    def test_frontend_disappearance_closes_pending_and_active_operations(self):
+        portal = object.__new__(capture.Portal)
+        session, request = mock.Mock(), mock.Mock()
+        portal.sessions, portal.requests = {"/session": session}, {"/request": request}
+        portal.owner_changed(capture.FRONTEND, ":1.100", "")
+        session.close.assert_called_once_with()
+        request.finish.assert_called_once_with(1)
+
+
+if __name__ == "__main__":
+    unittest.main()
