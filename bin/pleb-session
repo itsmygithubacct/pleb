@@ -45,6 +45,10 @@
 #   PLEB_BG           root window solid colour     (default: #101010)
 #   PLEB_LOG          session log file (default: ~/.local/gpu_terminal/pleb/state/session.log)
 #   PLEB_RESPAWN      if =1, relaunch kilix if it exits (kiosk mode); default off
+#   PLEB_SESSION_SERVICES auto | on | off; auto enables desktop services in a
+#                     logind login session, and leaves nested tests alone
+#   PLEB_IDLE_LOCK_SECONDS idle lock timeout (default: 600; 0 disables idle lock)
+#   PLEB_INPUT_METHOD auto | ibus | off; auto preserves another selected IM
 #   PLEB_MIC_DEFAULT  one-time default microphone input level, percent
 #                     (default: 45; off to leave the level alone)
 #   PLEB_CLIPBOARD    clipboard manager policy     (default: auto)
@@ -117,7 +121,7 @@ if [[ ! ${PLEB_CLOSURE_USER+x} ]]; then
 fi
 
 _pleb_release_vars="PLEBIAN_OS_VERSION PLEBIAN_OS_RELEASE PLEBIAN_OS_RELEASE_MODE PLEBIAN_OS_REPO PLEBIAN_OS_BRANCH PLEBIAN_OS_REF PLEB_REPO PLEB_BRANCH PLEB_REF KILIX_REPO KILIX_BRANCH KILIX_REF KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX_SYSTEM_MONITOR_REPO KILIX_SYSTEM_MONITOR_BRANCH KILIX_SYSTEM_MONITOR_REF KILIX_DESKTOP_SDK_REPO KILIX_DESKTOP_SDK_BRANCH KILIX_DESKTOP_SDK_REF KILIX_ICEWM_REPO KILIX_ICEWM_BRANCH KILIX_ICEWM_REF KILIX_MEDIA_SDK_REPO KILIX_MEDIA_SDK_BRANCH KILIX_MEDIA_SDK_REF KILIX_WAYDROID_REPO KILIX_WAYDROID_BRANCH KILIX_WAYDROID_REF PLEBIAN_OS_APT_SNAPSHOT PLEBIAN_OS_INSTALL_UV PLEBIAN_OS_UV_VERSION PLEBIAN_OS_UV_INSTALLER_SHA256 PLEBIAN_OS_UV_INSTALLER_MAX_BYTES KILIX_PREBUILT_VERSION KILIX_PREBUILT_SHA256 PLEBIAN_OS_BUILD_KILIX_FORK PLEBIAN_OS_KILIX_GO_MIN_VERSION PLEBIAN_OS_KILIX_GO_VERSION PLEBIAN_OS_KILIX_GO_SHA256_AMD64 PLEBIAN_OS_KILIX_GO_SHA256_ARM64 PLEBIAN_OS_INSTALL_VOICE_MODEL KILIX_VOICE_REF KILIX_VOICE_LIB_VERSION KILIX_VOICE_LIB_URL KILIX_VOICE_LIB_SHA256 KILIX_VOICE_MODEL_URL KILIX_VOICE_MODEL_SHA256 PLEBIAN_OS_INSTALL_WAYDROID PLEBIAN_OS_WAYDROID_CLOSURE_SHA256"
-_pleb_vars="$_pleb_release_vars PLEBIAN_OS_DIR PLEB_DIR GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
+_pleb_vars="$_pleb_release_vars PLEBIAN_OS_DIR PLEB_DIR GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_SESSION_SERVICES PLEB_IDLE_LOCK_SECONDS PLEB_INPUT_METHOD PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
 declare -A _pleb_had _pleb_saved
 for _pleb_v in $_pleb_vars; do
     if [[ ${!_pleb_v+x} ]]; then
@@ -699,6 +703,8 @@ PLEB_KILIX_PID=""
 PLEB_KILIX_START=""
 PLEB_NATIVE_LOG_PID=""
 PLEB_NATIVE_LOG_START=""
+declare -A PLEB_SERVICE_PIDS=() PLEB_SERVICE_STARTS=()
+PLEB_SERVICES_ACTIVE=0
 PLEB_WM_START=""
 _pleb_launching=0
 _pleb_pending_signal=""
@@ -804,6 +810,10 @@ _pleb_cleanup() {
     local rc=$?
     local -a owned=()
     trap - EXIT HUP INT TERM
+    local service
+    for service in "${!PLEB_SERVICE_PIDS[@]}"; do
+        owned+=("${PLEB_SERVICE_PIDS[$service]}:${PLEB_SERVICE_STARTS[$service]}")
+    done
     [ -z "$PLEB_NATIVE_LOG_PID" ] || owned+=("$PLEB_NATIVE_LOG_PID:$PLEB_NATIVE_LOG_START")
     [ -z "$PLEB_KILIX_PID" ] || owned+=("$PLEB_KILIX_PID:$PLEB_KILIX_START")
     if [ "$PLEB_WM_OWNED" = 1 ] && [ -n "$PLEB_WM_PID" ]; then
@@ -931,6 +941,122 @@ else
         echo "WARN: $_pleb_wm_fail; falling back to the no-WM screen-fill session" >&2
     fi
     unset _pleb_wm_fail _pleb_wm_required
+fi
+
+# --- desktop services --------------------------------------------------------
+# Capture these before an app runner replaces DISPLAY and the session bus.
+export PLEB_DESKTOP_DISPLAY="${DISPLAY:-}"
+export PLEB_DESKTOP_XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+export PLEB_DESKTOP_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}"
+
+_pleb_service_start() {
+    local name="$1"; shift
+    command -v "$1" >/dev/null 2>&1 || {
+        echo "FATAL: desktop service $1 is missing; run pleb install" >&2
+        return 1
+    }
+    _pleb_launch_owned "PLEB_SERVICE_PIDS[$name]" "PLEB_SERVICE_STARTS[$name]" "$@"
+}
+
+_pleb_services_alive() {
+    local service
+    for service in locker inhibit power polkit; do
+        [ -n "${PLEB_SERVICE_PIDS[$service]:-}" ] || continue
+        if ! _pleb_owned_alive "${PLEB_SERVICE_PIDS[$service]}" "${PLEB_SERVICE_STARTS[$service]}"; then
+            echo "FATAL: required desktop service $service exited" >&2
+            return 1
+        fi
+    done
+}
+
+_pleb_start_services() {
+    local policy="${PLEB_SESSION_SERVICES:-auto}" lock_bin idle input
+    case "$policy" in
+        off|0) return 0 ;;
+        auto) [ -n "${XDG_SESSION_ID:-}" ] && [ "${PLEB_RESPAWN:-0}" != 1 ] || return 0 ;;
+        on|1) ;;
+        *) echo 'FATAL: PLEB_SESSION_SERVICES must be auto, on or off' >&2; return 1 ;;
+    esac
+    [[ "${DISPLAY:-}" =~ ^:[0-9]+(\.[0-9]+)?$ ]] || return 1
+    [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || return 1
+    idle="${PLEB_IDLE_LOCK_SECONDS:-600}"
+    [[ "$idle" =~ ^[0-9]{1,5}$ ]] && [ "$idle" -le 86400 ] || {
+        echo 'FATAL: PLEB_IDLE_LOCK_SECONDS must be 0..86400' >&2; return 1;
+    }
+    lock_bin=/usr/local/bin/pleb-lock
+    if [ ! -x "$lock_bin" ]; then
+        lock_bin="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/pleb-lock"
+    fi
+    [ -x "$lock_bin" ] && command -v i3lock >/dev/null || {
+        echo 'FATAL: authenticated locker is missing; run pleb install' >&2; return 1;
+    }
+    _pleb_require_process_cleanup
+    _pleb_service_start locker xss-lock --transfer-sleep-lock -- "$lock_bin" --nofork || return 1
+    # Do not start the desktop until logind confirms the delay inhibitor. A
+    # live process alone does not establish lock-before-suspend protection.
+    /usr/bin/python3 - "${PLEB_SERVICE_PIDS[locker]}" <<'PY_INHIBITOR' || return 1
+import sys, time
+import dbus
+pid = int(sys.argv[1])
+manager = dbus.Interface(dbus.SystemBus().get_object(
+    'org.freedesktop.login1', '/org/freedesktop/login1'), 'org.freedesktop.login1.Manager')
+for attempt in range(50):
+    if any('sleep' in str(row[0]).split(':') and str(row[3]) == 'delay'
+           and int(row[5]) == pid for row in manager.ListInhibitors(timeout=1)):
+        break
+    time.sleep(.1)
+else:
+    sys.exit('FATAL: locker did not obtain the logind sleep-delay inhibitor')
+PY_INHIBITOR
+    _pleb_service_start inhibit xssproxy || return 1
+    _pleb_service_start polkit lxpolkit || return 1
+    # libxfce4ui checks this command before its screensaver D-Bus fallbacks.
+    # Seed it only when absent so an operator's chosen locker is preserved.
+    if ! xfconf-query -c xfce4-session -p /general/LockCommand >/dev/null 2>&1; then
+        xfconf-query -c xfce4-session -p /general/LockCommand \
+            --create --type string --set "$lock_bin" || return 1
+    fi
+    _pleb_service_start power xfce4-power-manager || return 1
+    _pleb_service_start bluetooth blueman-applet || return 1
+    _pleb_service_start storage udiskie --no-tray --notify || return 1
+    input="${PLEB_INPUT_METHOD:-auto}"
+    case "$input" in
+        auto) case "${GTK_IM_MODULE:-ibus}" in ibus|'') input=ibus ;; *) input=off ;; esac ;;
+        ibus|off) ;;
+        *) echo 'FATAL: PLEB_INPUT_METHOD must be auto, ibus or off' >&2; return 1 ;;
+    esac
+    if [ "$input" = ibus ]; then
+        export GTK_IM_MODULE=ibus QT_IM_MODULE=ibus XMODIFIERS=@im=ibus
+        _pleb_service_start input ibus-daemon --xim --desktop=Pleb || return 1
+        # A fixed address lets GTK/Qt clients on private X displays reach this
+        # input method instead of looking for a daemon on their own display.
+        local attempt address
+        unset IBUS_ADDRESS
+        for ((attempt=0; attempt<50; attempt++)); do
+            address="$(ibus address 2>/dev/null)" || address=""
+            if [[ "$address" = unix:* ]]; then
+                export IBUS_ADDRESS="$address"
+                break
+            fi
+            sleep .1
+        done
+        [ -n "${IBUS_ADDRESS:-}" ] || return 1
+    fi
+    # Xfce owns display power policy; Xss owns the idle lock timer.
+    xset s "$idle" 0 || return 1
+    xset +dpms || true
+    PLEB_SERVICES_ACTIVE=1
+    if command -v dbus-update-activation-environment >/dev/null; then
+        dbus-update-activation-environment --systemd \
+            PLEB_DESKTOP_DISPLAY PLEB_DESKTOP_XAUTHORITY PLEB_DESKTOP_BUS_ADDRESS \
+            GTK_IM_MODULE QT_IM_MODULE XMODIFIERS IBUS_ADDRESS 2>/dev/null || true
+    fi
+    sleep .2
+    _pleb_services_alive
+}
+if ! _pleb_start_services; then
+    echo 'FATAL: desktop services could not start; ending the session' >&2
+    exit "$PLEB_EX_CONFIG"
 fi
 
 # --- screen-fill strategy ----------------------------------------------------
@@ -1122,6 +1248,7 @@ _pleb_run_kilix_supervised() {
         if [ "$PLEB_WM_OWNED" = 1 ] && ! _pleb_owned_alive "$PLEB_WM_PID" "$PLEB_WM_START"; then
             return 1
         fi
+        _pleb_services_alive || return 1
         sleep 0.5
     done
 }
@@ -1137,7 +1264,7 @@ if [ "$PLEB_RESPAWN" = 1 ]; then
         printf ' %q' "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
         printf ' (%s) ---\n' "$(date)"
         if ! _pleb_run_kilix_supervised; then
-            echo "FATAL: window manager (pid $PLEB_WM_PID) exited; ending the session" >&2
+            echo "FATAL: window manager or required desktop service exited; ending the session" >&2
             exit "$PLEB_EX_CONFIG"
         fi
         rc=$PLEB_KILIX_RC
@@ -1161,13 +1288,13 @@ if [ "$PLEB_RESPAWN" = 1 ]; then
         echo "--- respawning in ${delay}s ---"
         sleep "$delay"
     done
-elif [ "$PLEB_WM_OWNED" = 1 ]; then
+elif [ "$PLEB_WM_OWNED" = 1 ] || [ "$PLEB_SERVICES_ACTIVE" = 1 ]; then
     # Supervised: this shell must outlive kilix so it can stop the WM it started.
     printf -- '--- launching'
     printf ' %q' "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
     printf ' ---\n'
     if ! _pleb_run_kilix_supervised; then
-        echo "FATAL: window manager (pid $PLEB_WM_PID) exited; ending the session" >&2
+        echo "FATAL: window manager or required desktop service exited; ending the session" >&2
         exit "$PLEB_EX_CONFIG"
     fi
     echo "--- kilix exited rc=$PLEB_KILIX_RC; ending session ---"

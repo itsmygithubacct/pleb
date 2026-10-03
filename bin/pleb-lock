@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Lock the physical Pleb session, including requests from a private app display.
+set -euo pipefail
+[ "$(id -u)" != 0 ] || { echo 'pleb-lock: run as the desktop user' >&2; exit 1; }
+args=(--color=101010 --show-keyboard-layout)
+case "${1:-}" in
+    '') [ "$#" = 0 ] || exit 2 ;;
+    --nofork) [ "$#" = 1 ] || exit 2; args+=(--nofork) ;;
+    *) echo 'usage: pleb-lock [--nofork]' >&2; exit 2 ;;
+esac
+if [ -n "${PLEB_DESKTOP_DISPLAY:-}" ]; then
+    DISPLAY="$PLEB_DESKTOP_DISPLAY"
+    XAUTHORITY="${PLEB_DESKTOP_XAUTHORITY:-$HOME/.Xauthority}"
+elif [ "${KILIX_PRIVATE_XAPP:-0}" = 1 ]; then
+    echo 'pleb-lock: physical session display is unavailable' >&2
+    exit 1
+fi
+[[ "${DISPLAY:-}" =~ ^:[0-9]+(\.[0-9]+)?$ ]] \
+    || { echo 'pleb-lock: a local X11 desktop is required' >&2; exit 1; }
+export DISPLAY
+if [[ ${XAUTHORITY+x} ]]; then export XAUTHORITY; fi
+unset WAYLAND_DISPLAY WAYLAND_SOCKET
+command -v i3lock >/dev/null \
+    || { echo 'pleb-lock: i3lock is missing; run pleb install' >&2; exit 1; }
+exec i3lock "${args[@]}"

@@ -194,6 +194,62 @@ _pleb_stop_owned "$control:$expected" || exit 83
         self.assertEqual(p.wait(timeout=7), 143, self.log())
         self.assert_stopped(wm, terminal)
 
+    def with_services(self):
+        self.env.update(PLEB_SESSION_SERVICES='on', PLEB_INPUT_METHOD='off',
+                        DISPLAY=':77', DBUS_SESSION_BUS_ADDRESS='unix:path=/fixture',
+                        PYTHONPATH=str(self.root), FIXTURE_MODE='ready')
+        locker = self.root / 'pleb-lock'
+        locker.write_text((ROOT / 'bin/pleb-lock').read_text())
+        locker.chmod(0o700)
+        self.script('i3lock', '#!/bin/sh\nexit 0\n')
+        self.script('xfconf-query', '#!/bin/sh\nexit 0\n')
+        for name in ('xss-lock', 'xssproxy', 'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie'):
+            self.script(name, (self.bin / 'wm').read_text())
+        # Only logind is a stand-in here. Process ownership, signals, service
+        # launch arguments and the session supervision loop execute unchanged.
+        (self.root / 'dbus.py').write_text('''
+import os
+from pathlib import Path
+class SystemBus:
+    def get_object(self,*args): return self
+def Interface(obj,*args): return obj
+def _inhibitors(self,**kwargs):
+    p=Path(os.environ['FIXTURE_ROOT'],'xss-lock.pid')
+    return [('sleep','fixture','fixture','delay',os.getuid(),int(p.read_text()))] if p.exists() else []
+SystemBus.ListInhibitors=_inhibitors
+''')
+
+    def test_owned_desktop_services_are_reaped_with_the_session(self):
+        self.with_services()
+        p = self.start()
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'xssproxy', 'lxpolkit',
+                    'xfce4-power-manager', 'blueman-applet', 'udiskie', 'kilix')]
+        p.terminate()
+        self.assertEqual(p.wait(timeout=7), 143, self.log())
+        self.assert_stopped(*children)
+
+    def test_locker_failure_ends_the_desktop_and_reaps_owned_children(self):
+        self.with_services()
+        p = self.start()
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'xssproxy', 'lxpolkit',
+                    'xfce4-power-manager', 'blueman-applet', 'udiskie', 'kilix')]
+        fd = next(fd for pid, fd in self.handles if pid == children[1])
+        signal.pidfd_send_signal(fd, signal.SIGKILL)
+        self.assertEqual(p.wait(timeout=7), 78, self.log())
+        self.assert_stopped(*children)
+
+    def test_missing_locker_prevents_the_engine_from_starting(self):
+        self.with_services()
+        (self.bin / 'i3lock').unlink()
+        # Constrain resolution so an installed host locker is never selected.
+        self.driver.write_text(self.driver.read_text().replace(
+            'command -v i3lock >/dev/null', 'command -v fixture-missing-locker >/dev/null'))
+        p = self.start()
+        wm = self.child('wm')
+        self.assertEqual(p.wait(timeout=7), 78, self.log())
+        self.assert_stopped(wm)
+        self.assertFalse((self.root/'kilix.pid').exists())
+
 
 if __name__ == '__main__':
     unittest.main()

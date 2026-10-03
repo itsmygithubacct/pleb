@@ -37,12 +37,47 @@ stack series (1920×1080, 2m46s, 9.3 MB; published as a
 small). The [full series](https://github.com/itsmygithubacct/plebian-os#watch-the-series) (31m22s)
 lives on `plebian-os` and plays at [plebian-os.com](https://plebian-os.com/#watch).
 
+## RC5: desktop services
+
+Normal login sessions start supervised lock, idle-inhibition, power, PolicyKit,
+Bluetooth, removable-media and input-method services. `pleb install` supplies
+their Debian dependencies. Plebian-OS enables them for the normal desktop;
+standalone Pleb's `PLEB_SESSION_SERVICES=auto` enables them in a logind login
+session. Nested tests and hard kiosks retain their explicit session policy.
+`PLEB_SESSION_SERVICES=on` requires the services, and `off` disables their startup.
+
+**Super-L**, **Ctrl-Alt-L**, and `pleb lock` lock the physical session using
+Debian's PAM-backed i3lock. A request from a private app display targets the
+physical desktop. xss-lock obtains a logind sleep-delay inhibitor before the
+workspace starts; if a required service dies, the session ends. Idle locking
+defaults to 600 seconds; `PLEB_IDLE_LOCK_SECONDS=0` disables the idle timeout.
+The power manager's lock command is seeded only if the operator has not chosen one.
+
+Kilix Settings → Tools and Kilix 95's Control Panel expose the same controls:
+
+```sh
+pleb devices power          # lid, battery, brightness and sleep policy
+pleb devices bluetooth      # pairing and connections
+pleb devices storage        # mount, unmount and eject
+pleb devices printers       # physical printer setup and queues
+pleb devices audio          # output devices and microphones
+pleb devices input-method   # IBus languages and typing preferences
+pleb devices accessibility  # Orca preferences
+```
+
+Controls render inside a Kilix pane while connecting to the physical desktop's
+session bus. `--native` opens the control on the current display. IBus is the
+default input method; `PLEB_INPUT_METHOD=auto` preserves a different selected
+input framework, and `off` leaves input-method startup to the operator.
+Orca's presence does not establish screen-reader support for the custom desktop
+widgets; that integration and the hardware acceptance workflow remain RC5 work.
+
 ## RC5: monitor layouts
 
 Pleb owns physical display configuration; **Kilix Settings → Tools → Displays**
 opens `pleb displays gui`. The graphical arranger runs inside a Kilix app tab,
 with draggable monitor cards, edge snapping, primary selection, resolution,
-refresh rate and rotation controls. Its private UI display is separate from
+refresh rate, rotation and per-monitor scale controls. Its private UI display is separate from
 the physical X server it controls. This feature targets local X11 sessions using
 XRandR. Run it as the desktop user, without sudo.
 
@@ -55,11 +90,17 @@ pleb displays preview layout.json       # 15-second confirmation deadline
 pleb displays restore                   # restore a previously confirmed layout
 ```
 
-Choose enabled outputs, resolution, refresh rate, rotation, horizontal/vertical
-position and one primary monitor. For side-by-side monitors, put the left one
-at `0,0` and the right one at `left-monitor-width,0`. Equal positions mirror
-outputs. Scaling, reflection and panning are currently refused; native Wayland
-and forwarded SSH displays are unsupported.
+Choose enabled outputs, resolution, refresh rate, rotation, scale from 50% to
+400%, horizontal/vertical position and one primary monitor. A larger scale
+makes content larger. Positions and monitor cards use logical framebuffer
+pixels: a 3840×2160 output at 200% occupies 1920×1080, so an adjoining monitor
+starts at `1920,0`. **Extend →** calculates these positions for you. Equal
+positions mirror outputs. Fractional scaling uses a bilinear RandR filter;
+existing nearest filters are preserved in rollback baselines. Nonuniform or
+projective transforms, reflection and panning are refused; native Wayland and
+forwarded SSH displays are unsupported. New JSON profiles are version 2 and
+include `scale` (1.25 means 125%) and `filter`. Existing version 1 profiles load
+at 100% without rewriting them; confirming a layout saves version 2.
 
 Choose **Keep this layout** within 20 seconds in the graphical arranger (or type
 `yes` within 15 seconds in the terminal editor) to save it. Timeout, cancellation, a closed

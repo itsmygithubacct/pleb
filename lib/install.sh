@@ -50,11 +50,17 @@ ensure_system_deps() {
         git curl tar unzip sudo tmux network-manager build-essential cmake zlib1g-dev
         lightdm xinit x11-xserver-utils x11-utils xterm openbox
         libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
-        fontconfig fonts-dejavu-core
+        fontconfig fonts-dejavu-core xfonts-base
         python3-pil python3-xlib python3-websockets python3-venv python3-tk
         pulseaudio pulseaudio-utils pulsemixer alsa-utils ffmpeg xauth zenity
         zstd espeak-ng
-        dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
+        python3-dbus python3-gi dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
+        xdg-utils desktop-file-utils shared-mime-info xfce4-notifyd libnotify-bin
+        xss-lock i3lock xssproxy xfce4-power-manager xfconf lxpolkit
+        blueman pulseaudio-module-bluetooth udisks2 udiskie gnome-disk-utility
+        cups cups-client system-config-printer system-config-printer-udev
+        pavucontrol ibus ibus-gtk ibus-gtk3 ibus-gtk4
+        orca at-spi2-core gir1.2-notify-0.7
         libfluidsynth3 fluid-soundfont-gm
     )
     # Kilix Amp renders MIDI in-process through the FluidSynth *library* and a
@@ -846,6 +852,7 @@ do_install() {
 
     log "installing session launcher -> $SESSION_BIN_DST"
     run_root install -D -m 0644 "$PLEB_ROOT/lib/displays.py" "$PLEB_DISPLAYS_DST"
+    run_root install -D -m 0755 "$PLEB_ROOT/bin/pleb-lock" "$PLEB_LOCK_DST"
     run_root install -D -m 0755 "$PLEB_BIN_SRC" "$SESSION_BIN_DST"
 
     log "installing xsession entry -> $XSESSION_DST"
@@ -900,7 +907,7 @@ do_install() {
 do_uninstall() {
     local removed=0
     for f in "$XSESSION_DST" "$SESSION_BIN_DST" "$PLEB_RECOVERY_DOC_DST" \
-            "$OPENBOX_CONFIG_DST" "$PLEB_DISPLAYS_DST"; do
+            "$OPENBOX_CONFIG_DST" "$PLEB_DISPLAYS_DST" "$PLEB_LOCK_DST"; do
         if [ -e "$f" ] || [ -L "$f" ]; then
             log "removing $f"
             run_root rm -f "$f"

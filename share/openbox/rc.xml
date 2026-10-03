@@ -18,7 +18,7 @@
     - focusNew, click-to-focus, click-to-raise
     - Alt-Tab / Alt-Shift-Tab window cycling, ending in Focus + Raise + Unshade
     - Alt-F4 close; normal decorations and title-bar controls
-    - no root-window menu, no launcher keys, no screenshot keys, no dock use
+    - no root-window menu or dock; Super-L / Ctrl-Alt-L lock the physical session
     - no per-application rules
 
   In particular there is NO rule forcing Kilix to the 'above' layer. The Pleb
@@ -187,6 +187,13 @@
   <!-- Close the focused window. -->
   <keybind key="A-F4">
     <action name="Close"/>
+  </keybind>
+
+  <keybind key="W-l">
+    <action name="Execute"><command>pleb-lock</command></action>
+  </keybind>
+  <keybind key="C-A-l">
+    <action name="Execute"><command>pleb-lock</command></action>
   </keybind>
 
   <!-- Deliberately absent: desktop switching (C-A-Arrow, W-F1..F4),

@@ -38,6 +38,14 @@ def fixture():
     return text + "DP-2 disconnected (normal left inverted right x axis y axis)\n"
 
 
+def scaled_fixture(scale, filter_name="bilinear"):
+    factor = d.transform_factor(scale)
+    return fixture().replace(
+        "Transform: 1.000000 0.000000 0.000000\n               0.000000 1.000000 0.000000",
+        f"Transform: {factor:.6f} 0.000000 0.000000\n               0.000000 {factor:.6f} 0.000000", 1
+    ).replace("filter:", "filter: " + filter_name, 1)
+
+
 class Backend:
     def __init__(self):
         self.state = d.parse_query(fixture())
@@ -95,11 +103,72 @@ class DisplaysTests(unittest.TestCase):
             with self.assertRaises(d.DisplayError):
                 d.validate(layout, self.backend.query())
 
-    def test_refuses_scaling_and_panning(self):
+    def test_refuses_nonuniform_scaling_and_panning(self):
         for text in (fixture().replace("1.000000", "1.250000", 1),
                      fixture().replace("    Transform:", "    Panning: 3840x1080+0+0\n    Transform:", 1)):
             with self.assertRaises(d.DisplayError):
                 d.validate(self.target, d.parse_query(text))
+
+    def test_uniform_zoom_round_trips_the_protocol_precision(self):
+        for zoom in (*d.SCALES, .81, 1.64, 2.73):
+            with self.subTest(zoom=zoom):
+                state = d.parse_query(scaled_fixture(zoom))
+                output = state["outputs"][0]
+                self.assertTrue(output["safe"])
+                self.assertEqual(d.transform_factor(output["scale"]), d.transform_factor(zoom))
+                saved = d.snapshot(state)
+                self.assertEqual(d.validate(saved, state), saved)
+                self.assertTrue(d.matches(saved, state))
+
+    def test_refuses_shear_translation_projection_and_nonfinite_transforms(self):
+        for first_row in ("1.000000 0.200000 0.000000", "1.000000 0.000000 5.000000", "nan 0.000000 0.000000"):
+            state = d.parse_query(fixture().replace("Transform: 1.000000 0.000000 0.000000", "Transform: " + first_row, 1))
+            with self.assertRaises(d.DisplayError):
+                d.validate(self.target, state)
+        state = d.parse_query(fixture().replace("0.000000 0.000000 1.000000", "0.001000 0.000000 1.000000", 1))
+        with self.assertRaises(d.DisplayError):
+            d.validate(self.target, state)
+
+    def test_invalid_zoom_and_filters_never_reach_apply(self):
+        for zoom in (False, True, "1.25", None, 0, -.5, .49, 4.01, float("nan"), float("inf")):
+            with self.subTest(zoom=zoom):
+                layout = copy.deepcopy(self.target)
+                layout["outputs"][0].update(scale=zoom, filter="bilinear")
+                with self.assertRaises(d.DisplayError):
+                    d.validate(layout, self.backend.query())
+        for filter_name in ("", "--off", None):
+            layout = copy.deepcopy(self.target)
+            layout["outputs"][0].update(scale=1.25, filter=filter_name)
+            with self.assertRaises(d.DisplayError):
+                d.validate(layout, self.backend.query())
+
+    def test_framebuffer_bounds_use_scaled_rotated_logical_sizes(self):
+        state = self.backend.query()
+        state["maximum"] = [3000, 1080]
+        with self.assertRaises(d.DisplayError):
+            d.validate(self.target, state)
+        self.target["outputs"][0].update(scale=1.5, filter="bilinear")
+        self.target["outputs"][1].update(scale=1.25, filter="bilinear", x=1280)
+        d.validate(self.target, state)
+        self.assertEqual(d.dimensions(self.target["outputs"][0]), (1280, 720))
+        self.target["outputs"][0]["rotation"] = "left"
+        with self.assertRaises(d.DisplayError):
+            d.validate(self.target, state)
+        self.target["outputs"][0].update(rotation="normal", scale=.5)
+        with self.assertRaises(d.DisplayError):
+            d.validate(self.target, state)
+
+    def test_legacy_saved_profiles_load_at_100_percent_and_confirm_as_version_2(self):
+        legacy = {"version": 1, "outputs": [{k: o[k] for k in d.LEGACY_FIELDS} for o in self.target["outputs"]]}
+        d.save(self.config, legacy)
+        d.restore(self.backend, self.config, self.state)
+        self.assertEqual(d.snapshot(self.backend.query()), self.target)
+        self.assertEqual(legacy["version"], 1)
+        self.target = legacy
+        self.assertTrue(self.exchange()["confirmed"])
+        saved = json.loads(next(self.config.glob("*.json")).read_text())
+        self.assertEqual(saved["version"], 2)
+        self.assertTrue(all(o["scale"] == 1 and o["filter"] == "" for o in saved["outputs"]))
 
     def exchange(self, reply=b"confirm", timeout=0.04):
         parent, worker = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
@@ -135,6 +204,27 @@ class DisplaysTests(unittest.TestCase):
         result = self.exchange()
         self.assertIn("partial apply", result["error"])
         self.assertEqual(d.snapshot(self.backend.query()), self.before)
+
+    def test_scaling_timeout_restores_the_previous_zoom_and_filter(self):
+        self.backend.state["outputs"][0].update(scale=2.0, filter="nearest")
+        self.before = d.snapshot(self.backend.query())
+        self.target["outputs"][0].update(scale=1.25, filter="bilinear")
+        self.assertFalse(self.exchange(None)["confirmed"])
+        self.assertEqual(d.snapshot(self.backend.query()), self.before)
+        self.assertEqual(list(self.config.iterdir()), [])
+
+    def test_ignored_transform_is_not_confirmed_or_saved(self):
+        self.target["outputs"][0].update(scale=1.5, filter="bilinear")
+        apply = self.backend.apply
+        def ignored(layout):
+            apply(layout)
+            self.backend.state["outputs"][0].update(scale=1, filter="")
+        with mock.patch.object(self.backend, "apply", side_effect=ignored):
+            result = self.exchange()
+        self.assertFalse(result["confirmed"])
+        self.assertIn("did not apply", result["error"])
+        self.assertEqual(d.snapshot(self.backend.query()), self.before)
+        self.assertEqual(list(self.config.iterdir()), [])
 
     def test_client_disconnect_reverts_in_independent_process(self):
         parent, worker = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
@@ -172,8 +262,18 @@ class DisplaysTests(unittest.TestCase):
         d.restore(self.backend, self.config, self.state)
         self.assertEqual(d.snapshot(self.backend.query()), self.target)
 
+    def test_restore_from_a_private_ui_respects_the_physical_display_lock(self):
+        d.save(self.config, self.target)
+        backend = d.RandR({"DISPLAY": ":0", "XAUTHORITY": "/physical/auth"})
+        with mock.patch.dict(os.environ, {"DISPLAY": ":99"}), \
+                mock.patch.object(backend, "query", return_value=self.backend.query()), \
+                mock.patch.object(backend, "apply") as apply, d.locked(self.state, ":0.0"):
+            with self.assertRaisesRegex(d.DisplayError, "Another display operation"):
+                d.restore(backend, self.config, self.state)
+        apply.assert_not_called()
+
     def test_no_shell_interpretation_in_backend(self):
-        with mock.patch.object(d.subprocess, "run", return_value=mock.Mock(returncode=0, stdout="", stderr="")) as run:
+        with mock.patch.object(d.subprocess, "run", return_value=mock.Mock(returncode=0, stdout=fixture(), stderr="")) as run:
             d.RandR().apply(self.target)
         args, kwargs = run.call_args
         self.assertEqual(args[0][0], "xrandr")
@@ -194,7 +294,7 @@ class DisplaysTests(unittest.TestCase):
             for i, output in enumerate(layout["outputs"]):
                 output["primary"] = i == index
             backend = d.RandR()
-            with mock.patch.object(backend, "run") as run:
+            with mock.patch.object(backend, "run", return_value=fixture()) as run:
                 backend.apply(layout)
             args = run.call_args.args[0]
             self.assertNotIn("--noprimary", args)
@@ -207,12 +307,32 @@ class DisplaysTests(unittest.TestCase):
         for output in self.target["outputs"]:
             output["primary"] = False
         backend = d.RandR()
-        with mock.patch.object(backend, "run") as run:
+        with mock.patch.object(backend, "run", return_value=fixture()) as run:
             backend.apply(self.target)
         args = run.call_args.args[0]
         self.assertEqual(args[0], "--noprimary")
         self.assertEqual(args.count("--noprimary"), 1)
         self.assertNotIn("--primary", args)
+
+    def test_unscaled_server_never_receives_an_unnecessary_transform(self):
+        backend = d.RandR()
+        with mock.patch.object(backend, "run", return_value=fixture()) as run:
+            backend.apply(self.before)
+        self.assertNotIn("--transform", run.call_args.args[0])
+        self.assertNotIn("--scale", run.call_args.args[0])
+
+    def test_backend_sets_and_resets_scaling_with_fixed_point_arguments(self):
+        self.target["outputs"][0].update(scale=1.25, filter="bilinear")
+        backend = d.RandR()
+        with mock.patch.object(backend, "run", return_value=fixture()) as run:
+            backend.apply(self.target)
+        args = run.call_args.args[0]
+        factor = repr(d.transform_factor(1.25))
+        self.assertEqual(args[args.index("--scale") + 1], factor + "x" + factor)
+        with mock.patch.object(backend, "run", return_value=scaled_fixture(1.25)) as run:
+            backend.apply(self.before)
+        args = run.call_args.args[0]
+        self.assertEqual(args[args.index("--transform") + 1], "none")
 
     def test_storage_refuses_symlinks_and_shared_directories(self):
         link = Path(self.tmp.name) / "link"
@@ -247,6 +367,42 @@ class DisplaysTests(unittest.TestCase):
         d.save(self.config, layout)
         d.restore(self.backend, self.config, self.state)
         self.assertEqual(self.backend.applied, [])
+
+    def test_watcher_retries_topology_when_a_preview_holds_the_lock(self):
+        d.save(self.config, self.target)
+        connection = mock.Mock()
+        module = types.ModuleType("Xlib.display")
+        module.Display = mock.Mock(return_value=connection)
+        with mock.patch.dict(sys.modules, {"Xlib": types.ModuleType("Xlib"), "Xlib.display": module}), \
+                mock.patch.object(d, "process_identity", side_effect=["start", "start", "start", "reused"]), \
+                mock.patch.object(d.time, "sleep"), \
+                mock.patch.object(d, "restore", side_effect=[d.DisplayError("Another display operation is running"), None]) as restore:
+            d.watch(123, self.backend, self.config, self.state)
+        self.assertEqual(restore.call_count, 2)
+        connection.close.assert_called_once()
+
+    def test_hotplug_during_preview_recovers_remaining_scaled_monitor_without_waiting_for_deadline(self):
+        self.backend.state["outputs"][1].update(scale=1.25, filter="nearest")
+        self.before = d.snapshot(self.backend.query())
+        self.target = copy.deepcopy(self.before)
+        self.target["outputs"][1].update(scale=1.5, filter="bilinear")
+        parent, worker = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        thread = threading.Thread(target=d.transaction, args=(worker, self.backend, self.target, self.config, self.state, 20))
+        thread.start()
+        parent.settimeout(3)
+        try:
+            self.assertEqual(parent.recv(65536), b"ready")
+            self.backend.state["outputs"].pop(0)
+            result = json.loads(parent.recv(65536))
+        finally:
+            parent.close()
+            thread.join(3)
+        self.assertFalse(thread.is_alive())
+        self.assertIn("monitors changed", result["error"])
+        remaining = self.backend.query()["outputs"][0]
+        self.assertEqual((remaining["scale"], remaining["filter"], remaining["x"], remaining["y"]), (1.25, "nearest", 0, 0))
+        self.assertTrue(remaining["enabled"] and remaining["primary"])
+        self.assertEqual(list(self.config.iterdir()), [])
 
     def test_disconnect_keeps_remaining_output_visible(self):
         self.backend.state["outputs"].pop(0)

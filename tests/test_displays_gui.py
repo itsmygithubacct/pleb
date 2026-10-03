@@ -108,6 +108,39 @@ class GraphicalDisplaysTests(unittest.TestCase):
         self.assertEqual(self.app.layout["outputs"][1]["x"], 0)
         self.assertGreater(self.app.layout["outputs"][0]["x"], 0)
 
+    def test_mixed_scaling_changes_logical_cards_and_positions_only_in_the_draft(self):
+        before = self.app.backend.query()
+        self.app.zoom.set("150%")
+        self.app.edit()
+        self.app.extend()
+        self.assertEqual(self.app.layout["outputs"][0]["scale"], 1.5)
+        self.assertEqual(gui.dimensions(self.app.layout["outputs"][0]), (1280, 720))
+        self.assertEqual(self.app.layout["outputs"][1]["x"], 1280)
+        self.assertEqual(self.app.backend.query(), before)
+
+    def test_scale_controls_and_preview_action_are_visible_at_the_minimum_window_size(self):
+        self.root.geometry('850x680')
+        self.root.update()
+        right = self.root.winfo_rootx() + self.root.winfo_width()
+        bottom = self.root.winfo_rooty() + self.root.winfo_height()
+        for widget in (*self.app.boxes, self.app.apply_button):
+            with self.subTest(widget=widget):
+                self.assertLessEqual(widget.winfo_rootx() + widget.winfo_width(), right)
+                self.assertLessEqual(widget.winfo_rooty() + widget.winfo_height(), bottom)
+
+    def test_scaled_graphical_confirmation_persists_the_selected_zoom(self):
+        self.app.zoom.set("125%")
+        self.app.edit()
+        self.app.extend()
+        self.app.apply()
+        self.pump_until(lambda: self.app.preview_deadline is not None)
+        self.app.reply(b"confirm")
+        self.pump_until(lambda: self.app.channel is None and self.app.worker is None)
+        profile = json.loads(next(self.config.glob("*.json")).read_text())
+        self.assertEqual(profile["version"], 2)
+        self.assertEqual(profile["outputs"][0]["scale"], 1.25)
+        self.assertEqual(profile["outputs"][1]["x"], 1536)
+
     def test_third_monitor_can_be_primary(self):
         import copy
         third = copy.deepcopy(self.app.backend.state["outputs"][0])
