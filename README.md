@@ -49,8 +49,9 @@ Plebian-OS supplies PipeWire and WirePlumber's `video-only` profile for this
 transport, while PulseAudio continues to handle sound. Standalone Pleb uses
 the host's existing PipeWire session manager; it installs the capture backend
 without replacing another desktop's audio policy. The pane application's
-private D-Bus connection still needs the desktop portal bridge; that integration
-is not established by the native capture backend alone.
+private D-Bus connection uses the matching Kilix candidate's desktop portal
+bridge. Native capture and private-app integration have component VM evidence;
+browser and installed default-desktop acceptance are still required.
 
 Normal login sessions start supervised lock, idle-inhibition, power, PolicyKit,
 Bluetooth, removable-media and input-method services. `pleb install` supplies
