@@ -107,7 +107,9 @@ record=root/'engine-runs.json'
 runs=json.loads(record.read_text()) if record.exists() else []
 statuses='''+repr(statuses)+'''
 status=statuses[min(len(runs),len(statuses)-1)]
-runs.append({'pid':os.getpid(),'status':status})
+runs.append({'pid':os.getpid(),'status':status,
+             'startup_token':os.environ.get('KITTY_PTY_BROKER_STARTUP_TOKEN'),
+             'recover_startup':os.environ.get('KITTY_PTY_BROKER_RECOVER_STARTUP')})
 pending=record.with_suffix('.pending')
 pending.write_text(json.dumps(runs))
 pending.replace(record)
@@ -316,10 +318,18 @@ SystemBus.ListInhibitors=_inhibitors
 
     def test_explicit_recovery_retries_failure_then_ends_on_clean_exit(self):
         self.env.update(PLEB_WM='none', PLEB_RECOVER_CRASHES='on')
-        self.engine_exits(17, 0)
+        self.env.update(KITTY_PTY_BROKER_STARTUP_TOKEN='f'*32,
+                        KITTY_PTY_BROKER_RECOVER_STARTUP='1')
+        self.engine_exits(17, 17, 0)
         p = self.start()
-        self.assertEqual(p.wait(timeout=8), 0, self.log())
-        self.assertEqual([run['status'] for run in self.engine_runs()], [17, 0])
+        self.assertEqual(p.wait(timeout=12), 0, self.log())
+        runs = self.engine_runs()
+        self.assertEqual([run['status'] for run in runs], [17, 17, 0])
+        token = runs[0]['startup_token']
+        self.assertRegex(token, r'^[0-9a-f]{32}$')
+        self.assertNotEqual(token, self.env['KITTY_PTY_BROKER_STARTUP_TOKEN'])
+        self.assertEqual([run['startup_token'] for run in runs], [token]*3)
+        self.assertEqual([run['recover_startup'] for run in runs], ['0', '1', '1'])
 
     def test_kiosk_still_restarts_clean_frontend_exit(self):
         self.env.update(PLEB_WM='none', PLEB_RESPAWN='1')
@@ -331,6 +341,9 @@ SystemBus.ListInhibitors=_inhibitors
                 self.fail('kiosk did not restart clean exit: '+self.log())
             time.sleep(.02)
         replacement = self.child('kilix', previous=self.engine_runs()[0]['pid'])
+        runs = self.engine_runs()
+        self.assertEqual([run['recover_startup'] for run in runs], ['0', '0'])
+        self.assertEqual(runs[0]['startup_token'], runs[1]['startup_token'])
         p.terminate()
         self.assertEqual(p.wait(timeout=7), 143, self.log())
         self.assertEqual(len(self.engine_runs()), 2)

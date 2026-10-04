@@ -71,7 +71,11 @@ frontend exit still ends the session. `PLEB_RECOVER_CRASHES=off` disables this
 behavior; `on` explicitly enables it, and the default `auto` preserves the exit
 behavior when desktop services are off or the window manager is adopted. Retry delays
 increase after rapid failures, and five failures under ten seconds stop the
-loop and offer a recovery terminal. This does not checkpoint application data
+loop and offer a recovery terminal. With the matching native Kilix candidate,
+an ordinary single-page startup reuses its surviving initial PTY instead of
+launching a second default desktop. The association lasts for one login and
+repeated crash retries; custom startup sessions retain their explicit commands.
+This does not checkpoint application data
 or qualify unsaved-document recovery; see [the recovery guide](docs/RECOVERY.md).
 
 **Super-L**, **Ctrl-Alt-L**, and `pleb lock` lock the physical session using
