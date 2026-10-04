@@ -75,8 +75,11 @@ loop and offer a recovery terminal. With the matching native Kilix candidate,
 an ordinary single-page startup reuses its surviving initial PTY instead of
 launching a second default desktop. The association lasts for one login and
 repeated crash retries; custom startup sessions retain their explicit commands.
-This does not checkpoint application data
-or qualify unsaved-document recovery; see [the recovery guide](docs/RECOVERY.md).
+Owned Debian VM checks of the coordinated candidates cover two native frontend
+crashes with one surviving Kilix 95 desktop, exact unsaved-text saving, a live
+PTY job and an interactive Terminal. Provider/application crashes, broader GUI
+workflows and selected-release acceptance remain required. This does not
+checkpoint application data; see [the recovery guide](docs/RECOVERY.md).
 
 **Super-L**, **Ctrl-Alt-L**, and `pleb lock` lock the physical session using
 Debian's PAM-backed i3lock. A request from a private app display targets the
