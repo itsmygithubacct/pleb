@@ -704,6 +704,8 @@ PLEB_WM_ACTIVE=""
 # deliberately persistent broker payloads are not session-owned children.
 PLEB_KILIX_PID=""
 PLEB_KILIX_START=""
+_PLEB_PTY_STARTUP_TOKEN=""
+_PLEB_PTY_RECOVER_STARTUP=0
 PLEB_NATIVE_LOG_PID=""
 PLEB_NATIVE_LOG_START=""
 declare -A PLEB_SERVICE_PIDS=() PLEB_SERVICE_STARTS=()
@@ -1249,6 +1251,8 @@ _pleb_workspace_alive() {
 _pleb_run_kilix_supervised() {
     _pleb_workspace_alive || return 1
     _pleb_launch_owned PLEB_KILIX_PID PLEB_KILIX_START \
+        env KITTY_PTY_BROKER_STARTUP_TOKEN="$_PLEB_PTY_STARTUP_TOKEN" \
+        KITTY_PTY_BROKER_RECOVER_STARTUP="$_PLEB_PTY_RECOVER_STARTUP" \
         "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
     while :; do
         if ! _pleb_owned_alive "$PLEB_KILIX_PID" "$PLEB_KILIX_START"; then
@@ -1278,6 +1282,11 @@ esac
 
 if [ "$PLEB_RESPAWN" = 1 ] || [ "$_PLEB_RECOVER_CRASHES" = 1 ]; then
     _pleb_require_process_cleanup
+    # One association per login, retained through repeated frontend failures.
+    # The native host marks only its ordinary initial child with this token;
+    # recovery can reuse that child's PTY without launching another desktop.
+    _PLEB_PTY_STARTUP_TOKEN=$(/usr/bin/python3 -I -c 'import secrets; print(secrets.token_hex(16))') \
+        || exit "$PLEB_EX_CONFIG"
     # Keep the physical session, services and persistent PTYs intact after a
     # failed frontend. Kiosk mode also restarts clean exits; a normal login
     # retains its intentional shutdown path.
@@ -1299,6 +1308,8 @@ if [ "$PLEB_RESPAWN" = 1 ] || [ "$_PLEB_RECOVER_CRASHES" = 1 ]; then
             echo '--- kilix exited normally; ending session ---'
             exit 0
         fi
+        _PLEB_PTY_RECOVER_STARTUP=0
+        [ "$rc" = 0 ] || _PLEB_PTY_RECOVER_STARTUP=1
         if [ "$runtime" -lt 10 ]; then
             crashes=$((crashes + 1))
             [ "$delay" -lt 30 ] && delay=$((delay * 2))
@@ -1338,5 +1349,6 @@ else
     printf -- '--- exec'
     printf ' %q' "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
     printf ' ---\n'
-    exec "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
+    exec env KITTY_PTY_BROKER_STARTUP_TOKEN="" KITTY_PTY_BROKER_RECOVER_STARTUP=0 \
+        "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
 fi

@@ -9,6 +9,13 @@ broker keeps surviving jobs available for the replacement frontend to reattach.
 An intentional, successful frontend exit still logs out. Kiosk mode continues
 to restart both successful and failed exits.
 
+The matching native Kilix candidate associates an ordinary initial page with
+this login. After a crash it attaches that surviving page before launching a
+new default program, and leaves it active while recovering other PTYs. A fresh
+login, clean kiosk restart, missing or ambiguous match, or explicit custom
+startup session keeps the usual startup behavior. The association does not
+save a dead application's document memory.
+
 `PLEB_RECOVER_CRASHES=auto` is the default. `off` restores the policy of ending
 the session on any frontend exit, and `on` explicitly requests crash retries.
 `auto` preserves the existing exit behavior for sessions with an adopted window
