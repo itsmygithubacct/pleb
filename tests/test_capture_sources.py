@@ -51,13 +51,13 @@ class CaptureSourcesTests(unittest.TestCase):
         before = capture.Source("monitor:DP-1", "Display", 1, 0, 0, 1920, 1080)
         for current in ([], [capture.Source("monitor:DP-2", "Other", 1, 0, 0, 1920, 1080)],
                         [capture.Source(before.key, before.label, 1, 0, 0, 3840, 2160)]):
-            with mock.patch.object(capture, "enumerate_sources", return_value=current), self.assertRaises(capture.CaptureError):
+            with mock.patch.object(capture, "_physical_sources", return_value=current), self.assertRaises(capture.CaptureError):
                 capture.revalidate(before)
 
     def test_title_change_keeps_the_same_selected_source(self):
         before = capture.Source("window:10", "Old title", 2, 0, 0, 100, 100, 10)
         after = capture.Source(before.key, "New title", 2, 0, 0, 100, 100, 10)
-        with mock.patch.object(capture, "enumerate_sources", return_value=[after]):
+        with mock.patch.object(capture, "_physical_sources", return_value=[after]):
             self.assertEqual(capture.revalidate(before), after)
 
 

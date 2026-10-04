@@ -1,5 +1,7 @@
 from pathlib import Path
+import os
 import sys
+import time
 import types
 import unittest
 from unittest import mock
@@ -9,6 +11,18 @@ import capture_portal as capture
 
 
 class CaptureLifecycleTests(unittest.TestCase):
+    def test_worker_stop_notification_retires_an_already_ready_source(self):
+        reader,writer=os.pipe();self.addCleanup(os.close,reader);self.addCleanup(os.close,writer)
+        os.set_blocking(reader,False)
+        producer=object.__new__(capture.Producer)
+        producer.closed=False;producer.node=None;producer.buffer=b'';producer.deadline=time.monotonic()+10
+        producer.process=types.SimpleNamespace(stdout=types.SimpleNamespace(fileno=lambda:reader),poll=lambda:None)
+        producer.ready=mock.Mock();producer.failed=mock.Mock()
+        os.write(writer,b'{"node":7,"serial":9}\n')
+        self.assertTrue(producer.poll());self.assertEqual(producer.node,{'node':7,'serial':9})
+        os.write(writer,b'{"closed":true}\n')
+        self.assertFalse(producer.poll());producer.failed.assert_called_once()
+        producer.ready.assert_called_once_with(producer)
     def test_backend_introspection_advertises_its_actual_properties(self):
         portal = object.__new__(capture.Portal)
         connection = mock.Mock()
