@@ -72,11 +72,10 @@ class CaptureSessionGuard:
                         and props.get('Type') == 'x11'
                         and props.get('Class') in ('user', 'user-early', 'user-light')
                         and not props.get('Remote', True)
-                        and str(props.get('Display', '')).split('.', 1)[0] == self.display
-                        and props.get('Active')):
-                    candidates.append((str(path), props))
-            if candidates:
-                self.managed = True
+                        and str(props.get('Display', '')).split('.', 1)[0] == self.display):
+                    self.managed = True
+                    if props.get('Active'):
+                        candidates.append((str(path), props))
             if len(candidates) > 1:
                 raise dbus.exceptions.DBusException('Ambiguous physical desktop session')
             self.sleeping = bool(self.get_properties(ROOT, MANAGER)['PreparingForSleep'])
