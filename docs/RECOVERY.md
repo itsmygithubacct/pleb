@@ -1,4 +1,31 @@
-# Pleb update recovery
+# Pleb session and update recovery
+
+## Failed frontend
+
+In a normal login that owns its window manager and starts desktop services,
+Pleb restarts Kilix after a nonzero exit without ending the X session, locker,
+sleep inhibitor, power manager, or other session services. The persistent PTY
+broker keeps surviving jobs available for the replacement frontend to reattach.
+An intentional, successful frontend exit still logs out. Kiosk mode continues
+to restart both successful and failed exits.
+
+`PLEB_RECOVER_CRASHES=auto` is the default. `off` restores the policy of ending
+the session on any frontend exit, and `on` explicitly requests crash retries.
+`auto` preserves the existing exit behavior for sessions with an adopted window
+manager and sessions without desktop services, including ordinary nested tests.
+
+Retry delays grow after rapid failures. Five frontend failures lasting less
+than ten seconds stop the loop and open a recovery terminal when available.
+The window manager and required services remain supervised during retries;
+their failure ends the session. Check
+`~/.local/gpu_terminal/pleb/state/session.log` for the exit and retry records.
+
+This policy does not save unsaved application documents or survive a provider
+crash, logout, reboot, or power failure. Recovery of live applications through
+the actual default desktop still needs qualification; keep ordinary documents
+saved and back up user data and settings separately from source snapshots.
+
+## Missing update prerequisites
 
 Use this when `pleb update` stops during the Kilix prerequisite check or fork
 build with a message such as `pkg-config libxxhash: MISSING`. Your Pleb data is

@@ -64,6 +64,16 @@ standalone Pleb's `PLEB_SESSION_SERVICES=auto` enables them in a logind login
 session. Nested tests and hard kiosks retain their explicit session policy.
 `PLEB_SESSION_SERVICES=on` requires the services, and `off` disables their startup.
 
+Normal login sessions that own their window manager and run these services
+restart a failed Kilix frontend while preserving the X session and service
+processes. The persistent PTY broker can then reattach surviving jobs. A clean
+frontend exit still ends the session. `PLEB_RECOVER_CRASHES=off` disables this
+behavior; `on` explicitly enables it, and the default `auto` preserves the exit
+behavior when desktop services are off or the window manager is adopted. Retry delays
+increase after rapid failures, and five failures under ten seconds stop the
+loop and offer a recovery terminal. This does not checkpoint application data
+or qualify unsaved-document recovery; see [the recovery guide](docs/RECOVERY.md).
+
 **Super-L**, **Ctrl-Alt-L**, and `pleb lock` lock the physical session using
 Debian's PAM-backed i3lock. A request from a private app display targets the
 physical desktop. xss-lock obtains a logind sleep-delay inhibitor before the
@@ -682,6 +692,7 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `PLEB_NO_FILL` | `0` | Skip the no-WM screen-fill sizing. |
 | `PLEB_BG` | `#101010` | Root-window solid colour. |
 | `PLEB_RESPAWN` | `0` | If `1`, relaunch kilix when it exits (hard kiosk). |
+| `PLEB_RECOVER_CRASHES` | `auto` | Restart failed frontends while preserving the session; `auto` requires owned WM and active desktop services, `on` enables explicitly, `off` disables. Clean exits still end normal sessions. |
 | `PLEB_DESKTOP` | `0` | If truthy, boot directly into `kilix desktop`; `0` gives a plain shell. |
 | `KILIX_DESKTOP_PROVIDER` | `auto` | Prefer a compatible installed external provider, else bundled; or force `builtin`, `external`, `xp`, `cap`, `tui`, `land`, `command`, or `none`. |
 | `KILIX_DESKTOP_COMMAND` | *(none)* | Shell command run by `kilix desktop` when provider is `command`. |

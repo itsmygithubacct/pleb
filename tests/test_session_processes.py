@@ -4,6 +4,7 @@ The earlier configuration/storage preflight is covered separately. In a mapped
 user namespace its host-root ancestors are deliberately untrusted; this fixture
 supplies normalized settings and executes the unchanged lifecycle source text.
 """
+import json
 import os
 from pathlib import Path
 import signal
@@ -81,16 +82,43 @@ exec >>"$PLEB_LOG" 2>&1
         self.handles.append((self.process.pid, os.pidfd_open(self.process.pid)))
         return self.process
 
-    def child(self, name):
+    def child(self, name, previous=None):
         path = self.root/(name+'.pid')
         until = time.monotonic()+8
-        while not path.exists():
+        while True:
+            try:
+                pid = int(path.read_text())
+                if pid != previous:
+                    fd = os.pidfd_open(pid)
+                    self.handles.append((pid, fd))
+                    return pid
+            except (FileNotFoundError, ProcessLookupError, ValueError):
+                pass
             if time.monotonic() >= until or self.process.poll() is not None:
                 self.fail('child did not start: '+self.log())
             time.sleep(.02)
-        pid = int(path.read_text())
-        self.handles.append((pid, os.pidfd_open(pid)))
-        return pid
+
+    def engine_exits(self, *statuses):
+        self.script('kilix', '''#!/usr/bin/python3
+import json,os,time
+from pathlib import Path
+root=Path(os.environ['FIXTURE_ROOT'])
+record=root/'engine-runs.json'
+runs=json.loads(record.read_text()) if record.exists() else []
+statuses='''+repr(statuses)+'''
+status=statuses[min(len(runs),len(statuses)-1)]
+runs.append({'pid':os.getpid(),'status':status})
+pending=record.with_suffix('.pending')
+pending.write_text(json.dumps(runs))
+pending.replace(record)
+(root/'kilix.pid').write_text(str(os.getpid()))
+time.sleep(.2)
+if status is not None: raise SystemExit(status)
+while True: time.sleep(.05)
+''')
+
+    def engine_runs(self):
+        return json.loads((self.root/'engine-runs.json').read_text())
 
     def log(self):
         p = self.root/'session.log'
@@ -226,6 +254,103 @@ SystemBus.ListInhibitors=_inhibitors
                     'xfce4-power-manager', 'blueman-applet', 'udiskie', 'kilix')]
         p.terminate()
         self.assertEqual(p.wait(timeout=7), 143, self.log())
+        self.assert_stopped(*children)
+
+    def test_default_login_recovers_killed_frontend_without_replacing_services(self):
+        self.with_services()
+        p = self.start()
+        names = ('wm', 'xss-lock', 'xssproxy', 'lxpolkit',
+                 'xfce4-power-manager', 'blueman-applet', 'udiskie')
+        children = [self.child(name) for name in names]
+        original = self.child('kilix')
+        fd = next(fd for pid, fd in self.handles if pid == original)
+        signal.pidfd_send_signal(fd, signal.SIGKILL)
+        replacement = self.child('kilix', previous=original)
+        self.assertNotEqual(original, replacement)
+        self.assertIsNone(p.poll(), self.log())
+        for name, pid in zip(names, children):
+            self.assertEqual(int((self.root/(name+'.pid')).read_text()), pid)
+            self.assertTrue(Path('/proc', str(pid)).exists(), self.log())
+        p.terminate()
+        self.assertEqual(p.wait(timeout=7), 143, self.log())
+        self.assert_stopped(*children, original, replacement)
+
+    def test_default_login_clean_frontend_exit_ends_session(self):
+        self.with_services()
+        self.engine_exits(0)
+        p = self.start()
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'xssproxy',
+                    'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie')]
+        self.assertEqual(p.wait(timeout=7), 0, self.log())
+        self.assertEqual(len(self.engine_runs()), 1)
+        self.assert_stopped(*children)
+
+    def test_recovery_off_ends_failed_frontend_and_cleans_up_services(self):
+        self.with_services()
+        self.env['PLEB_RECOVER_CRASHES'] = 'off'
+        self.engine_exits(17)
+        p = self.start()
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'xssproxy',
+                    'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie')]
+        self.assertEqual(p.wait(timeout=7), 17, self.log())
+        self.assertEqual(len(self.engine_runs()), 1)
+        self.assert_stopped(*children)
+
+    def test_auto_recovery_keeps_nested_session_exit_behavior(self):
+        self.env['FIXTURE_MODE'] = 'ready'
+        self.engine_exits(17)
+        p = self.start()
+        wm = self.child('wm')
+        self.assertEqual(p.wait(timeout=7), 17, self.log())
+        self.assertEqual(len(self.engine_runs()), 1)
+        self.assert_stopped(wm)
+
+    def test_auto_recovery_keeps_adopted_window_manager_exit_behavior(self):
+        self.with_services()
+        self.env['FIXTURE_MODE'] = 'adopted'
+        self.engine_exits(17)
+        p = self.start()
+        self.assertEqual(p.wait(timeout=7), 17, self.log())
+        self.assertEqual(len(self.engine_runs()), 1)
+        self.assertFalse((self.root/'wm.pid').exists())
+
+    def test_explicit_recovery_retries_failure_then_ends_on_clean_exit(self):
+        self.env.update(PLEB_WM='none', PLEB_RECOVER_CRASHES='on')
+        self.engine_exits(17, 0)
+        p = self.start()
+        self.assertEqual(p.wait(timeout=8), 0, self.log())
+        self.assertEqual([run['status'] for run in self.engine_runs()], [17, 0])
+
+    def test_kiosk_still_restarts_clean_frontend_exit(self):
+        self.env.update(PLEB_WM='none', PLEB_RESPAWN='1')
+        self.engine_exits(0, None)
+        p = self.start()
+        until = time.monotonic()+8
+        while not (self.root/'engine-runs.json').exists() or len(self.engine_runs()) < 2:
+            if time.monotonic() >= until or p.poll() is not None:
+                self.fail('kiosk did not restart clean exit: '+self.log())
+            time.sleep(.02)
+        replacement = self.child('kilix', previous=self.engine_runs()[0]['pid'])
+        p.terminate()
+        self.assertEqual(p.wait(timeout=7), 143, self.log())
+        self.assertEqual(len(self.engine_runs()), 2)
+        self.assert_stopped(replacement)
+
+    def test_locker_death_during_retry_prevents_replacement_frontend(self):
+        self.with_services()
+        self.engine_exits(17, None)
+        p = self.start()
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'xssproxy',
+                    'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie')]
+        until = time.monotonic()+5
+        while 'respawning in' not in self.log():
+            if time.monotonic() >= until or p.poll() is not None:
+                self.fail('frontend did not enter retry delay: '+self.log())
+            time.sleep(.02)
+        fd = next(fd for pid, fd in self.handles if pid == children[1])
+        signal.pidfd_send_signal(fd, signal.SIGKILL)
+        self.assertEqual(p.wait(timeout=7), 78, self.log())
+        self.assertEqual(len(self.engine_runs()), 1)
         self.assert_stopped(*children)
 
     def test_locker_failure_ends_the_desktop_and_reaps_owned_children(self):
