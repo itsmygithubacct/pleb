@@ -44,7 +44,7 @@ install_capture_portal
             self.install(target, False)
             self.assertEqual(profile.read_text(), "operator choice\n")
             self.assertEqual(preferences.read_text(), "operator choice\n")
-            for module in ("capture_registry.py", "capture_sources.py", "capture_worker.py", "capture_screenshot.py", "capture_portal.py"):
+            for module in ("capture_registry.py", "capture_sources.py", "capture_session.py", "capture_worker.py", "capture_screenshot.py", "capture_portal.py"):
                 self.assertEqual((target / "usr/local/lib/pleb" / module).read_bytes(),
                                  (ROOT / "lib" / module).read_bytes())
             transport = ctypes.CDLL(str(target / "usr/local/lib/pleb/capture_transport.so"))

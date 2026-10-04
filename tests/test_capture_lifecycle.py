@@ -11,6 +11,44 @@ import capture_portal as capture
 
 
 class CaptureLifecycleTests(unittest.TestCase):
+    def test_locked_desktop_does_not_create_a_session_or_consent_request(self):
+        portal = object.__new__(capture.Portal)
+        portal.authenticate = mock.Mock()
+        portal.guard = types.SimpleNamespace(can_capture=False)
+        reply = mock.Mock()
+        with mock.patch.object(capture, 'Session') as session, mock.patch.object(capture, 'Request') as request:
+            self.assertEqual(portal.CreateSession('/request', '/session', 'app', {}), (2, {}))
+            portal.Screenshot('/request', 'app', '', {}, reply, mock.Mock())
+            portal.PickColor('/request', 'app', '', {}, reply, mock.Mock())
+            session.assert_not_called()
+            request.assert_not_called()
+        self.assertEqual(reply.call_count, 2)
+        for call in reply.call_args_list:
+            self.assertEqual(int(call.args[0]), 2)
+
+    def test_lock_between_consent_and_start_cannot_publish_a_producer(self):
+        session = object.__new__(capture.Session)
+        session.portal = types.SimpleNamespace(require_capture=mock.Mock(side_effect=capture.CaptureError('Locked')))
+        session.producers = []
+        session.close = mock.Mock()
+        request = mock.Mock()
+        with mock.patch.object(capture, 'Producer') as producer:
+            session.start([mock.Mock()], request)
+            producer.assert_not_called()
+        request.finish.assert_called_once_with(2)
+        session.close.assert_called_once_with()
+
+    def test_lock_during_worker_startup_cannot_publish_a_ready_stream(self):
+        session = object.__new__(capture.Session)
+        session.closed = False
+        session.producers = [types.SimpleNamespace(node={'node': 1, 'serial': 2})]
+        session.portal = types.SimpleNamespace(require_capture=mock.Mock(side_effect=capture.CaptureError('Locked')))
+        session.fail = mock.Mock()
+        with mock.patch.object(capture.Gtk, 'Window') as window:
+            session.ready(session.producers[0])
+            window.assert_not_called()
+        session.fail.assert_called_once_with()
+
     def test_worker_stop_notification_retires_an_already_ready_source(self):
         reader,writer=os.pipe();self.addCleanup(os.close,reader);self.addCleanup(os.close,writer)
         os.set_blocking(reader,False)
