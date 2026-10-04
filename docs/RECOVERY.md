@@ -28,9 +28,13 @@ their failure ends the session. Check
 `~/.local/gpu_terminal/pleb/state/session.log` for the exit and retry records.
 
 This policy does not save unsaved application documents or survive a provider
-crash, logout, reboot, or power failure. Recovery of live applications through
-the actual default desktop still needs qualification; keep ordinary documents
-saved and back up user data and settings separately from source snapshots.
+crash, logout, reboot, or power failure. Owned Debian VM checks of the locally
+staged candidates cover two native frontend crashes: the same Kilix 95 desktop
+returns as the active page without a duplicate, its unsaved text can still be
+saved exactly, and a live PTY job and newly launched interactive Terminal remain
+usable. Broader private-GUI workflows and selected-release acceptance remain
+required. Keep ordinary documents saved and back up user data and settings
+separately from source snapshots.
 
 ## Missing update prerequisites
 
