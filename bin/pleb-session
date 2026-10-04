@@ -647,6 +647,10 @@ if [ ! -x "$KILIX" ]; then
     exit 1
 fi
 
+# Lock actions launched by the window manager need the same service policy as
+# the session (including an explicit off policy and kiosk mode).
+export PLEB_SESSION_SERVICES="${PLEB_SESSION_SERVICES:-auto}" PLEB_RESPAWN
+
 # --- window manager ----------------------------------------------------------
 # Pleb runs a real EWMH window manager so that native application windows —
 # browsers, dialogs, anything not drawn inside kilix — can be focused, raised,

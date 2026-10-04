@@ -22,4 +22,19 @@ if [[ ${XAUTHORITY+x} ]]; then export XAUTHORITY; fi
 unset WAYLAND_DISPLAY WAYLAND_SOCKET
 command -v i3lock >/dev/null \
     || { echo 'pleb-lock: i3lock is missing; run pleb install' >&2; exit 1; }
+# In a serviced desktop, let the already supervised xss-lock own the locker
+# and report LockedHint for both manual and idle locks. Its --nofork callback
+# still execs i3lock directly and preserves the transferred sleep inhibitor.
+if [ "${1:-}" != --nofork ] && [ -n "${XDG_SESSION_ID:-}" ]; then
+    coordinated=0
+    case "${PLEB_SESSION_SERVICES:-auto}" in
+        on|1) coordinated=1 ;;
+        auto) [ "${PLEB_RESPAWN:-0}" = 1 ] || coordinated=1 ;;
+    esac
+    if [ "$coordinated" = 1 ]; then
+        command -v loginctl >/dev/null \
+            || { echo 'pleb-lock: loginctl is missing; run pleb install' >&2; exit 1; }
+        exec loginctl lock-session -- "$XDG_SESSION_ID"
+    fi
+fi
 exec i3lock "${args[@]}"

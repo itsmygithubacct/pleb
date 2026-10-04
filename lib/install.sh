@@ -831,7 +831,7 @@ install_capture_portal() {
         run_root install -D -m 0644 "$build_dir/capture_transport.so" /usr/local/lib/pleb/capture_transport.so || exit 1
     ) || die "Could not build/install capture transport; install libpipewire-0.3-dev and pkg-config"
     local module
-    for module in displays.py capture_registry.py capture_sources.py capture_worker.py capture_screenshot.py capture_portal.py; do
+    for module in displays.py capture_registry.py capture_sources.py capture_session.py capture_worker.py capture_screenshot.py capture_portal.py; do
         run_root install -D -m 0644 "$PLEB_ROOT/lib/$module" "/usr/local/lib/pleb/$module"
     done
     run_root install -D -m 0644 "$PLEB_ROOT/share/portals/pleb.portal" \

@@ -36,7 +36,46 @@ Path(os.environ['FIXTURE_RECORD']).write_text(json.dumps({
                         XAUTHORITY='/private/app-authority', KILIX_PRIVATE_XAPP='1',
                         PLEB_DESKTOP_DISPLAY=':71', PLEB_DESKTOP_XAUTHORITY='/physical/authority',
                         PLEB_DESKTOP_BUS_ADDRESS='unix:path=/physical/bus',
-                        DBUS_SESSION_BUS_ADDRESS='unix:path=/private/bus', WAYLAND_DISPLAY='wayland-test')
+                        DBUS_SESSION_BUS_ADDRESS='unix:path=/private/bus', WAYLAND_DISPLAY='wayland-test',
+                        PLEB_SESSION_SERVICES='off', XDG_SESSION_ID='owned-fixture')
+
+    def test_manual_lock_uses_the_supervised_logind_locker_in_serviced_sessions(self):
+        (self.root / 'loginctl').symlink_to(self.capture)
+        for policy in ('on', '1', 'auto'):
+            with self.subTest(policy=policy):
+                self.env['PLEB_SESSION_SERVICES'] = policy
+                result = subprocess.run([ROOT / 'bin/pleb-lock'], env=self.env,
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                record = json.loads(self.record.read_text())
+                self.assertEqual(record['argv'], ['lock-session', '--', 'owned-fixture'])
+
+    def test_nofork_callback_does_not_recurse_into_the_coordinator(self):
+        (self.root / 'loginctl').symlink_to(self.capture)
+        self.env['PLEB_SESSION_SERVICES'] = 'on'
+        result = subprocess.run([ROOT / 'bin/pleb-lock', '--nofork'], env=self.env,
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--nofork', json.loads(self.record.read_text())['argv'])
+
+    def test_disabled_services_and_auto_kiosk_keep_the_direct_locker(self):
+        for policy, kiosk in (('off', '0'), ('0', '0'), ('auto', '1')):
+            with self.subTest(policy=policy, kiosk=kiosk):
+                self.env.update(PLEB_SESSION_SERVICES=policy, PLEB_RESPAWN=kiosk)
+                result = subprocess.run([ROOT / 'bin/pleb-lock'], env=self.env,
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('--color=101010', json.loads(self.record.read_text())['argv'])
+
+    def test_failed_coordinated_request_is_not_reported_as_a_successful_lock(self):
+        login = self.root / 'loginctl'
+        login.write_text('#!/bin/sh\nexit 23\n')
+        login.chmod(0o700)
+        self.env['PLEB_SESSION_SERVICES'] = 'on'
+        result = subprocess.run([ROOT / 'bin/pleb-lock'], env=self.env,
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 23)
+        self.assertFalse(self.record.exists())
 
     def test_lock_from_private_pane_targets_physical_display(self):
         result = subprocess.run([ROOT / 'bin/pleb-lock', '--nofork'], env=self.env,

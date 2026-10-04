@@ -22,6 +22,7 @@ gi.require_version("GdkX11", "3.0")
 from gi.repository import Gdk, GdkX11, GLib, Gtk
 
 from capture_sources import CaptureError, enumerate_sources, physical_environment, revalidate
+from capture_session import CaptureSessionGuard
 
 FRONTEND = "org.freedesktop.portal.Desktop"
 BUS_NAME = "org.freedesktop.impl.portal.desktop.pleb"
@@ -266,6 +267,11 @@ class Session(Properties):
     def ready(self, _producer):
         if self.closed or not all(producer.node for producer in self.producers):
             return
+        try:
+            self.portal.require_capture()
+        except CaptureError:
+            self.fail()
+            return
         streams = []
         for source, producer in zip(self.sources, self.producers):
             props = {"size": dbus.Struct((dbus.Int32(source.width), dbus.Int32(source.height)), signature="ii"),
@@ -295,6 +301,7 @@ class Session(Properties):
     def start(self, sources, request):
         self.sources, self.pending, self.started = sources, request, True
         try:
+            self.portal.require_capture()
             for source in sources:
                 revalidate(source)
                 self.producers.append(Producer(source, self.cursor, self.ready, self.fail))
@@ -414,6 +421,7 @@ class Portal(Properties):
         self.name = dbus.service.BusName(BUS_NAME, bus=bus, do_not_queue=True)
         super().__init__(bus, ROOT)
         self.sessions, self.requests = {}, {}
+        self.guard = CaptureSessionGuard(self.close, physical_environment()['DISPLAY'])
         bus.add_signal_receiver(self.owner_changed, signal_name="NameOwnerChanged",
                                 dbus_interface="org.freedesktop.DBus", arg0=FRONTEND)
         bus.call_on_disconnection(lambda _connection: (self.close(), Gtk.main_quit()))
@@ -421,6 +429,10 @@ class Portal(Properties):
     def authenticate(self, sender):
         if not sender or sender != self.bus.get_name_owner(FRONTEND):
             raise dbus.exceptions.DBusException("Use xdg-desktop-portal", name="org.freedesktop.DBus.Error.AccessDenied")
+
+    def require_capture(self):
+        if not self.guard.can_capture:
+            raise CaptureError('The physical desktop is locked, inactive or unavailable')
 
     def owner_changed(self, _name, old, new):
         if old and old != new:
@@ -441,6 +453,8 @@ class Portal(Properties):
     @dbus.service.method(IMPL + "ScreenCast", in_signature="oosa{sv}", out_signature="ua{sv}", sender_keyword="sender")
     def CreateSession(self, handle, session_handle, app_id, options, sender=None):
         self.authenticate(sender)
+        if not self.guard.can_capture:
+            return 2, {}
         if not str(session_handle).startswith(ROOT + "/session/") or str(session_handle) in self.sessions or len(self.sessions) >= 16:
             return 2, {}
         self.sessions[str(session_handle)] = Session(self, session_handle, app_id)
@@ -450,6 +464,7 @@ class Portal(Properties):
     def SelectSources(self, handle, session_handle, app_id, options, sender=None):
         self.authenticate(sender)
         try:
+            self.require_capture()
             session = self.session(session_handle, app_id)
             if session.selected or session.started:
                 raise CaptureError("Capture sources have already been selected")
@@ -471,6 +486,7 @@ class Portal(Properties):
         self.authenticate(sender)
         request = None
         try:
+            self.require_capture()
             session = self.session(session_handle, app_id)
             if not session.selected or session.started or session.pending:
                 raise CaptureError("Capture session is not ready")
@@ -492,11 +508,13 @@ class Portal(Properties):
         self.authenticate(sender)
         request = None
         try:
+            self.require_capture()
             request = Request(self, handle, success)
             def accept(sources):
                 if request.done:
                     return
                 try:
+                    self.require_capture()
                     if sources[0].pane:
                         ScreenshotJob(sources[0], request)
                     else:
@@ -514,6 +532,9 @@ class Portal(Properties):
                          async_callbacks=("success", "failure"), sender_keyword="sender")
     def PickColor(self, handle, app_id, parent_window, options, success, failure, sender=None):
         self.authenticate(sender)
+        if not self.guard.can_capture:
+            success(dbus.UInt32(2), dbus.Dictionary({}, signature='sv'))
+            return
         # The chooser asks first; the pixel is read only after the user clicks
         # the desktop. Escape and Request.Close both abandon the operation.
         request = Request(self, handle, success)
@@ -536,6 +557,11 @@ class Portal(Properties):
 
 def pixel_picker(request):
     if request.done:
+        return
+    try:
+        request.portal.require_capture()
+    except CaptureError:
+        request.finish(2)
         return
     gi.require_foreign("cairo")
     root = Gdk.get_default_root_window()
@@ -635,6 +661,7 @@ def main():
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, stop)
     Gtk.main()
     portal.close()
+    portal.guard.close()
 
 
 if __name__ == "__main__":

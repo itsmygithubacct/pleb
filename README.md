@@ -43,7 +43,10 @@ Pleb supplies a consent-based X11 Screenshot and ScreenCast backend for
 `xdg-desktop-portal`. Every capture asks the user to select a display or window;
 screen sharing shows a **Stop sharing** control. Cancellation publishes no
 video source, and closing the portal session tears down its producer. Saved
-permissions are not accepted as automatic capture grants.
+permissions are not accepted as automatic capture grants. In a logind desktop,
+locking, switching away from the session or preparing for sleep closes active
+capture and pending consent. Unlocking permits a new consent request and does
+not restart sharing. A lost lock-state connection blocks capture.
 
 Managed local application panes from the matching Kilix candidate also appear
 as individual **Application pane** sources. Each includes that application's
@@ -60,8 +63,13 @@ the host's existing PipeWire session manager; it installs the capture backend
 without replacing another desktop's audio policy. The pane application's
 private D-Bus connection uses the matching Kilix candidate's desktop portal
 bridge. Native capture and private-app integration have component VM evidence;
-Firefox ESR also has real browser-frame and Stop sharing evidence through the
-private bus. Chromium and installed default-desktop acceptance are still required.
+Firefox ESR and Chromium also have bounded installed default-desktop evidence:
+changing frames from a minimized application pane, cancellation, browser and
+physical Stop sharing, and source closure. Chromium's shared pane includes its
+native dialogs. Chromium requests both a preview session and a fresh capture
+session; each has a system consent picker, so answer the second picker after
+the browser's Share button. Broader display, lock and daily-use acceptance is
+still required.
 The capture transport is built locally by `pleb install` using
 `libpipewire-0.3-dev` and `pkg-config`. It supplies descriptor-backed video
 buffers for browser consumers; X11 acquisition remains in GStreamer.
