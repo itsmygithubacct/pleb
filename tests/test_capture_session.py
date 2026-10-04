@@ -136,6 +136,13 @@ class CaptureSessionTests(unittest.TestCase):
         self.addCleanup(guard.close)
         self.assertFalse(guard.can_capture)
 
+    def test_inactive_physical_desktop_at_start_is_not_a_nested_x_server(self):
+        self.props['Active'] = False
+        guard = session.CaptureSessionGuard(self.closed, ':71', bus=self.bus, uid=1001)
+        self.addCleanup(guard.close)
+        self.assertTrue(guard.managed)
+        self.assertFalse(guard.can_capture)
+
     def test_sleeping_at_start_rejects_capture(self):
         self.bus.PreparingForSleep = True
         guard = session.CaptureSessionGuard(self.closed, ':71', bus=self.bus, uid=1001)
