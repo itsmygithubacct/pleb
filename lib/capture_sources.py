@@ -2,10 +2,23 @@
 from dataclasses import asdict, dataclass
 import os
 import re
+import subprocess
 
+import capture_registry
 
 class CaptureError(RuntimeError):
     pass
+
+
+def bind_capture_parent():
+    import ctypes
+    import signal
+    if os.getuid() == 0:
+        raise CaptureError('Capture runs as the desktop user')
+    parent = os.getppid()
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0 or os.getppid() != parent or parent == 1:
+        raise CaptureError('Capture parent is unavailable')
 
 
 def physical_environment(env=None):
@@ -33,8 +46,13 @@ class Source:
     width: int
     height: int
     xid: int = 0
+    pane: str = ''
 
     def validate(self):
+        if (not isinstance(self.pane, str) or self.pane and (
+                not capture_registry.TOKEN.fullmatch(self.pane) or self.kind != 2
+                or self.key != 'pane:' + self.pane or self.x != 0 or self.y != 0)):
+            raise CaptureError("Invalid application capture source")
         if self.kind not in (1, 2) or type(self.xid) is not int or not 0 <= self.xid <= 0xffffffff:
             raise CaptureError("Invalid capture source")
         if any(type(v) is not int for v in (self.x, self.y, self.width, self.height)):
@@ -61,15 +79,15 @@ def monitor_sources(state):
     return result
 
 
-def enumerate_sources(types=3, env=None):
+def _physical_sources(types=3, env=None):
     """Enumerate actual outputs and mapped EWMH application windows."""
     from displays import RandR
     from Xlib import X, Xatom
     from Xlib.display import Display
     env = physical_environment(env)
-    # The backend sets this once before starting its event loop; opening a
-    # display must not race a temporary process-global XAUTHORITY assignment.
-    display = Display(env["DISPLAY"])
+    # Only the physical server is queried by the consent event loop. Pane
+    # metadata is checked here, while private X queries run in owned helpers.
+    display = Display(env['DISPLAY'])
     try:
         root = display.screen().root
         desktop = root.get_geometry()
@@ -102,8 +120,58 @@ def enumerate_sources(types=3, env=None):
         display.close()
 
 
+def _pane_source(record):
+    return Source('pane:' + record['id'], record['label'], 2, 0, 0,
+                  record['width'], record['height'], record['xid'], record['id']).validate()
+
+
+def enumerate_sources(types=3, env=None):
+    env = dict(physical_environment(env))
+    sources = _physical_sources(types, env)
+    if types & 2:
+        for record in capture_registry.records(env):
+            try:
+                sources.append(_pane_source(record))
+            except Exception:
+                # A disappearing pane never becomes a physical desktop source.
+                continue
+    return sources
+
+
+def source_environment(source, env=None):
+    source.validate()
+    env = dict(physical_environment(env))
+    if source.pane:
+        record = capture_registry.read(source.pane, env)
+        if record is None:
+            raise CaptureError('The selected application pane stopped')
+        env['DISPLAY'], env['XAUTHORITY'] = record['display'], record['authority']
+    return env
+
+
+def verify_capture_geometry(source, env):
+    if not source.pane:
+        return
+    try:
+        result = subprocess.run(['/usr/bin/xrandr','--current'], env=env, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=.5)
+        size = re.search(r'^Screen \d+:.*?current (\d+) x (\d+)', result.stdout, re.MULTILINE)
+        if result.returncode or size is None or tuple(map(int,size.groups())) != (source.width,source.height):
+            raise CaptureError('The selected application pane changed')
+    except (OSError, subprocess.SubprocessError):
+        raise CaptureError('The selected application pane stopped responding') from None
+
+
 def revalidate(source, env=None):
-    current = next((item for item in enumerate_sources(source.kind, env) if item.key == source.key), None)
+    source.validate()
+    if source.pane:
+        record = capture_registry.read(source.pane, physical_environment(env))
+        try:
+            current = _pane_source(record) if record is not None else None
+        except Exception:
+            current = None
+    else:
+        current = next((item for item in _physical_sources(source.kind, env) if item.key == source.key), None)
     if current is None or (current.xid, current.x, current.y, current.width, current.height) != (
             source.xid, source.x, source.y, source.width, source.height):
         raise CaptureError("The selected source changed; choose it again")

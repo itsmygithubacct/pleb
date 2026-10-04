@@ -45,6 +45,15 @@ screen sharing shows a **Stop sharing** control. Cancellation publishes no
 video source, and closing the portal session tears down its producer. Saved
 permissions are not accepted as automatic capture grants.
 
+Managed local application panes from the matching Kilix candidate also appear
+as individual **Application pane** sources. Each includes that application's
+private display and dialogs. Registration is bound to the live pane owner,
+application, authenticated X server and physical desktop; it grants no capture
+permission. Pane screenshots use an owned asynchronous helper, and capture
+workers report source failure before native shutdown, so a frozen private
+display cannot hold up cancellation or Stop sharing. Network broadcast sources
+are not registered.
+
 Plebian-OS supplies PipeWire and WirePlumber's `video-only` profile for this
 transport, while PulseAudio continues to handle sound. Standalone Pleb uses
 the host's existing PipeWire session manager; it installs the capture backend

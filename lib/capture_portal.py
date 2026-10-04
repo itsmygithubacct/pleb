@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import signal
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -63,6 +64,7 @@ class Request(dbus.service.Object):
         super().__init__(portal.bus, path)
         self.portal, self.path, self.success = portal, str(path), success
         self.cancel, self.dialog, self.done = cancel, None, False
+        self.job = None
         portal.requests[self.path] = self
 
     @dbus.service.method(IMPL + "Request", in_signature="", out_signature="", sender_keyword="sender")
@@ -76,6 +78,9 @@ class Request(dbus.service.Object):
         if self.done:
             return
         self.done = True
+        if getattr(self, 'job', None) is not None:
+            self.job.close()
+            self.job = None
         if self.dialog:
             self.dialog.destroy()
             self.dialog = None
@@ -110,8 +115,11 @@ class Producer:
             self.buffer += chunk
             if len(self.buffer) > 8192:
                 raise CaptureError("Invalid capture worker response")
-            if self.node is None and b"\n" in self.buffer:
-                data = json.loads(self.buffer.split(b"\n", 1)[0])
+            while b"\n" in self.buffer:
+                line, self.buffer = self.buffer.split(b"\n", 1)
+                data = json.loads(line)
+                if self.node is not None:
+                    raise CaptureError('The selected capture source stopped')
                 if set(data) != {"node", "serial"} or any(type(v) is not int or v <= 0 for v in data.values()):
                     raise CaptureError("Invalid PipeWire source identity")
                 self.node = data
@@ -125,6 +133,70 @@ class Producer:
             self.failed()
             return False
         return not self.closed
+
+    def close(self):
+        if self.closed:
+            return
+        self.closed = True
+        if self.process.poll() is None:
+            self.process.terminate()
+        deadline = time.monotonic() + 2
+        def reap():
+            if self.process.poll() is None:
+                if time.monotonic() >= deadline:
+                    self.process.kill()
+                return True
+            self.process.stdout.close()
+            return False
+        GLib.timeout_add(50, reap)
+
+
+class ScreenshotJob:
+    """A frozen private display cannot block consent, cancellation or sharing."""
+    def __init__(self, source, request):
+        self.source, self.request, self.closed = revalidate(source), request, False
+        self.buffer = bytearray()
+        self.deadline = time.monotonic() + 8
+        self.process = subprocess.Popen(
+            ['/usr/bin/python3', str(Path(__file__).with_name('capture_screenshot.py')),
+             json.dumps(self.source.payload())], env=physical_environment(),
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        request.job = self
+        os.set_blocking(self.process.stdout.fileno(), False)
+        self.timer = GLib.timeout_add(100, self.poll)
+
+    def poll(self):
+        if self.closed:
+            return False
+        try:
+            # Bound work per event-loop turn as well as the complete image.
+            eof = False
+            for _ in range(16):
+                try:
+                    chunk = os.read(self.process.stdout.fileno(), 65536)
+                except BlockingIOError:
+                    break
+                if not chunk:
+                    eof = True
+                    break
+                self.buffer.extend(chunk)
+                if len(self.buffer) > 67108864:
+                    raise CaptureError('Screenshot exceeds the capture limit')
+            status = self.process.poll()
+            if status is not None and eof:
+                if (status or len(self.buffer) < 24 or self.buffer[:8] != b'\x89PNG\r\n\x1a\n'
+                        or self.buffer[12:16] != b'IHDR'
+                        or struct.unpack('!II', self.buffer[16:24]) != (self.source.width,self.source.height)):
+                    raise CaptureError('The selected application screenshot failed')
+                revalidate(self.source)
+                self.request.finish(0, {'uri': dbus.String(write_screenshot(self.buffer))})
+                return False
+            if time.monotonic() >= self.deadline:
+                raise CaptureError('The selected application pane stopped responding')
+        except Exception:
+            self.request.finish(2)
+            return False
+        return True
 
     def close(self):
         if self.closed:
@@ -255,7 +327,8 @@ def source_picker(request, app, types, multiple, action, accept):
     area.pack_start(label, False, False, 8)
     model = Gtk.ListStore(str, str, int)
     for index, source in enumerate(sources):
-        model.append([("Display: " if source.kind == 1 else "Window: ") + source.label,
+        prefix = "Application pane: " if source.pane else "Display: " if source.kind == 1 else "Window: "
+        model.append([prefix + source.label,
                       f"{source.width} × {source.height}", index])
     tree = Gtk.TreeView(model=model)
     tree.get_accessible().set_name("Capture sources")
@@ -291,12 +364,21 @@ def source_picker(request, app, types, multiple, action, accept):
 
 def screenshot(source):
     source = revalidate(source)
+    if source.pane:
+        raise CaptureError('Application screenshots use an owned capture job')
     display = Gdk.Display.get_default()
     window = GdkX11.X11Window.foreign_new_for_display(display, source.xid) if source.kind == 2 else Gdk.get_default_root_window()
     image = Gdk.pixbuf_get_from_window(window, 0 if source.kind == 2 else source.x,
                                      0 if source.kind == 2 else source.y, source.width, source.height)
     if image is None:
         raise CaptureError("Could not capture the selected source")
+    success, contents = image.save_to_bufferv("png", [], [])
+    if not success:
+        raise CaptureError("Could not encode the screenshot")
+    return write_screenshot(contents)
+
+
+def write_screenshot(contents):
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR", ""))
     info = runtime.lstat()
     if not runtime.is_absolute() or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
@@ -308,9 +390,6 @@ def screenshot(source):
         raise CaptureError("Unsafe screenshot directory")
     fd, path = tempfile.mkstemp(prefix="screenshot-", suffix=".png", dir=directory)
     try:
-        success, contents = image.save_to_bufferv("png", [], [])
-        if not success:
-            raise CaptureError("Could not encode the screenshot")
         with os.fdopen(fd, "wb") as output:
             fd = -1
             output.write(contents)
@@ -418,7 +497,10 @@ class Portal(Properties):
                 if request.done:
                     return
                 try:
-                    request.finish(0, {"uri": dbus.String(screenshot(sources[0]))})
+                    if sources[0].pane:
+                        ScreenshotJob(sources[0], request)
+                    else:
+                        request.finish(0, {"uri": dbus.String(screenshot(sources[0]))})
                 except Exception:
                     request.finish(2)
             source_picker(request, app_id, 3, False, "capture", accept)

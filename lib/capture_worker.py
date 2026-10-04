@@ -10,24 +10,20 @@ import sys
 import time
 import uuid
 
-from capture_sources import CaptureError, Source, physical_environment, revalidate
+from capture_sources import (CaptureError, Source, bind_capture_parent, physical_environment,
+                             revalidate, source_environment, verify_capture_geometry)
 
 
 def main():
-    if os.getuid() == 0:
-        raise CaptureError("Capture runs as the desktop user")
-    parent = os.getppid()
-    # Kill the producer on backend failure too. Check the parent after prctl
-    # so a death between fork and this setup cannot leave a capture running.
-    libc = ctypes.CDLL(None, use_errno=True)
-    if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0 or os.getppid() != parent or parent == 1:
-        raise CaptureError("Capture parent is unavailable")
+    bind_capture_parent()
     source = Source(**json.loads(sys.argv[1])).validate()
     cursor_mode = int(sys.argv[2])
     if cursor_mode not in (1, 2):
         raise CaptureError("Unsupported cursor mode")
-    os.environ.update(physical_environment())
-    revalidate(source)
+    desktop_environment = physical_environment()
+    revalidate(source, desktop_environment)
+    os.environ.update(source_environment(source, desktop_environment))
+    verify_capture_geometry(source, os.environ)
     import gi
     gi.require_version("Gst", "1.0")
     from gi.repository import GLib, Gst
@@ -76,7 +72,19 @@ def main():
             raise CaptureError("Could not connect capture plugins")
     loop = GLib.MainLoop()
     failure = []
+    stopped = []
     producer = None
+    def report_stop(reason):
+        failure.append(reason)
+        if not stopped:
+            stopped.append(True)
+            # Notify the backend before entering native shutdown. A stopped
+            # X server can otherwise hold GStreamer's streaming thread there.
+            try:
+                print(json.dumps({'closed': True}), flush=True)
+            except BrokenPipeError:
+                pass
+        GLib.idle_add(loop.quit)
     def frame(reader):
         sample = reader.emit("pull-sample")
         if sample is None:
@@ -85,8 +93,7 @@ def main():
         ok, mapped = buffer.map(Gst.MapFlags.READ)
         try:
             if not ok or transport.pleb_capture_push(producer, mapped.data, len(mapped.data)) < 0:
-                failure.append("The selected capture transport stopped")
-                GLib.idle_add(loop.quit)
+                report_stop("The selected capture transport stopped")
                 return Gst.FlowReturn.ERROR
         finally:
             if ok:
@@ -95,18 +102,17 @@ def main():
     sink.connect("new-sample", frame)
     def message(_bus, msg):
         if msg.type in (Gst.MessageType.ERROR, Gst.MessageType.EOS):
-            failure.append("The selected capture source stopped")
-            loop.quit()
+            report_stop("The selected capture source stopped")
     pipeline.get_bus().add_signal_watch()
     pipeline.get_bus().connect("message", message)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: (loop.quit(), False)[1])
     def check_source():
         try:
-            revalidate(source)
+            revalidate(source, desktop_environment)
+            verify_capture_geometry(source, os.environ)
             return True
         except CaptureError:
-            failure.append("The selected capture source changed")
-            loop.quit()
+            report_stop("The selected capture source changed")
             return False
     try:
         producer = transport.pleb_capture_open(name.encode(), source.width, source.height)
