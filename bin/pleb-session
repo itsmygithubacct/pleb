@@ -10,9 +10,9 @@
 # keeps working after it is copied to /usr/local/bin.
 #
 # A minimal X session: one screen-filling kilix with its own clickable chrome.
-# When kilix
-# exits, the X session ends (LightDM returns to the greeter), unless respawn
-# (hard-kiosk) mode keeps it alive — see PLEB_RESPAWN below.
+# A normal exit ends the X session (LightDM returns to the greeter). Normal
+# owned login sessions recover failed frontends without ending X or their
+# services; hard-kiosk mode also restarts clean exits. See the policies below.
 #
 # Environment knobs:
 #   KILIX_DIR         kilix checkout (default: $HOME/.local/gpu_terminal/sources/kilix)
@@ -45,6 +45,8 @@
 #   PLEB_BG           root window solid colour     (default: #101010)
 #   PLEB_LOG          session log file (default: ~/.local/gpu_terminal/pleb/state/session.log)
 #   PLEB_RESPAWN      if =1, relaunch kilix if it exits (kiosk mode); default off
+#   PLEB_RECOVER_CRASHES auto | on | off; auto restarts failed frontends in an
+#                     owned normal login session while preserving its services
 #   PLEB_SESSION_SERVICES auto | on | off; auto enables desktop services in a
 #                     logind login session, and leaves nested tests alone
 #   PLEB_IDLE_LOCK_SECONDS idle lock timeout (default: 600; 0 disables idle lock)
@@ -121,7 +123,7 @@ if [[ ! ${PLEB_CLOSURE_USER+x} ]]; then
 fi
 
 _pleb_release_vars="PLEBIAN_OS_VERSION PLEBIAN_OS_RELEASE PLEBIAN_OS_RELEASE_MODE PLEBIAN_OS_REPO PLEBIAN_OS_BRANCH PLEBIAN_OS_REF PLEB_REPO PLEB_BRANCH PLEB_REF KILIX_REPO KILIX_BRANCH KILIX_REF KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX_SYSTEM_MONITOR_REPO KILIX_SYSTEM_MONITOR_BRANCH KILIX_SYSTEM_MONITOR_REF KILIX_DESKTOP_SDK_REPO KILIX_DESKTOP_SDK_BRANCH KILIX_DESKTOP_SDK_REF KILIX_ICEWM_REPO KILIX_ICEWM_BRANCH KILIX_ICEWM_REF KILIX_MEDIA_SDK_REPO KILIX_MEDIA_SDK_BRANCH KILIX_MEDIA_SDK_REF KILIX_WAYDROID_REPO KILIX_WAYDROID_BRANCH KILIX_WAYDROID_REF PLEBIAN_OS_APT_SNAPSHOT PLEBIAN_OS_INSTALL_UV PLEBIAN_OS_UV_VERSION PLEBIAN_OS_UV_INSTALLER_SHA256 PLEBIAN_OS_UV_INSTALLER_MAX_BYTES KILIX_PREBUILT_VERSION KILIX_PREBUILT_SHA256 PLEBIAN_OS_BUILD_KILIX_FORK PLEBIAN_OS_KILIX_GO_MIN_VERSION PLEBIAN_OS_KILIX_GO_VERSION PLEBIAN_OS_KILIX_GO_SHA256_AMD64 PLEBIAN_OS_KILIX_GO_SHA256_ARM64 PLEBIAN_OS_INSTALL_VOICE_MODEL KILIX_VOICE_REF KILIX_VOICE_LIB_VERSION KILIX_VOICE_LIB_URL KILIX_VOICE_LIB_SHA256 KILIX_VOICE_MODEL_URL KILIX_VOICE_MODEL_SHA256 PLEBIAN_OS_INSTALL_WAYDROID PLEBIAN_OS_WAYDROID_CLOSURE_SHA256"
-_pleb_vars="$_pleb_release_vars PLEBIAN_OS_DIR PLEB_DIR GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_SESSION_SERVICES PLEB_IDLE_LOCK_SECONDS PLEB_INPUT_METHOD PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
+_pleb_vars="$_pleb_release_vars PLEBIAN_OS_DIR PLEB_DIR GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_RECOVER_CRASHES PLEB_SESSION_SERVICES PLEB_IDLE_LOCK_SECONDS PLEB_INPUT_METHOD PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
 declare -A _pleb_had _pleb_saved
 for _pleb_v in $_pleb_vars; do
     if [[ ${!_pleb_v+x} ]]; then
@@ -1232,10 +1234,20 @@ if [ "$HAVE_WM" = 1 ] && [ -r "$KILIX_DIR/scripts/native-window-log.py" ]; then
         --parent-start-tick "$_pleb_session_start"
 fi
 
-# Run kilix in the background and wait for it, watching the Pleb-owned WM too.
-# Sets PLEB_KILIX_RC. Returns 0 if kilix exited on its own, 1 if the WM died
-# first.
+# Required session services must remain healthy during startup, a frontend
+# lifetime, and the delay between retries.
+_pleb_workspace_alive() {
+    if [ "$PLEB_WM_OWNED" = 1 ] && ! _pleb_owned_alive "$PLEB_WM_PID" "$PLEB_WM_START"; then
+        return 1
+    fi
+    _pleb_services_alive
+}
+
+# Run kilix in the background and wait for it, watching the owned WM/services.
+# Sets PLEB_KILIX_RC. Returns 0 if kilix exited on its own, 1 if the workspace
+# cannot safely host it.
 _pleb_run_kilix_supervised() {
+    _pleb_workspace_alive || return 1
     _pleb_launch_owned PLEB_KILIX_PID PLEB_KILIX_START \
         "$KILIX" "${KILIX_ARGV[@]}" "${FILL_ARGS[@]}" "${DESKTOP_ARGS[@]}"
     while :; do
@@ -1246,17 +1258,29 @@ _pleb_run_kilix_supervised() {
             PLEB_KILIX_START=""
             return 0
         fi
-        if [ "$PLEB_WM_OWNED" = 1 ] && ! _pleb_owned_alive "$PLEB_WM_PID" "$PLEB_WM_START"; then
-            return 1
-        fi
-        _pleb_services_alive || return 1
+        _pleb_workspace_alive || return 1
         sleep 0.5
     done
 }
 
-if [ "$PLEB_RESPAWN" = 1 ]; then
+_PLEB_RECOVER_CRASHES=0
+case "${PLEB_RECOVER_CRASHES:-auto}" in
+    1|yes|true|on) _PLEB_RECOVER_CRASHES=1 ;;
+    0|no|false|off) ;;
+    auto)
+        if [ "${PLEB_SERVICES_ACTIVE:-0}" = 1 ] && [ "$PLEB_WM_OWNED" = 1 ]; then
+            _PLEB_RECOVER_CRASHES=1
+        fi ;;
+    *)
+        echo 'FATAL: PLEB_RECOVER_CRASHES must be auto, on or off' >&2
+        exit "$PLEB_EX_CONFIG" ;;
+esac
+
+if [ "$PLEB_RESPAWN" = 1 ] || [ "$_PLEB_RECOVER_CRASHES" = 1 ]; then
     _pleb_require_process_cleanup
-    # kiosk: keep a kilix alive for the life of the X session
+    # Keep the physical session, services and persistent PTYs intact after a
+    # failed frontend. Kiosk mode also restarts clean exits; a normal login
+    # retains its intentional shutdown path.
     crashes=0
     delay=1
     while :; do
@@ -1271,6 +1295,10 @@ if [ "$PLEB_RESPAWN" = 1 ]; then
         rc=$PLEB_KILIX_RC
         runtime=$(($(date +%s) - start))
         echo "kilix exited rc=$rc after ${runtime}s"
+        if [ "$PLEB_RESPAWN" != 1 ] && [ "$rc" = 0 ]; then
+            echo '--- kilix exited normally; ending session ---'
+            exit 0
+        fi
         if [ "$runtime" -lt 10 ]; then
             crashes=$((crashes + 1))
             [ "$delay" -lt 30 ] && delay=$((delay * 2))
@@ -1287,7 +1315,13 @@ if [ "$PLEB_RESPAWN" = 1 ]; then
             exit "$rc"
         fi
         echo "--- respawning in ${delay}s ---"
-        sleep "$delay"
+        for ((_pleb_retry_tick=0; _pleb_retry_tick<delay*2; _pleb_retry_tick++)); do
+            if ! _pleb_workspace_alive; then
+                echo "FATAL: window manager or required desktop service exited; ending the session" >&2
+                exit "$PLEB_EX_CONFIG"
+            fi
+            sleep .5
+        done
     done
 elif [ "$PLEB_WM_OWNED" = 1 ] || [ "$PLEB_SERVICES_ACTIVE" = 1 ]; then
     # Supervised: this shell must outlive kilix so it can stop the WM it started.
