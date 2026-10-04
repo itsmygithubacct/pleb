@@ -55,7 +55,7 @@ ensure_system_deps() {
         pulseaudio pulseaudio-utils pulsemixer alsa-utils ffmpeg xauth zenity
         zstd espeak-ng
         python3-dbus python3-gi dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
-        pipewire pipewire-bin gstreamer1.0-pipewire gstreamer1.0-x
+        pipewire pipewire-bin libpipewire-0.3-dev pkg-config gstreamer1.0-pipewire gstreamer1.0-x
         gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gst-plugins-base-1.0 gir1.2-gtk-3.0 python3-gi-cairo
         xdg-utils desktop-file-utils shared-mime-info xfce4-notifyd libnotify-bin
         xss-lock i3lock xssproxy xfce4-power-manager xfconf lxpolkit
@@ -821,6 +821,15 @@ install_openbox_profile() {
 # do_install — ensure kilix is present, copy pleb-session to /usr/local/bin, and
 # drop the xsession entry so LightDM lists "Pleb" as a choosable session.
 install_capture_portal() {
+    # Compile as the invoking user, then install the completed transport.
+    # A failed build cannot overwrite the installed backend modules.
+    (
+        set -e
+        build_dir=$(mktemp -d) || exit 1
+        trap 'rm -rf -- "$build_dir"' EXIT
+        bash "$PLEB_ROOT/scripts/build-capture-transport.sh" "$build_dir/capture_transport.so" || exit 1
+        run_root install -D -m 0644 "$build_dir/capture_transport.so" /usr/local/lib/pleb/capture_transport.so || exit 1
+    ) || die "Could not build/install capture transport; install libpipewire-0.3-dev and pkg-config"
     local module
     for module in displays.py capture_sources.py capture_worker.py capture_portal.py; do
         run_root install -D -m 0644 "$PLEB_ROOT/lib/$module" "/usr/local/lib/pleb/$module"
@@ -938,7 +947,7 @@ do_uninstall() {
         fi
     done
     for f in /usr/local/lib/pleb/displays.py /usr/local/lib/pleb/capture_sources.py /usr/local/lib/pleb/capture_worker.py \
-            /usr/local/lib/pleb/capture_portal.py \
+            /usr/local/lib/pleb/capture_portal.py /usr/local/lib/pleb/capture_transport.so \
             /usr/local/share/xdg-desktop-portal/portals/pleb.portal \
             /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service; do
         if [ -e "$f" ] || [ -L "$f" ]; then

@@ -3,6 +3,7 @@
 import ctypes
 import json
 import os
+from pathlib import Path
 import signal
 import subprocess
 import sys
@@ -34,7 +35,7 @@ def main():
     pipeline = Gst.Pipeline.new("capture-stream")
     elements = [Gst.ElementFactory.make(factory, name) for factory, name in (
         ("ximagesrc", "capture"), ("capsfilter", "rate"), ("queue", "queue"),
-        ("videoconvert", "convert"), ("capsfilter", "format"), ("pipewiresink", "producer"))]
+        ("videoconvert", "convert"), ("capsfilter", "format"), ("appsink", "frames"))]
     if any(element is None for element in elements):
         raise CaptureError("Capture plugins are missing; run pleb install")
     capture, rate, queue, _convert, pixel_format, sink = elements
@@ -50,17 +51,24 @@ def main():
                            ("endx", source.x + source.width - 1), ("endy", source.y + source.height - 1)):
             capture.set_property(key, value)
     rate.set_property("caps", Gst.Caps.from_string("video/x-raw,framerate=30/1"))
-    pixel_format.set_property("caps", Gst.Caps.from_string("video/x-raw,format=BGRx"))
+    pixel_format.set_property("caps", Gst.Caps.from_string(
+        f"video/x-raw,format=BGRx,width={source.width},height={source.height}"))
     for key, value in (("max-size-buffers", 2), ("max-size-bytes", 0), ("max-size-time", 0), ("leaky", 2)):
         queue.set_property(key, value)
-    for key, value in (("mode", 2), ("sync", False), ("async", False), ("enable-last-sample", False)):
+    for key, value in (("sync", False), ("async", False), ("enable-last-sample", False),
+                       ("emit-signals", True), ("max-buffers", 1), ("drop", True)):
         sink.set_property(key, value)
     name = "pleb-capture-" + uuid.uuid4().hex
-    properties = Gst.Structure.new_empty("props")
-    for key, value in (("node.name", name), ("node.description", "Pleb screen sharing"),
-                       ("media.class", "Video/Source")):
-        properties.set_value(key, value)
-    sink.set_property("stream-properties", properties)
+    # Debian's GStreamer PipeWire sink can publish pointer-only buffers even
+    # when a browser requests descriptors. Keep X11 acquisition in GStreamer,
+    # and negotiate shareable buffers explicitly in our small transport.
+    transport = ctypes.CDLL(str(Path(__file__).with_name("capture_transport.so")))
+    transport.pleb_capture_open.argtypes = (ctypes.c_char_p, ctypes.c_uint32, ctypes.c_uint32)
+    transport.pleb_capture_open.restype = ctypes.c_void_p
+    transport.pleb_capture_push.argtypes = (ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t)
+    transport.pleb_capture_push.restype = ctypes.c_int
+    transport.pleb_capture_close.argtypes = (ctypes.c_void_p,)
+    transport.pleb_capture_close.restype = None
     for element in elements:
         pipeline.add(element)
     for first, second in zip(elements, elements[1:]):
@@ -68,6 +76,23 @@ def main():
             raise CaptureError("Could not connect capture plugins")
     loop = GLib.MainLoop()
     failure = []
+    producer = None
+    def frame(reader):
+        sample = reader.emit("pull-sample")
+        if sample is None:
+            return Gst.FlowReturn.EOS
+        buffer = sample.get_buffer()
+        ok, mapped = buffer.map(Gst.MapFlags.READ)
+        try:
+            if not ok or transport.pleb_capture_push(producer, mapped.data, len(mapped.data)) < 0:
+                failure.append("The selected capture transport stopped")
+                GLib.idle_add(loop.quit)
+                return Gst.FlowReturn.ERROR
+        finally:
+            if ok:
+                buffer.unmap(mapped)
+        return Gst.FlowReturn.OK
+    sink.connect("new-sample", frame)
     def message(_bus, msg):
         if msg.type in (Gst.MessageType.ERROR, Gst.MessageType.EOS):
             failure.append("The selected capture source stopped")
@@ -84,6 +109,9 @@ def main():
             loop.quit()
             return False
     try:
+        producer = transport.pleb_capture_open(name.encode(), source.width, source.height)
+        if not producer:
+            raise CaptureError("Could not start the capture transport")
         if pipeline.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
             raise CaptureError("Could not start the capture source")
         deadline = time.monotonic() + 6
@@ -104,6 +132,7 @@ def main():
             raise CaptureError(failure[0])
     finally:
         pipeline.set_state(Gst.State.NULL)
+        transport.pleb_capture_close(producer)
 
 
 if __name__ == "__main__":
