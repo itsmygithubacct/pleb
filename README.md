@@ -68,8 +68,14 @@ changing frames from a minimized application pane, cancellation, browser and
 physical Stop sharing, and source closure. Chromium's shared pane includes its
 native dialogs. Chromium requests both a preview session and a fresh capture
 session; each has a system consent picker, so answer the second picker after
-the browser's Share button. Broader display, lock and daily-use acceptance is
-still required.
+the browser's Share button. An owned single-output VM also passed manual lock,
+pending-consent cancellation, normal PAM unlock and real ACPI S3 checks. Cold
+activation on an inactive VT refused capture. Two selected application panes
+delivered frames for two minutes; Stop, lock and source closure removed both
+streams. A physical output mode change closed its old capture, and restoring
+the mode did not resume sharing. These bounded checks leave mixed-DPI and
+connector hotplug, longer browser sessions, physical hardware, selected-release
+integration and fresh-install daily-use acceptance pending.
 The capture transport is built locally by `pleb install` using
 `libpipewire-0.3-dev` and `pkg-config`. It supplies descriptor-backed video
 buffers for browser consumers; X11 acquisition remains in GStreamer.
