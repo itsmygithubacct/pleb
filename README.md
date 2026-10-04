@@ -51,7 +51,11 @@ the host's existing PipeWire session manager; it installs the capture backend
 without replacing another desktop's audio policy. The pane application's
 private D-Bus connection uses the matching Kilix candidate's desktop portal
 bridge. Native capture and private-app integration have component VM evidence;
-browser and installed default-desktop acceptance are still required.
+Firefox ESR also has real browser-frame and Stop sharing evidence through the
+private bus. Chromium and installed default-desktop acceptance are still required.
+The capture transport is built locally by `pleb install` using
+`libpipewire-0.3-dev` and `pkg-config`. It supplies descriptor-backed video
+buffers for browser consumers; X11 acquisition remains in GStreamer.
 
 Normal login sessions start supervised lock, idle-inhibition, power, PolicyKit,
 Bluetooth, removable-media and input-method services. `pleb install` supplies
