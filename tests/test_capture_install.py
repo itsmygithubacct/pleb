@@ -1,5 +1,6 @@
 from pathlib import Path
 import ctypes
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -13,25 +14,37 @@ class CaptureInstallTests(unittest.TestCase):
     def install(self, target, managed, *, compiler="cc", success=True):
         env = clean_env(target, PLEBIAN_OS_MANAGED_INSTALL=str(int(managed)),
                         FIXTURE_ROOT=str(target), PLEB_ROOT=str(ROOT), CC=compiler)
-        script = r'''
-set -euo pipefail
-source "$PLEB_ROOT/lib/common.sh"
-source "$PLEB_ROOT/lib/install.sh"
-run_root() {
-    [ "$1" = install ] || return 90
-    local -a args=("$@")
-    local final=$((${#args[@]} - 1))
-    [[ "${args[$final]}" = /* ]] || return 91
-    args[$final]="$FIXTURE_ROOT${args[$final]}"
-    "${args[@]}"
-}
-install_capture_portal
-'''
+        script = self.install_script()
         result = subprocess.run(["bash", "-c", script], env=env, cwd=ROOT, capture_output=True, text=True)
         if success:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         else:
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @staticmethod
+    def install_script():
+        return r'''
+set -euo pipefail
+source "$PLEB_ROOT/lib/common.sh"
+source "$PLEB_ROOT/lib/install.sh"
+run_root() {
+    local -a args=("$@")
+    case "$1" in
+        install)
+            local final=$((${#args[@]} - 1))
+            [[ "${args[$final]}" = /* ]] || return 91
+            args[$final]="$FIXTURE_ROOT${args[$final]}" ;;
+        mv|rm)
+            local i
+            for ((i = 2; i < ${#args[@]}; i++)); do
+                [[ "${args[$i]}" = /* ]] && args[$i]="$FIXTURE_ROOT${args[$i]}"
+            done ;;
+        *) return 90 ;;
+    esac
+    "${args[@]}"
+}
+install_capture_portal
+'''
 
     def test_standalone_installs_backend_without_changing_desktop_policy(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -52,6 +65,26 @@ install_capture_portal
                 self.assertTrue(callable(getattr(transport, symbol)))
             service = target / "usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service"
             self.assertIn("Exec=/usr/bin/python3 /usr/local/lib/pleb/capture_portal.py", service.read_text())
+
+    def test_failed_module_staging_leaves_the_installed_backend_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "root"
+            source = Path(directory) / "pleb"
+            shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+            modules = target / "usr/local/lib/pleb"
+            modules.mkdir(parents=True)
+            for name in self.shared_module_list():
+                (modules / name).write_bytes(b"previous installed module\n")
+            (source / "lib/capture_worker.py").unlink()  # staging fails part-way
+            env = clean_env(target, PLEBIAN_OS_MANAGED_INSTALL="0", FIXTURE_ROOT=str(target),
+                            PLEB_ROOT=str(source), CC="cc")
+            script = self.install_script()
+            result = subprocess.run(["bash", "-c", script], env=env, cwd=source,
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            for name in self.shared_module_list():
+                self.assertEqual((modules / name).read_bytes(), b"previous installed module\n", name)
+            self.assertEqual(sorted(p.name for p in modules.iterdir() if p.name.endswith(".new")), [])
 
     def shared_module_list(self):
         with tempfile.TemporaryDirectory() as home:
