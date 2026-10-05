@@ -58,6 +58,17 @@ class PlebPlumbingTests(unittest.TestCase):
                 offenders.append(str(path.relative_to(ROOT)))
         self.assertEqual(offenders, [])
 
+    def test_every_nested_test_session_turns_desktop_services_off(self):
+        # A nested or VT test session inherits the operator terminal's
+        # XDG_SESSION_ID, so under `auto` it would start a second locker that
+        # reports LockedHint for the operator's own login session.
+        lines = [line for line in (ROOT / "lib/test.sh").read_text().splitlines()
+                 if '"$_T_ENTRY"' in line and "[ -x" not in line]
+        self.assertEqual(len(lines), 3)
+        for line in lines:
+            with self.subTest(line=line.strip()):
+                self.assertIn("PLEB_SESSION_SERVICES=off", line)
+
     def test_shell_scripts_parse(self):
         scripts = [
             "bin/pleb",
