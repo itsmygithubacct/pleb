@@ -443,7 +443,7 @@ _test_xephyr() {
             KILIX_DESKTOP_COMMAND="$KILIX_DESKTOP_COMMAND" KILIX_DESKTOP_NAME="$KILIX_DESKTOP_NAME" \
             KILIX95_DIR="$KILIX95_DIR" KILIX95_REPO="$KILIX95_REPO" \
             KILIX95_BRANCH="$KILIX95_BRANCH" KILIX95_REF="$KILIX95_REF" \
-            PLEB_RESPAWN=0 "$_T_ENTRY"
+            PLEB_SESSION_SERVICES=off PLEB_RESPAWN=0 "$_T_ENTRY"
         kill "$xpid" 2>/dev/null || true
     fi
 }
@@ -457,7 +457,7 @@ _test_vt() {
         KILIX_DESKTOP_COMMAND="$KILIX_DESKTOP_COMMAND" KILIX_DESKTOP_NAME="$KILIX_DESKTOP_NAME" \
         KILIX95_DIR="$KILIX95_DIR" KILIX95_REPO="$KILIX95_REPO" \
         KILIX95_BRANCH="$KILIX95_BRANCH" KILIX95_REF="$KILIX95_REF" \
-        PLEB_RESPAWN=0 startx "$_T_ENTRY" -- "$nd" "vt$_T_VT" >"$_T_TESTLOG" 2>&1 &
+        PLEB_SESSION_SERVICES=off PLEB_RESPAWN=0 startx "$_T_ENTRY" -- "$nd" "vt$_T_VT" >"$_T_TESTLOG" 2>&1 &
     local sxpid=$!
     sleep "$([ "$_T_CHECK" = 1 ] && echo "$_T_SECS" || echo 3)"
     if [ "$_T_CHECK" = 1 ]; then
