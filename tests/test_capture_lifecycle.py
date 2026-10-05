@@ -11,6 +11,30 @@ import capture_portal as capture
 
 
 class CaptureLifecycleTests(unittest.TestCase):
+    def test_portal_wires_its_lock_guard_to_closing_every_session_and_request(self):
+        # Every other lifecycle test builds the portal with object.__new__ and
+        # a stub guard, so nothing bound the one line that makes a lock close
+        # sharing: the guard's callback must be Portal.close.
+        created = {}
+
+        class Guard:
+            def __init__(self, blocked, display, *, session_id=None):
+                created.update(blocked=blocked, display=display, session_id=session_id)
+
+        environment = {'PLEB_DESKTOP_DISPLAY': ':5', 'PLEB_DESKTOP_SESSION_ID': '42'}
+        with mock.patch.object(capture.dbus.service, 'BusName'), \
+                mock.patch.object(capture.Properties, '__init__', return_value=None), \
+                mock.patch.object(capture, 'CaptureSessionGuard', Guard), \
+                mock.patch.dict(os.environ, environment):
+            portal = capture.Portal(mock.Mock())
+        self.assertEqual((created['display'], created['session_id']), (':5', '42'))
+        session, request = mock.Mock(), mock.Mock()
+        portal.sessions['/session'] = session
+        portal.requests['/request'] = request
+        created['blocked']()
+        session.close.assert_called_once_with()
+        request.finish.assert_called_once_with(1)
+
     def test_locked_desktop_does_not_create_a_session_or_consent_request(self):
         portal = object.__new__(capture.Portal)
         portal.authenticate = mock.Mock()

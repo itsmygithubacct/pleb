@@ -130,6 +130,41 @@ class CaptureSessionTests(unittest.TestCase):
         self.assertTrue(guard.can_capture)
         self.assertFalse(guard.managed)
 
+    def test_published_startx_session_is_managed_and_lock_closes_capture(self):
+        # startx: logind Type=tty with no Display, but xss-lock still reports
+        # LockedHint on it. pleb-session publishes its id; the guard follows it.
+        self.bus.props['/tty'] = desktop(Type='tty', Display='')
+        guard = session.CaptureSessionGuard(self.closed, ':0', session_id='1',
+                                            bus=self.bus, uid=1001)
+        self.addCleanup(guard.close)
+        self.assertTrue(guard.managed)
+        self.assertEqual(guard.path, '/tty')
+        self.assertTrue(guard.can_capture)
+        guard.changed(session.SESSION, {'LockedHint': True}, [], path='/tty')
+        self.assertFalse(guard.can_capture)
+        self.closed.assert_called_once_with()
+
+    def test_published_session_that_is_gone_fails_closed(self):
+        guard = session.CaptureSessionGuard(self.closed, ':99', session_id='7',
+                                            bus=self.bus, uid=1001)
+        self.addCleanup(guard.close)
+        self.assertTrue(guard.managed)
+        self.assertFalse(guard.can_capture)
+
+    def test_published_session_ignores_every_other_login(self):
+        # Session '0' is the x11 desktop on :71; bound to '1', its state is
+        # irrelevant, and an x11 session id on another display is refused.
+        self.bus.props['/tty'] = desktop(Type='tty', Display='')
+        guard = session.CaptureSessionGuard(self.closed, ':71', session_id='1',
+                                            bus=self.bus, uid=1001)
+        self.addCleanup(guard.close)
+        guard.changed(session.SESSION, {'LockedHint': True}, [], path='/physical')
+        self.assertTrue(guard.can_capture)
+        other = session.CaptureSessionGuard(self.closed, ':72', session_id='0',
+                                            bus=self.bus, uid=1001)
+        self.addCleanup(other.close)
+        self.assertFalse(other.can_capture)
+
     def test_locked_at_start_rejects_capture_without_waiting_for_a_signal(self):
         self.props['LockedHint'] = True
         guard = session.CaptureSessionGuard(self.closed, ':71', bus=self.bus, uid=1001)
@@ -142,6 +177,16 @@ class CaptureSessionTests(unittest.TestCase):
         self.addCleanup(guard.close)
         self.assertTrue(guard.managed)
         self.assertFalse(guard.can_capture)
+
+    def test_desktop_inactive_at_start_becomes_capturable_when_logind_activates_it(self):
+        self.props['Active'] = False
+        guard = session.CaptureSessionGuard(self.closed, ':71', bus=self.bus, uid=1001)
+        self.addCleanup(guard.close)
+        self.assertFalse(guard.can_capture)
+        self.props['Active'] = True
+        guard.changed(session.SESSION, {'Active': True}, [], path='/physical')
+        self.assertEqual(guard.path, '/physical')
+        self.assertTrue(guard.can_capture)
 
     def test_sleeping_at_start_rejects_capture(self):
         self.bus.PreparingForSleep = True

@@ -421,7 +421,9 @@ class Portal(Properties):
         self.name = dbus.service.BusName(BUS_NAME, bus=bus, do_not_queue=True)
         super().__init__(bus, ROOT)
         self.sessions, self.requests = {}, {}
-        self.guard = CaptureSessionGuard(self.close, physical_environment()['DISPLAY'])
+        physical = physical_environment()
+        self.guard = CaptureSessionGuard(self.close, physical['DISPLAY'],
+                                         session_id=physical.get('PLEB_DESKTOP_SESSION_ID'))
         bus.add_signal_receiver(self.owner_changed, signal_name="NameOwnerChanged",
                                 dbus_interface="org.freedesktop.DBus", arg0=FRONTEND)
         bus.call_on_disconnection(lambda _connection: (self.close(), Gtk.main_quit()))

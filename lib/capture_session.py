@@ -11,9 +11,15 @@ PROPERTIES = 'org.freedesktop.DBus.Properties'
 
 
 class CaptureSessionGuard:
-    def __init__(self, blocked, display, *, bus=None, uid=None):
+    def __init__(self, blocked, display, *, session_id=None, bus=None, uid=None):
         self.blocked = blocked
         self.display = display.split('.', 1)[0]
+        # pleb-session publishes the logind session its locker reports for.
+        # Bound to it, the guard follows that session whatever its Type (a
+        # startx login is Type=tty with no Display) and fails closed if it
+        # disappears. Without it, only an x11 login on this display is managed
+        # and a nested X server with no login of its own stays unmanaged.
+        self.session_id = str(session_id) if session_id else None
         self.uid = os.getuid() if uid is None else uid
         self.path, self.properties = None, {}
         self.managed, self.ready, self.sleeping = False, False, False
@@ -66,13 +72,21 @@ class CaptureSessionGuard:
             own = [row for row in manager.ListSessions(timeout=1) if int(row[1]) == self.uid]
             if len(own) > 32:
                 raise dbus.exceptions.DBusException('Too many desktop sessions')
-            for _sid, _uid, _user, _seat, path in own:
+            if self.session_id is not None:
+                self.managed = True
+            for sid, _uid, _user, _seat, path in own:
+                if self.session_id is not None and str(sid) != self.session_id:
+                    continue
                 props = self.get_properties(path, SESSION)
+                display = str(props.get('Display', '')).split('.', 1)[0]
+                if self.session_id is None:
+                    login = props.get('Type') == 'x11' and display == self.display
+                else:
+                    login = props.get('Type') != 'x11' or display == self.display
                 if (int(props.get('User', (-1,))[0]) == self.uid
-                        and props.get('Type') == 'x11'
+                        and login
                         and props.get('Class') in ('user', 'user-early', 'user-light')
-                        and not props.get('Remote', True)
-                        and str(props.get('Display', '')).split('.', 1)[0] == self.display):
+                        and not props.get('Remote', True)):
                     self.managed = True
                     if props.get('Active'):
                         candidates.append((str(path), props))
