@@ -174,6 +174,21 @@ class CaptureSessionTests(unittest.TestCase):
         self.addCleanup(nested.close)
         self.assertTrue(nested.can_capture)
 
+    def test_remote_sessions_are_never_the_guarded_desktop(self):
+        # A remote (for example XDMCP or ssh -X forwarded) login on the same
+        # display number is not the physical desktop, bound or unbound.
+        self.props['Remote'] = True
+        unbound = session.CaptureSessionGuard(self.closed, ':71', bus=self.bus, uid=1001)
+        self.addCleanup(unbound.close)
+        self.assertIsNone(unbound.path)
+        self.assertFalse(unbound.managed)
+        bound = session.CaptureSessionGuard(self.closed, ':71', session_id='0',
+                                            bus=self.bus, uid=1001)
+        self.addCleanup(bound.close)
+        self.assertTrue(bound.bound)
+        self.assertIsNone(bound.path)
+        self.assertFalse(bound.can_capture)
+
     def test_published_session_without_a_seat_is_not_bound(self):
         # Seatless sessions (su -l, machinectl shell) report Active forever.
         self.bus.props['/tty'] = desktop(Type='tty', Display='')
