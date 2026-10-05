@@ -53,6 +53,30 @@ install_capture_portal
             service = target / "usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service"
             self.assertIn("Exec=/usr/bin/python3 /usr/local/lib/pleb/capture_portal.py", service.read_text())
 
+    def shared_module_list(self):
+        with tempfile.TemporaryDirectory() as home:
+            result = subprocess.run(
+                ["bash", "-c", 'source lib/common.sh; source lib/install.sh; printf %s "$PLEB_CAPTURE_MODULES"'],
+                env=clean_env(Path(home)), cwd=ROOT, capture_output=True, text=True, check=True)
+        return result.stdout.split()
+
+    def test_installed_modules_are_exactly_the_list_uninstall_removes(self):
+        # Plebian-OS protects these same files in its root transactions, and
+        # reads the list from here; a second hand-typed copy is how the lock
+        # guard went missing from uninstall and from the distribution rollback.
+        modules = self.shared_module_list()
+        self.assertIn("capture_session.py", modules)
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            self.install(target, False)
+            installed = sorted(p.name for p in (target / "usr/local/lib/pleb").glob("*.py"))
+        self.assertEqual(installed, sorted(modules))
+        source = (ROOT / "lib/install.sh").read_text()
+        uninstall = source[source.index("do_uninstall() {"):]
+        uninstall = uninstall[:uninstall.index("\n}\n")]
+        self.assertIn("for module in $PLEB_CAPTURE_MODULES; do", uninstall)
+        self.assertNotIn("/usr/local/lib/pleb/capture_portal.py", uninstall)
+
     def test_distribution_installs_explicit_capture_and_video_only_policy(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)

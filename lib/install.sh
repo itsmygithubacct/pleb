@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # lib/install.sh — install/uninstall the Pleb LightDM session. Sourced by `pleb`.
 
+# The Python modules installed under /usr/local/lib/pleb, in one place.
+# Install, uninstall and Plebian-OS's root transactions all read this list;
+# a second hand-typed copy left the lock guard (capture_session.py) out of
+# uninstall and out of the distribution's rollback.
+PLEB_CAPTURE_MODULES="displays.py capture_registry.py capture_sources.py capture_session.py capture_worker.py capture_screenshot.py capture_portal.py"
+
 _install_missing_apt_packages() {
     local label="$1"
     shift
@@ -831,7 +837,7 @@ install_capture_portal() {
         run_root install -D -m 0644 "$build_dir/capture_transport.so" /usr/local/lib/pleb/capture_transport.so || exit 1
     ) || die "Could not build/install capture transport; install libpipewire-0.3-dev and pkg-config"
     local module
-    for module in displays.py capture_registry.py capture_sources.py capture_session.py capture_worker.py capture_screenshot.py capture_portal.py; do
+    for module in $PLEB_CAPTURE_MODULES; do
         run_root install -D -m 0644 "$PLEB_ROOT/lib/$module" "/usr/local/lib/pleb/$module"
     done
     run_root install -D -m 0644 "$PLEB_ROOT/share/portals/pleb.portal" \
@@ -946,9 +952,16 @@ do_uninstall() {
             removed=1
         fi
     done
-    for f in /usr/local/lib/pleb/displays.py /usr/local/lib/pleb/capture_registry.py /usr/local/lib/pleb/capture_sources.py \
-            /usr/local/lib/pleb/capture_worker.py /usr/local/lib/pleb/capture_screenshot.py \
-            /usr/local/lib/pleb/capture_portal.py /usr/local/lib/pleb/capture_transport.so \
+    local module
+    for module in $PLEB_CAPTURE_MODULES; do
+        f="/usr/local/lib/pleb/$module"
+        if [ -e "$f" ] || [ -L "$f" ]; then
+            log "removing $f"
+            run_root rm -f "$f"
+            removed=1
+        fi
+    done
+    for f in /usr/local/lib/pleb/capture_transport.so \
             /usr/local/share/xdg-desktop-portal/portals/pleb.portal \
             /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service; do
         if [ -e "$f" ] || [ -L "$f" ]; then
