@@ -46,7 +46,10 @@ video source, and closing the portal session tears down its producer. Saved
 permissions are not accepted as automatic capture grants. In a logind desktop,
 locking, switching away from the session or preparing for sleep closes active
 capture and pending consent. Unlocking permits a new consent request and does
-not restart sharing. A lost lock-state connection blocks capture.
+not restart sharing. A lost lock-state connection blocks capture. With desktop
+services on, the guard follows the exact login session Pleb's locker reports
+for, including a `startx` login, and blocks capture if that session is gone;
+a nested X server without its own login is not lock-guarded.
 
 Managed local application panes from the matching Kilix candidate also appear
 as individual **Application pane** sources. Each includes that application's

@@ -1055,9 +1055,13 @@ PY_INHIBITOR
     xset s "$idle" 0 || return 1
     xset +dpms || true
     PLEB_SERVICES_ACTIVE=1
+    # The capture backend binds its lock guard to this login session, the one
+    # the locker above reports LockedHint for, whatever its Type: a startx
+    # login is Type=tty and would otherwise leave capture running when locked.
+    export PLEB_DESKTOP_SESSION_ID="${XDG_SESSION_ID:-}"
     if command -v dbus-update-activation-environment >/dev/null; then
         dbus-update-activation-environment --systemd \
-            PLEB_DESKTOP_DISPLAY PLEB_DESKTOP_XAUTHORITY PLEB_DESKTOP_BUS_ADDRESS \
+            PLEB_DESKTOP_DISPLAY PLEB_DESKTOP_XAUTHORITY PLEB_DESKTOP_BUS_ADDRESS PLEB_DESKTOP_SESSION_ID \
             GTK_IM_MODULE QT_IM_MODULE XMODIFIERS IBUS_ADDRESS 2>/dev/null || true
     fi
     sleep .2
