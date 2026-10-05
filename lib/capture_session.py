@@ -15,11 +15,14 @@ class CaptureSessionGuard:
         self.blocked = blocked
         self.display = display.split('.', 1)[0]
         # pleb-session publishes the logind session its locker reports for.
-        # Bound to it, the guard follows that session whatever its Type (a
-        # startx login is Type=tty with no Display) and fails closed if it
-        # disappears. Without it, only an x11 login on this display is managed
-        # and a nested X server with no login of its own stays unmanaged.
+        # Once that seated session has been seen, the guard follows it whatever
+        # its Type (a startx login is Type=tty with no Display) and fails closed
+        # if it disappears. An id that names no current session is stale, left
+        # in the activation environment by an earlier login, and is ignored.
+        # Unbound, only an x11 login on this display is managed and a nested X
+        # server with no login of its own stays unmanaged.
         self.session_id = str(session_id) if session_id else None
+        self.bound = False
         self.uid = os.getuid() if uid is None else uid
         self.path, self.properties = None, {}
         self.managed, self.ready, self.sleeping = False, False, False
@@ -72,17 +75,19 @@ class CaptureSessionGuard:
             own = [row for row in manager.ListSessions(timeout=1) if int(row[1]) == self.uid]
             if len(own) > 32:
                 raise dbus.exceptions.DBusException('Too many desktop sessions')
-            if self.session_id is not None:
+            if self.session_id is not None and not self.bound:
+                self.bound = any(str(row[0]) == self.session_id and row[3] for row in own)
+            if self.bound:
                 self.managed = True
-            for sid, _uid, _user, _seat, path in own:
-                if self.session_id is not None and str(sid) != self.session_id:
+            for sid, _uid, _user, seat, path in own:
+                if self.bound and str(sid) != self.session_id:
                     continue
                 props = self.get_properties(path, SESSION)
                 display = str(props.get('Display', '')).split('.', 1)[0]
-                if self.session_id is None:
-                    login = props.get('Type') == 'x11' and display == self.display
+                if self.bound:
+                    login = bool(seat) and (props.get('Type') != 'x11' or display == self.display)
                 else:
-                    login = props.get('Type') != 'x11' or display == self.display
+                    login = props.get('Type') == 'x11' and display == self.display
                 if (int(props.get('User', (-1,))[0]) == self.uid
                         and login
                         and props.get('Class') in ('user', 'user-early', 'user-light')
