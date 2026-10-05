@@ -836,9 +836,23 @@ install_capture_portal() {
         bash "$PLEB_ROOT/scripts/build-capture-transport.sh" "$build_dir/capture_transport.so" || exit 1
         run_root install -D -m 0644 "$build_dir/capture_transport.so" /usr/local/lib/pleb/capture_transport.so || exit 1
     ) || die "Could not build/install capture transport; install libpipewire-0.3-dev and pkg-config"
-    local module
+    # Stage every module beside its destination first, then rename them into
+    # place: a failure while staging leaves the installed set untouched, and a
+    # D-Bus activation never sees most of one version beside the rest of
+    # another.
+    local module staged=()
     for module in $PLEB_CAPTURE_MODULES; do
-        run_root install -D -m 0644 "$PLEB_ROOT/lib/$module" "/usr/local/lib/pleb/$module"
+        if ! run_root install -D -m 0644 "$PLEB_ROOT/lib/$module" "/usr/local/lib/pleb/.$module.new"; then
+            local done_module
+            for done_module in "${staged[@]}"; do
+                run_root rm -f "/usr/local/lib/pleb/.$done_module.new"
+            done
+            die "Could not stage the capture backend module $module"
+        fi
+        staged+=("$module")
+    done
+    for module in "${staged[@]}"; do
+        run_root mv -f "/usr/local/lib/pleb/.$module.new" "/usr/local/lib/pleb/$module"
     done
     run_root install -D -m 0644 "$PLEB_ROOT/share/portals/pleb.portal" \
         /usr/local/share/xdg-desktop-portal/portals/pleb.portal
