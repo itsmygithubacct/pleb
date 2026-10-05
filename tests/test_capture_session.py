@@ -23,8 +23,10 @@ class Bus:
     def get_object(self, _name, path):
         return self if path == session.ROOT else self.props[path]
 
+    seatless = frozenset()
+
     def ListSessions(self, **_kwargs):
-        return [(str(i), props['User'][0], 'fixture', 'seat0', path)
+        return [(str(i), props['User'][0], 'fixture', '' if path in self.seatless else 'seat0', path)
                 for i, (path, props) in enumerate(self.props.items())]
 
     def GetAll(self, _interface, **_kwargs):
@@ -144,12 +146,42 @@ class CaptureSessionTests(unittest.TestCase):
         self.assertFalse(guard.can_capture)
         self.closed.assert_called_once_with()
 
-    def test_published_session_that_is_gone_fails_closed(self):
-        guard = session.CaptureSessionGuard(self.closed, ':99', session_id='7',
+    def test_published_session_that_disappears_fails_closed(self):
+        self.bus.props['/tty'] = desktop(Type='tty', Display='')
+        guard = session.CaptureSessionGuard(self.closed, ':0', session_id='1',
                                             bus=self.bus, uid=1001)
         self.addCleanup(guard.close)
+        self.assertTrue(guard.can_capture)
+        del self.bus.props['/tty']
+        guard.sessions_changed('1', '/tty')
         self.assertTrue(guard.managed)
         self.assertFalse(guard.can_capture)
+        self.closed.assert_called_once_with()
+
+    def test_stale_published_id_from_an_earlier_login_is_ignored(self):
+        # No current session has id '7': the x11 desktop on :71 is still
+        # matched and guarded, and a nested server stays usable.
+        guard = session.CaptureSessionGuard(self.closed, ':71', session_id='7',
+                                            bus=self.bus, uid=1001)
+        self.addCleanup(guard.close)
+        self.assertFalse(guard.bound)
+        self.assertEqual(guard.path, '/physical')
+        self.assertTrue(guard.can_capture)
+        guard.changed(session.SESSION, {'LockedHint': True}, [], path='/physical')
+        self.assertFalse(guard.can_capture)
+        nested = session.CaptureSessionGuard(self.closed, ':99', session_id='7',
+                                             bus=self.bus, uid=1001)
+        self.addCleanup(nested.close)
+        self.assertTrue(nested.can_capture)
+
+    def test_published_session_without_a_seat_is_not_bound(self):
+        # Seatless sessions (su -l, machinectl shell) report Active forever.
+        self.bus.props['/tty'] = desktop(Type='tty', Display='')
+        self.bus.seatless = {'/tty'}
+        guard = session.CaptureSessionGuard(self.closed, ':0', session_id='1',
+                                            bus=self.bus, uid=1001)
+        self.addCleanup(guard.close)
+        self.assertFalse(guard.bound)
 
     def test_published_session_ignores_every_other_login(self):
         # Session '0' is the x11 desktop on :71; bound to '1', its state is
