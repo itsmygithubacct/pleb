@@ -22,19 +22,17 @@ if [[ ${XAUTHORITY+x} ]]; then export XAUTHORITY; fi
 unset WAYLAND_DISPLAY WAYLAND_SOCKET
 command -v i3lock >/dev/null \
     || { echo 'pleb-lock: i3lock is missing; run pleb install' >&2; exit 1; }
-# In a serviced desktop, let the already supervised xss-lock own the locker
-# and report LockedHint for both manual and idle locks. Its --nofork callback
-# still execs i3lock directly and preserves the transferred sleep inhibitor.
-if [ "${1:-}" != --nofork ] && [ -n "${XDG_SESSION_ID:-}" ]; then
-    coordinated=0
-    case "${PLEB_SESSION_SERVICES:-auto}" in
-        on|1) coordinated=1 ;;
-        auto) [ "${PLEB_RESPAWN:-0}" = 1 ] || coordinated=1 ;;
-    esac
-    if [ "$coordinated" = 1 ]; then
-        command -v loginctl >/dev/null \
-            || { echo 'pleb-lock: loginctl is missing; run pleb install' >&2; exit 1; }
-        exec loginctl lock-session -- "$XDG_SESSION_ID"
-    fi
+# In a serviced Pleb desktop, let the already supervised xss-lock own the
+# locker and report LockedHint for both manual and idle locks. pleb-session
+# exports PLEB_DESKTOP_SESSION_ID only once that locker is running, so another
+# desktop that runs this command (for example Xfce's seeded LockCommand) has
+# no coordinator listening and gets i3lock directly instead of an unanswered
+# logind request. The --nofork callback still execs i3lock directly and
+# preserves the transferred sleep inhibitor.
+if [ "${1:-}" != --nofork ] && [ -n "${PLEB_DESKTOP_SESSION_ID:-}" ] \
+        && [ "$PLEB_DESKTOP_SESSION_ID" = "${XDG_SESSION_ID:-}" ]; then
+    command -v loginctl >/dev/null \
+        || { echo 'pleb-lock: loginctl is missing; run pleb install' >&2; exit 1; }
+    exec loginctl lock-session -- "$XDG_SESSION_ID"
 fi
 exec i3lock "${args[@]}"
