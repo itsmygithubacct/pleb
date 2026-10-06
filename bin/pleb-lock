@@ -24,7 +24,8 @@ command -v i3lock >/dev/null \
     || { echo 'pleb-lock: i3lock is missing; run pleb install' >&2; exit 1; }
 # In a serviced Pleb desktop, let the already supervised xss-lock own the
 # locker and report LockedHint for both manual and idle locks. pleb-session
-# exports PLEB_DESKTOP_SESSION_ID only once that locker is running, so another
+# exports PLEB_DESKTOP_SESSION_ID once that locker holds its sleep inhibitor,
+# before it starts the window manager or any other client, so another
 # desktop that runs this command (for example Xfce's seeded LockCommand) has
 # no coordinator listening and gets i3lock directly instead of an unanswered
 # logind request. The --nofork callback still execs i3lock directly and

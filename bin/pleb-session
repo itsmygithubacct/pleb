@@ -714,6 +714,9 @@ PLEB_NATIVE_LOG_PID=""
 PLEB_NATIVE_LOG_START=""
 declare -A PLEB_SERVICE_PIDS=() PLEB_SERVICE_STARTS=()
 PLEB_SERVICES_ACTIVE=0
+PLEB_LOCKER_ACTIVE=0
+_PLEB_LOCK_BIN=""
+_PLEB_IDLE_LOCK=""
 PLEB_WM_START=""
 _pleb_launching=0
 _pleb_pending_signal=""
@@ -848,6 +851,146 @@ trap '_pleb_signal 129' HUP
 trap '_pleb_signal 130' INT
 trap '_pleb_signal 143' TERM
 
+# --- desktop services --------------------------------------------------------
+# Capture these before an app runner replaces DISPLAY and the session bus.
+export PLEB_DESKTOP_DISPLAY="${DISPLAY:-}"
+export PLEB_DESKTOP_XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+export PLEB_DESKTOP_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}"
+
+_pleb_service_start() {
+    local name="$1"; shift
+    command -v "$1" >/dev/null 2>&1 || {
+        echo "FATAL: desktop service $1 is missing; run pleb install" >&2
+        return 1
+    }
+    _pleb_launch_owned "PLEB_SERVICE_PIDS[$name]" "PLEB_SERVICE_STARTS[$name]" "$@"
+}
+
+_pleb_services_alive() {
+    local service
+    for service in locker inhibit power polkit; do
+        [ -n "${PLEB_SERVICE_PIDS[$service]:-}" ] || continue
+        if ! _pleb_owned_alive "${PLEB_SERVICE_PIDS[$service]}" "${PLEB_SERVICE_STARTS[$service]}"; then
+            echo "FATAL: required desktop service $service exited" >&2
+            return 1
+        fi
+    done
+}
+
+# The locker starts before the window manager and every other client. Openbox's
+# lock keys (W-l, C-A-l) and xfce4-power-manager's suspend LockCommand run
+# pleb-lock with the environment they were started with, and pleb-lock hands
+# the lock to this supervised xss-lock only when PLEB_DESKTOP_SESSION_ID names
+# the login session. Exporting it once the sleep inhibitor is confirmed, before
+# anything else starts, means every process launched by the session can see
+# the coordinator; outside a serviced Pleb login (for example Xfce running the
+# seeded LockCommand) the variable is absent and pleb-lock runs i3lock itself.
+_pleb_start_locker() {
+    local policy="${PLEB_SESSION_SERVICES:-auto}" lock_bin idle
+    case "$policy" in
+        off|0) return 0 ;;
+        auto) [ -n "${XDG_SESSION_ID:-}" ] && [ "${PLEB_RESPAWN:-0}" != 1 ] || return 0 ;;
+        on|1) ;;
+        *) echo 'FATAL: PLEB_SESSION_SERVICES must be auto, on or off' >&2; return 1 ;;
+    esac
+    [[ "${DISPLAY:-}" =~ ^:[0-9]+(\.[0-9]+)?$ ]] || return 1
+    [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || return 1
+    idle="${PLEB_IDLE_LOCK_SECONDS:-600}"
+    [[ "$idle" =~ ^[0-9]{1,5}$ ]] && [ "$idle" -le 86400 ] || {
+        echo 'FATAL: PLEB_IDLE_LOCK_SECONDS must be 0..86400' >&2; return 1;
+    }
+    lock_bin=/usr/local/bin/pleb-lock
+    if [ ! -x "$lock_bin" ]; then
+        lock_bin="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/pleb-lock"
+    fi
+    [ -x "$lock_bin" ] && command -v i3lock >/dev/null || {
+        echo 'FATAL: authenticated locker is missing; run pleb install' >&2; return 1;
+    }
+    _PLEB_LOCK_BIN="$lock_bin"
+    _PLEB_IDLE_LOCK="$idle"
+    _pleb_require_process_cleanup
+    _pleb_service_start locker xss-lock --transfer-sleep-lock -- "$lock_bin" --nofork || return 1
+    # Do not start the desktop until logind confirms the delay inhibitor. A
+    # live process alone does not establish lock-before-suspend protection.
+    /usr/bin/python3 - "${PLEB_SERVICE_PIDS[locker]}" <<'PY_INHIBITOR' || return 1
+import sys, time
+import dbus
+pid = int(sys.argv[1])
+manager = dbus.Interface(dbus.SystemBus().get_object(
+    'org.freedesktop.login1', '/org/freedesktop/login1'), 'org.freedesktop.login1.Manager')
+for attempt in range(50):
+    if any('sleep' in str(row[0]).split(':') and str(row[3]) == 'delay'
+           and int(row[5]) == pid for row in manager.ListInhibitors(timeout=1)):
+        break
+    time.sleep(.1)
+else:
+    sys.exit('FATAL: locker did not obtain the logind sleep-delay inhibitor')
+PY_INHIBITOR
+    PLEB_LOCKER_ACTIVE=1
+    # The capture backend binds its lock guard to this login session, the one
+    # the locker above reports LockedHint for, whatever its Type: a startx
+    # login is Type=tty and would otherwise leave capture running when locked.
+    export PLEB_DESKTOP_SESSION_ID="${XDG_SESSION_ID:-}"
+    if command -v dbus-update-activation-environment >/dev/null; then
+        dbus-update-activation-environment --systemd \
+            PLEB_DESKTOP_DISPLAY PLEB_DESKTOP_XAUTHORITY PLEB_DESKTOP_BUS_ADDRESS \
+            PLEB_DESKTOP_SESSION_ID 2>/dev/null || true
+    fi
+}
+
+_pleb_start_services() {
+    local lock_bin="$_PLEB_LOCK_BIN" idle="$_PLEB_IDLE_LOCK" input
+    [ "$PLEB_LOCKER_ACTIVE" = 1 ] || return 0
+    _pleb_service_start inhibit xssproxy || return 1
+    _pleb_service_start polkit lxpolkit || return 1
+    # libxfce4ui checks this command before its screensaver D-Bus fallbacks.
+    # Seed it only when absent so an operator's chosen locker is preserved.
+    if ! xfconf-query -c xfce4-session -p /general/LockCommand >/dev/null 2>&1; then
+        xfconf-query -c xfce4-session -p /general/LockCommand \
+            --create --type string --set "$lock_bin" || return 1
+    fi
+    _pleb_service_start power xfce4-power-manager || return 1
+    _pleb_service_start bluetooth blueman-applet || return 1
+    _pleb_service_start storage udiskie --no-tray --notify || return 1
+    input="${PLEB_INPUT_METHOD:-auto}"
+    case "$input" in
+        auto) case "${GTK_IM_MODULE:-ibus}" in ibus|'') input=ibus ;; *) input=off ;; esac ;;
+        ibus|off) ;;
+        *) echo 'FATAL: PLEB_INPUT_METHOD must be auto, ibus or off' >&2; return 1 ;;
+    esac
+    if [ "$input" = ibus ]; then
+        export GTK_IM_MODULE=ibus QT_IM_MODULE=ibus XMODIFIERS=@im=ibus
+        _pleb_service_start input ibus-daemon --xim --desktop=Pleb || return 1
+        # A fixed address lets GTK/Qt clients on private X displays reach this
+        # input method instead of looking for a daemon on their own display.
+        local attempt address
+        unset IBUS_ADDRESS
+        for ((attempt=0; attempt<50; attempt++)); do
+            address="$(ibus address 2>/dev/null)" || address=""
+            if [[ "$address" = unix:* ]]; then
+                export IBUS_ADDRESS="$address"
+                break
+            fi
+            sleep .1
+        done
+        [ -n "${IBUS_ADDRESS:-}" ] || return 1
+    fi
+    # Xfce owns display power policy; Xss owns the idle lock timer.
+    xset s "$idle" 0 || return 1
+    xset +dpms || true
+    PLEB_SERVICES_ACTIVE=1
+    if command -v dbus-update-activation-environment >/dev/null; then
+        dbus-update-activation-environment --systemd \
+            GTK_IM_MODULE QT_IM_MODULE XMODIFIERS IBUS_ADDRESS 2>/dev/null || true
+    fi
+    sleep .2
+    _pleb_services_alive
+}
+if ! _pleb_start_locker; then
+    echo 'FATAL: the session locker could not start; ending the session' >&2
+    exit "$PLEB_EX_CONFIG"
+fi
+
 PLEB_WM_ACTIVE="$(_pleb_wm_window)" || PLEB_WM_ACTIVE=""
 if [ -n "$PLEB_WM_ACTIVE" ]; then
     HAVE_WM=1
@@ -958,121 +1101,7 @@ else
     unset _pleb_wm_fail _pleb_wm_required
 fi
 
-# --- desktop services --------------------------------------------------------
-# Capture these before an app runner replaces DISPLAY and the session bus.
-export PLEB_DESKTOP_DISPLAY="${DISPLAY:-}"
-export PLEB_DESKTOP_XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
-export PLEB_DESKTOP_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}"
-
-_pleb_service_start() {
-    local name="$1"; shift
-    command -v "$1" >/dev/null 2>&1 || {
-        echo "FATAL: desktop service $1 is missing; run pleb install" >&2
-        return 1
-    }
-    _pleb_launch_owned "PLEB_SERVICE_PIDS[$name]" "PLEB_SERVICE_STARTS[$name]" "$@"
-}
-
-_pleb_services_alive() {
-    local service
-    for service in locker inhibit power polkit; do
-        [ -n "${PLEB_SERVICE_PIDS[$service]:-}" ] || continue
-        if ! _pleb_owned_alive "${PLEB_SERVICE_PIDS[$service]}" "${PLEB_SERVICE_STARTS[$service]}"; then
-            echo "FATAL: required desktop service $service exited" >&2
-            return 1
-        fi
-    done
-}
-
-_pleb_start_services() {
-    local policy="${PLEB_SESSION_SERVICES:-auto}" lock_bin idle input
-    case "$policy" in
-        off|0) return 0 ;;
-        auto) [ -n "${XDG_SESSION_ID:-}" ] && [ "${PLEB_RESPAWN:-0}" != 1 ] || return 0 ;;
-        on|1) ;;
-        *) echo 'FATAL: PLEB_SESSION_SERVICES must be auto, on or off' >&2; return 1 ;;
-    esac
-    [[ "${DISPLAY:-}" =~ ^:[0-9]+(\.[0-9]+)?$ ]] || return 1
-    [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || return 1
-    idle="${PLEB_IDLE_LOCK_SECONDS:-600}"
-    [[ "$idle" =~ ^[0-9]{1,5}$ ]] && [ "$idle" -le 86400 ] || {
-        echo 'FATAL: PLEB_IDLE_LOCK_SECONDS must be 0..86400' >&2; return 1;
-    }
-    lock_bin=/usr/local/bin/pleb-lock
-    if [ ! -x "$lock_bin" ]; then
-        lock_bin="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/pleb-lock"
-    fi
-    [ -x "$lock_bin" ] && command -v i3lock >/dev/null || {
-        echo 'FATAL: authenticated locker is missing; run pleb install' >&2; return 1;
-    }
-    _pleb_require_process_cleanup
-    _pleb_service_start locker xss-lock --transfer-sleep-lock -- "$lock_bin" --nofork || return 1
-    # Do not start the desktop until logind confirms the delay inhibitor. A
-    # live process alone does not establish lock-before-suspend protection.
-    /usr/bin/python3 - "${PLEB_SERVICE_PIDS[locker]}" <<'PY_INHIBITOR' || return 1
-import sys, time
-import dbus
-pid = int(sys.argv[1])
-manager = dbus.Interface(dbus.SystemBus().get_object(
-    'org.freedesktop.login1', '/org/freedesktop/login1'), 'org.freedesktop.login1.Manager')
-for attempt in range(50):
-    if any('sleep' in str(row[0]).split(':') and str(row[3]) == 'delay'
-           and int(row[5]) == pid for row in manager.ListInhibitors(timeout=1)):
-        break
-    time.sleep(.1)
-else:
-    sys.exit('FATAL: locker did not obtain the logind sleep-delay inhibitor')
-PY_INHIBITOR
-    _pleb_service_start inhibit xssproxy || return 1
-    _pleb_service_start polkit lxpolkit || return 1
-    # libxfce4ui checks this command before its screensaver D-Bus fallbacks.
-    # Seed it only when absent so an operator's chosen locker is preserved.
-    if ! xfconf-query -c xfce4-session -p /general/LockCommand >/dev/null 2>&1; then
-        xfconf-query -c xfce4-session -p /general/LockCommand \
-            --create --type string --set "$lock_bin" || return 1
-    fi
-    _pleb_service_start power xfce4-power-manager || return 1
-    _pleb_service_start bluetooth blueman-applet || return 1
-    _pleb_service_start storage udiskie --no-tray --notify || return 1
-    input="${PLEB_INPUT_METHOD:-auto}"
-    case "$input" in
-        auto) case "${GTK_IM_MODULE:-ibus}" in ibus|'') input=ibus ;; *) input=off ;; esac ;;
-        ibus|off) ;;
-        *) echo 'FATAL: PLEB_INPUT_METHOD must be auto, ibus or off' >&2; return 1 ;;
-    esac
-    if [ "$input" = ibus ]; then
-        export GTK_IM_MODULE=ibus QT_IM_MODULE=ibus XMODIFIERS=@im=ibus
-        _pleb_service_start input ibus-daemon --xim --desktop=Pleb || return 1
-        # A fixed address lets GTK/Qt clients on private X displays reach this
-        # input method instead of looking for a daemon on their own display.
-        local attempt address
-        unset IBUS_ADDRESS
-        for ((attempt=0; attempt<50; attempt++)); do
-            address="$(ibus address 2>/dev/null)" || address=""
-            if [[ "$address" = unix:* ]]; then
-                export IBUS_ADDRESS="$address"
-                break
-            fi
-            sleep .1
-        done
-        [ -n "${IBUS_ADDRESS:-}" ] || return 1
-    fi
-    # Xfce owns display power policy; Xss owns the idle lock timer.
-    xset s "$idle" 0 || return 1
-    xset +dpms || true
-    PLEB_SERVICES_ACTIVE=1
-    # The capture backend binds its lock guard to this login session, the one
-    # the locker above reports LockedHint for, whatever its Type: a startx
-    # login is Type=tty and would otherwise leave capture running when locked.
-    export PLEB_DESKTOP_SESSION_ID="${XDG_SESSION_ID:-}"
-    if command -v dbus-update-activation-environment >/dev/null; then
-        dbus-update-activation-environment --systemd \
-            PLEB_DESKTOP_DISPLAY PLEB_DESKTOP_XAUTHORITY PLEB_DESKTOP_BUS_ADDRESS PLEB_DESKTOP_SESSION_ID \
-            GTK_IM_MODULE QT_IM_MODULE XMODIFIERS IBUS_ADDRESS 2>/dev/null || true
-    fi
-    sleep .2
-    _pleb_services_alive
-}
+# --- desktop services (after the window manager) ----------------------------
 if ! _pleb_start_services; then
     echo 'FATAL: desktop services could not start; ending the session' >&2
     exit "$PLEB_EX_CONFIG"
