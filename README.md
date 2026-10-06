@@ -113,6 +113,9 @@ physical desktop. xss-lock obtains a logind sleep-delay inhibitor before the
 workspace starts; if a required service dies, the session ends. Idle locking
 defaults to 600 seconds; `PLEB_IDLE_LOCK_SECONDS=0` disables the idle timeout.
 The power manager's lock command is seeded only if the operator has not chosen one.
+That setting persists in the user's Xfce configuration; outside a serviced Pleb
+session `pleb-lock` runs i3lock directly rather than asking a coordinator that
+is not there.
 
 Kilix Settings → Tools and Kilix 95's Control Panel expose the same controls:
 

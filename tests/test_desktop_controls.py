@@ -40,19 +40,33 @@ Path(os.environ['FIXTURE_RECORD']).write_text(json.dumps({
                         PLEB_SESSION_SERVICES='off', XDG_SESSION_ID='owned-fixture')
 
     def test_manual_lock_uses_the_supervised_logind_locker_in_serviced_sessions(self):
+        # pleb-session publishes its session id only once its locker runs.
         (self.root / 'loginctl').symlink_to(self.capture)
-        for policy in ('on', '1', 'auto'):
-            with self.subTest(policy=policy):
-                self.env['PLEB_SESSION_SERVICES'] = policy
+        self.env['PLEB_DESKTOP_SESSION_ID'] = 'owned-fixture'
+        result = subprocess.run([ROOT / 'bin/pleb-lock'], env=self.env,
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = json.loads(self.record.read_text())
+        self.assertEqual(record['argv'], ['lock-session', '--', 'owned-fixture'])
+
+    def test_another_desktop_running_the_seeded_lock_command_gets_a_real_locker(self):
+        # Xfce's LockCommand is seeded with pleb-lock. Outside Pleb's serviced
+        # session nobody answers loginctl lock-session, so lock directly.
+        (self.root / 'loginctl').symlink_to(self.capture)
+        for published in (None, 'an-earlier-pleb-login'):
+            with self.subTest(published=published):
+                self.env.pop('PLEB_DESKTOP_SESSION_ID', None)
+                if published:
+                    self.env['PLEB_DESKTOP_SESSION_ID'] = published
+                self.env.update(PLEB_SESSION_SERVICES='auto', XDG_SESSION_ID='xfce-login')
                 result = subprocess.run([ROOT / 'bin/pleb-lock'], env=self.env,
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                record = json.loads(self.record.read_text())
-                self.assertEqual(record['argv'], ['lock-session', '--', 'owned-fixture'])
+                self.assertIn('--color=101010', json.loads(self.record.read_text())['argv'])
 
     def test_nofork_callback_does_not_recurse_into_the_coordinator(self):
         (self.root / 'loginctl').symlink_to(self.capture)
-        self.env['PLEB_SESSION_SERVICES'] = 'on'
+        self.env.update(PLEB_SESSION_SERVICES='on', PLEB_DESKTOP_SESSION_ID='owned-fixture')
         result = subprocess.run([ROOT / 'bin/pleb-lock', '--nofork'], env=self.env,
                                 capture_output=True, text=True, timeout=5)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -71,7 +85,7 @@ Path(os.environ['FIXTURE_RECORD']).write_text(json.dumps({
         login = self.root / 'loginctl'
         login.write_text('#!/bin/sh\nexit 23\n')
         login.chmod(0o700)
-        self.env['PLEB_SESSION_SERVICES'] = 'on'
+        self.env.update(PLEB_SESSION_SERVICES='on', PLEB_DESKTOP_SESSION_ID='owned-fixture')
         result = subprocess.run([ROOT / 'bin/pleb-lock'], env=self.env,
                                 capture_output=True, text=True, timeout=5)
         self.assertEqual(result.returncode, 23)
