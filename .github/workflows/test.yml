@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Install test dependencies
-        run: sudo apt-get update && sudo apt-get install -y shellcheck python3-tk python3-dbus python3-gi python3-xlib gir1.2-gtk-3.0 x11-xserver-utils build-essential pkg-config libpipewire-0.3-dev
+        run: sudo apt-get update && sudo apt-get install -y shellcheck python3-tk python3-pil python3-dbus python3-gi python3-xlib gir1.2-gtk-3.0 x11-xserver-utils build-essential pkg-config libpipewire-0.3-dev
       - name: Tests
         run: python3 -m unittest discover -s tests -v
       - name: Parse and lint scripts
