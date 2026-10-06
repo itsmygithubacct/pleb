@@ -110,7 +110,9 @@ checkpoint application data; see [the recovery guide](docs/RECOVERY.md).
 **Super-L**, **Ctrl-Alt-L**, and `pleb lock` lock the physical session using
 Debian's PAM-backed i3lock. A request from a private app display targets the
 physical desktop. xss-lock obtains a logind sleep-delay inhibitor before the
-workspace starts; if a required service dies, the session ends. Idle locking
+window manager, the power manager or the workspace starts, so their lock keys
+and the suspend lock all go through it and report the session as locked; if a
+required service dies, the session ends. Idle locking
 defaults to 600 seconds; `PLEB_IDLE_LOCK_SECONDS=0` disables the idle timeout.
 The power manager's lock command is seeded only if the operator has not chosen one.
 That setting persists in the user's Xfce configuration; outside a serviced Pleb

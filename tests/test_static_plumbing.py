@@ -61,13 +61,15 @@ class PlebPlumbingTests(unittest.TestCase):
     def test_services_publish_the_login_session_the_capture_guard_binds(self):
         # The capture backend is D-Bus activated and reads this from the
         # activation environment; without it a startx login is not lock-guarded.
+        # It is published as soon as the locker holds its sleep inhibitor;
+        # test_session_processes proves the order against the WM's launch.
         source = (ROOT / "bin/pleb-session").read_text()
-        services = source[source.index("_pleb_start_services() {"):]
+        services = source[source.index("_pleb_start_locker() {"):]
         services = services[:services.index("\n}\n")]
-        active = services.index("PLEB_SERVICES_ACTIVE=1")
+        confirmed = services.index("PY_INHIBITOR\n", services.index("<<'PY_INHIBITOR'"))
         export = services.index('export PLEB_DESKTOP_SESSION_ID="${XDG_SESSION_ID:-}"')
         update = services.index("dbus-update-activation-environment --systemd", export)
-        self.assertLess(active, export)
+        self.assertLess(confirmed, export)
         published = services[update:services.index("2>/dev/null", update)].split()
         self.assertIn("PLEB_DESKTOP_SESSION_ID", published)
         portal = (ROOT / "lib/capture_portal.py").read_text()

@@ -279,6 +279,55 @@ SystemBus.ListInhibitors=_inhibitors
         self.assertEqual(engine.get('GTK_IM_MODULE'), 'ibus', self.log())
         self.assertEqual(engine.get('XMODIFIERS'), '@im=ibus', self.log())
 
+    def test_lock_keys_and_suspend_lock_reach_the_supervised_locker(self):
+        # Review D B1: Openbox (W-l, C-A-l) and xfce4-power-manager (the seeded
+        # suspend LockCommand) run pleb-lock with the environment pleb-session
+        # gave them. If the session id is exported after they start, pleb-lock
+        # runs i3lock itself: LockedHint is never set and capture continues
+        # behind the lock. Each must hand the lock to logind's session instead.
+        self.with_services()
+        profile = self.root/'rc.xml'
+        profile.write_text('<openbox_config/>\n')
+        self.driver.write_text(self.driver.read_text().replace(
+            'PLEB_OPENBOX_CONFIG=/unused', 'PLEB_OPENBOX_CONFIG='+str(profile), 1))
+        record = (self.bin/'wm').read_text().replace(
+            "Path(os.environ['FIXTURE_ROOT'],name+'.pid').write_text(str(os.getpid()))",
+            "import json\n"
+            "with open(Path(os.environ['FIXTURE_ROOT'],'order.log'),'a') as log: log.write('start '+name+'\\n')\n"
+            "Path(os.environ['FIXTURE_ROOT'],name+'.env').write_text(json.dumps(dict(os.environ)))\n"
+            "Path(os.environ['FIXTURE_ROOT'],name+'.pid').write_text(str(os.getpid()))")
+        self.script('openbox', record.replace("name=Path(__file__).name", "name='wm'"))
+        self.script('xfce4-power-manager', record)
+        self.script('dbus-update-activation-environment',
+                    '#!/bin/sh\necho "publish $*" >>"$FIXTURE_ROOT/order.log"\n')
+        self.env.update(PLEB_WM='openbox', XDG_SESSION_ID='7')
+        p = self.start()
+        self.child('wm'); self.child('xfce4-power-manager'); self.child('kilix')
+        p.terminate()
+        p.wait(timeout=7)
+        order = (self.root/'order.log').read_text().splitlines()
+        published = [i for i, line in enumerate(order)
+                     if line.startswith('publish ') and 'PLEB_DESKTOP_SESSION_ID' in line.split()]
+        self.assertTrue(published, (order, self.log()))
+        self.assertLess(published[0], order.index('start wm'), order)
+        stubs = self.root/'lock-stubs'
+        stubs.mkdir()
+        for name in ('loginctl', 'i3lock'):
+            stub = stubs/name
+            stub.write_text('#!/usr/bin/python3\nimport json,os,sys\nfrom pathlib import Path\n'
+                            "Path(os.environ['LOCK_RECORD']).write_text(json.dumps([Path(sys.argv[0]).name]+sys.argv[1:]))\n")
+            stub.chmod(0o700)
+        for launcher in ('wm', 'xfce4-power-manager'):
+            with self.subTest(launcher=launcher):
+                env = json.loads((self.root/(launcher+'.env')).read_text())
+                env.update(PATH=str(stubs)+':'+env['PATH'],
+                           LOCK_RECORD=str(self.root/(launcher+'.lock')))
+                result = subprocess.run([ROOT/'bin/pleb-lock'], env=env,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads((self.root/(launcher+'.lock')).read_text()),
+                                 ['loginctl', 'lock-session', '--', '7'])
+
     def test_owned_desktop_services_are_reaped_with_the_session(self):
         self.with_services()
         p = self.start()
@@ -413,9 +462,9 @@ SystemBus.ListInhibitors=_inhibitors
         self.driver.write_text(self.driver.read_text().replace(
             'command -v i3lock >/dev/null', 'command -v fixture-missing-locker >/dev/null'))
         p = self.start()
-        wm = self.child('wm')
+        # The locker starts before the window manager, so neither starts.
         self.assertEqual(p.wait(timeout=7), 78, self.log())
-        self.assert_stopped(wm)
+        self.assertFalse((self.root/'wm.pid').exists())
         self.assertFalse((self.root/'kilix.pid').exists())
 
 
