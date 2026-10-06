@@ -104,8 +104,12 @@ def read(token, env):
         if (len(args) < 2 or args[1] != value['display'].encode()
                 or args.count(b'-auth') != 1 or args[args.index(b'-auth') + 1] != os.fsencode(authority)
                 or args.count(b'-nolisten') != 1 or args[args.index(b'-nolisten') + 1] != b'tcp'
-                or args.count(b'-screen') != 1 or args[args.index(b'-screen') + 1] != b'0'
-                or args[args.index(b'-screen') + 2] != f"{value['width']}x{value['height']}x24".encode()):
+                or args.count(b'-screen') != 1 or args[args.index(b'-screen') + 1] != b'0'):
+            return None
+        # `kilix run` allocates a large framebuffer and sizes the screen to its
+        # pane with RandR, so the registered size is at most the -screen size.
+        screen = re.fullmatch(rb'([1-9][0-9]{0,4})x([1-9][0-9]{0,4})x24', args[args.index(b'-screen') + 2])
+        if screen is None or value['width'] > int(screen[1]) or value['height'] > int(screen[2]):
             return None
         if any(_identity(value[role + '_pid']) != identities[role] for role in identities):
             return None
