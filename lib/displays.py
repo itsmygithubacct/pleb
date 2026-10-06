@@ -389,7 +389,15 @@ def transaction(channel, backend, layout, config, state, timeout):
                     rollback(backend, before)
     except Exception as exc:
         error = str(exc)
+    # A reply that arrived after the deadline (the UI's own timer fires just
+    # after ours) must be read before closing: closing with it unread resets
+    # the connection and the UI never sees this result.
     with contextlib.suppress(OSError):
+        channel.setblocking(False)
+        while channel.recv(32):
+            pass
+    with contextlib.suppress(OSError):
+        channel.setblocking(True)
         channel.send(json.dumps({"confirmed": committed, "error": error}).encode())
     channel.close()
 
@@ -456,10 +464,9 @@ def preview(layout, config, state, timeout=15):
             print(f'Keep this layout? Type yes then Enter within {timeout}s: ', end="", flush=True)
             ready, _, _ = select.select([sys.stdin, parent], [], [], timeout)
             if sys.stdin in ready:
-                parent.send(b"confirm" if sys.stdin.readline().strip().lower() == "yes" else b"revert")
-            else:
                 with contextlib.suppress(OSError):
-                    parent.send(b"revert")
+                    parent.send(b"confirm" if sys.stdin.readline().strip().lower() == "yes" else b"revert")
+            # Unanswered: the worker's own deadline reverts and reports.
             message = parent.recv(65536)
         result = json.loads(message)
         if result["error"]:

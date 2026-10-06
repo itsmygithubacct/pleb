@@ -100,6 +100,19 @@ class PaneRegistryTests(unittest.TestCase):
         (self.proc/'101/exe').unlink();(self.proc/'101/exe').symlink_to(self.authority)
         self.assertIsNone(registry.read(self.token,self.env))
 
+    def test_a_pane_sized_below_the_private_framebuffer_is_offered(self):
+        # `kilix run` starts Xvfb with a 3840x2160 framebuffer and sizes the
+        # screen to its pane through RandR; it registers that pane size. In
+        # the RC5 VM the consent picker never listed such application panes.
+        self.command([str(self.proc/'101/exe'), ':91', '-screen', '0', '3840x2160x24',
+                      '-auth', str(self.authority), '-nolisten', 'tcp'])
+        self.assertEqual(registry.read(self.token, self.env), self.record)
+        for screen in ('320x480x24', '640x240x24', '640x480x16', '640x480', 'x480x24'):
+            with self.subTest(screen=screen):
+                self.command([str(self.proc/'101/exe'), ':91', '-screen', '0', screen,
+                              '-auth', str(self.authority), '-nolisten', 'tcp'])
+                self.assertIsNone(registry.read(self.token, self.env))
+
     def test_pane_revalidation_never_falls_back_to_a_physical_display(self):
         selected=sources.Source('pane:'+self.token,'Test app',2,0,0,640,480,10,self.token)
         with mock.patch.object(sources,'_physical_sources') as physical, \

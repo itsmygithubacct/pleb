@@ -7,6 +7,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 import types
 import unittest
 from unittest import mock
@@ -198,6 +199,33 @@ class DisplaysTests(unittest.TestCase):
             self.assertFalse(self.exchange(reply)["confirmed"])
             self.assertEqual(d.snapshot(self.backend.query()), self.before)
             self.assertEqual(list(self.config.iterdir()), [])
+
+    def test_a_reply_racing_the_deadline_still_gets_the_result(self):
+        # In the RC5 VM an unanswered `pleb displays preview` restored the old
+        # layout but printed "[Errno 104] Connection reset by peer": the CLI's
+        # own timeout sends "revert" just after the worker's deadline, while
+        # the worker is rolling back, and the worker then closed with that
+        # message unread, which resets the CLI's connection.
+        apply = self.backend.apply
+        def slow_rollback(layout):
+            apply(layout)
+            if len(self.backend.applied) > 1:
+                time.sleep(.3)
+        parent, worker = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        with mock.patch.object(self.backend, "apply", side_effect=slow_rollback):
+            thread = threading.Thread(target=d.transaction,
+                                      args=(worker, self.backend, self.target, self.config, self.state, .05))
+            thread.start()
+            parent.settimeout(3)
+            self.assertEqual(parent.recv(65536), b"ready")
+            time.sleep(.15)              # past the deadline, inside the rollback
+            parent.send(b"revert")
+            result = json.loads(parent.recv(65536))
+            parent.close()
+            thread.join(3)
+        self.assertFalse(result["confirmed"])
+        self.assertIsNone(result["error"])
+        self.assertEqual(d.snapshot(self.backend.query()), self.before)
 
     def test_partial_failure_is_rolled_back(self):
         self.backend.fail = True
