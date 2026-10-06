@@ -856,6 +856,7 @@ if [ -n "$PLEB_WM_ACTIVE" ]; then
 else
     # Decide what, if anything, to start.
     PLEB_WM_ARGV=()
+    PLEB_WM_ENV=()
     _pleb_wm_required=0
     case "$PLEB_WM" in
         none|off)
@@ -872,6 +873,11 @@ else
                 unset _pleb_self _pleb_alt
             fi
             PLEB_WM_ARGV=(openbox --config-file "$PLEB_OPENBOX_CONFIG" --sm-disable)
+            # Openbox needs no input method. Through XMODIFIERS it would open
+            # the IBus XIM server, and when IBus restarts (as it must to load
+            # a newly installed engine) Openbox stops managing windows: new
+            # windows never map and its key bindings, Super+L included, die.
+            PLEB_WM_ENV=(XMODIFIERS=@im=none)
             ;;
         *)
             # Custom WM escape hatch: parse as an argument vector.
@@ -900,7 +906,7 @@ else
         printf ' ---\n'
         _pleb_require_process_cleanup
         PLEB_WM_OWNED=1
-        _pleb_launch_owned PLEB_WM_PID PLEB_WM_START "${PLEB_WM_ARGV[@]}"
+        _pleb_launch_owned PLEB_WM_PID PLEB_WM_START env "${PLEB_WM_ENV[@]}" "${PLEB_WM_ARGV[@]}"
 
         # Poll the complete readiness check. Watch the process on every
         # iteration too, so a WM that cannot open the display fails in
