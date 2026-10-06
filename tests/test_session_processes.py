@@ -249,6 +249,36 @@ def _inhibitors(self,**kwargs):
 SystemBus.ListInhibitors=_inhibitors
 ''')
 
+    def test_openbox_runs_without_the_input_method_applications_keep(self):
+        # RC5 VM: with XMODIFIERS=@im=ibus inherited from the login, Openbox
+        # opened the IBus XIM server and stopped managing windows after an
+        # IBus restart. Applications keep the input method.
+        self.with_services()
+        profile = self.root/'rc.xml'
+        profile.write_text('<openbox_config/>\n')
+        self.driver.write_text(self.driver.read_text().replace(
+            'PLEB_OPENBOX_CONFIG=/unused', 'PLEB_OPENBOX_CONFIG='+str(profile), 1))
+        record = (self.bin/'wm').read_text().replace(
+            "Path(os.environ['FIXTURE_ROOT'],name+'.pid').write_text(str(os.getpid()))",
+            "Path(os.environ['FIXTURE_ROOT'],name+'.env').write_text("
+            "'\\n'.join(k+'='+v for k,v in os.environ.items() if 'IM_MODULE' in k or k=='XMODIFIERS'))\n"
+            "Path(os.environ['FIXTURE_ROOT'],name+'.pid').write_text(str(os.getpid()))")
+        self.script('openbox', record.replace("name=Path(__file__).name", "name='wm'"))
+        self.script('kilix', record)
+        self.script('ibus-daemon', record.replace("name=Path(__file__).name", "name='ibus'"))
+        self.script('ibus', '#!/bin/sh\n[ "$1" = address ] && echo unix:path=/fixture-ibus\n')
+        self.script('dbus-update-activation-environment', '#!/bin/sh\nexit 0\n')
+        self.env.update(PLEB_WM='openbox', PLEB_INPUT_METHOD='ibus', XMODIFIERS='@im=ibus')
+        p = self.start()
+        self.child('wm'); self.child('kilix')
+        wm = dict(line.split('=', 1) for line in (self.root/'wm.env').read_text().splitlines())
+        engine = dict(line.split('=', 1) for line in (self.root/'kilix.env').read_text().splitlines())
+        p.terminate()
+        p.wait(timeout=7)
+        self.assertEqual(wm.get('XMODIFIERS'), '@im=none', self.log())
+        self.assertEqual(engine.get('GTK_IM_MODULE'), 'ibus', self.log())
+        self.assertEqual(engine.get('XMODIFIERS'), '@im=ibus', self.log())
+
     def test_owned_desktop_services_are_reaped_with_the_session(self):
         self.with_services()
         p = self.start()
