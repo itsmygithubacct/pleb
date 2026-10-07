@@ -22,9 +22,16 @@ AC, BAT = "/xfce4-power-manager/lid-action-on-ac", "/xfce4-power-manager/lid-act
 NOTHING = "4"
 
 
-def seed_function():
-    m = re.search(r"^_pleb_seed_lid_default\(\) \{\n.*?^\}\n", SESSION.read_text(), re.S | re.M)
+def fn_text(name):
+    m = re.search(r"^" + name + r"\(\) \{\n.*?^\}\n", SESSION.read_text(), re.S | re.M)
     return m.group(0) if m else None
+
+
+def seed_function():
+    names = ("_pleb_seed_absent", "_pleb_seed_lid_default", "_pleb_seed_sleep_lock_default",
+             "_pleb_auto_lock_policy")
+    parts = [fn_text(n) for n in names]
+    return "\n".join(parts) if all(parts) else None
 
 
 @unittest.skipUnless(shutil.which("dbus-run-session") and shutil.which("xfconf-query")
@@ -96,6 +103,47 @@ class LidDefault(unittest.TestCase):
         xml = (self.tmp / "config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml").read_text()
         self.assertEqual(xml.count('type="uint" value="4"'), 2)
 
+    SLEEP = "/xfce4-power-manager/lock-screen-suspend-hibernate"
+
+    def test_no_lock_before_sleep_is_seeded_false_when_automatic_locking_is_off(self):
+        r = self.bus(f'_PLEB_AUTO_LOCK=off; _pleb_seed_sleep_lock_default; echo "v=$({self.q(self.SLEEP)})"')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip().splitlines()[-1], "v=false")
+        xml = (self.tmp / "config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml").read_text()
+        self.assertIn('name="lock-screen-suspend-hibernate" type="bool" value="false"', xml)
+
+    def test_a_stored_sleep_lock_choice_is_kept(self):
+        r = self.bus(f'{self.q(self.SLEEP)} --create --type bool --set true; _PLEB_AUTO_LOCK=off; '
+                     f'_pleb_seed_sleep_lock_default; echo "v=$({self.q(self.SLEEP)})"')
+        self.assertEqual(r.stdout.strip().splitlines()[-1], "v=true")
+
+    def test_sleep_lock_is_left_to_upstream_when_automatic_locking_is_on(self):
+        r = self.bus(f'_PLEB_AUTO_LOCK=on; _pleb_seed_sleep_lock_default; {self.q(self.SLEEP)}; echo rc=$?')
+        self.assertIn("rc=1", r.stdout)
+
+    def test_unreadable_channel_does_not_seed_the_sleep_lock(self):
+        log = self.tmp / "calls"
+        r = self.stub_run(f'#!/bin/sh\necho "$@" >> {log}\nexit 1\n',
+                          "_PLEB_AUTO_LOCK=off; _pleb_seed_sleep_lock_default; echo rc=$?")
+        self.assertIn("rc=0", r.stdout)
+        self.assertIn("lock-screen-suspend-hibernate was not seeded", r.stderr)
+        self.assertNotIn("--create", log.read_text())
+
+    def test_policy_matrix(self):
+        fn = seed_function()
+        for idle, setting, want in (("600", "", "on"), ("0", "", "off"), ("0", "on", "on"),
+                                    ("600", "off", "off"), ("600", "auto", "on"), ("0", "auto", "off")):
+            with self.subTest(idle=idle, setting=setting):
+                env = {**self.env}
+                if setting:
+                    env["PLEB_AUTO_LOCK"] = setting
+                r = subprocess.run(["bash", "-c", fn + f'\n_pleb_auto_lock_policy {idle}; echo $_PLEB_AUTO_LOCK'],
+                                   env=env, capture_output=True, text=True)
+                self.assertEqual(r.stdout.strip(), want, r.stderr)
+        bad = subprocess.run(["bash", "-c", fn + "\n_pleb_auto_lock_policy 0; echo rc=$?"],
+                             env={**self.env, "PLEB_AUTO_LOCK": "maybe"}, capture_output=True, text=True)
+        self.assertIn("rc=1", bad.stdout)
+
     def stub_run(self, stub_body, tail):
         fake = self.tmp / "bin"
         fake.mkdir(exist_ok=True)
@@ -144,19 +192,41 @@ class LidDefault(unittest.TestCase):
 
 
 class SessionWiring(unittest.TestCase):
+    def locker(self):
+        return fn_text("_pleb_start_locker")
+
+    def test_off_mode_locker_ignores_xss_and_sleep_but_stays_the_logind_lock_handler(self):
+        t = self.locker()
+        self.assertIn('xss-lock --ignore-xss --ignore-sleep -- "$lock_bin" --nofork', t)
+        # the on-mode command keeps lock-before-sleep and the XSS events
+        self.assertIn('xss-lock --transfer-sleep-lock -- "$lock_bin" --nofork', t)
+        self.assertLess(t.index('if [ "$_PLEB_AUTO_LOCK" = on ]; then'), t.index('--transfer-sleep-lock'))
+        self.assertLess(t.index('--transfer-sleep-lock'), t.index('--ignore-xss'))
+
+    def test_off_mode_skips_the_sleep_inhibitor_wait_and_zeroes_the_idle_timer(self):
+        t = self.locker()
+        self.assertIn('[ "$_PLEB_AUTO_LOCK" = on ] || { PLEB_LOCKER_ACTIVE=1; _pleb_export_lock_session; return 0; }', t)
+        self.assertLess(t.index('_pleb_auto_lock_policy "$idle"'), t.index('_PLEB_IDLE_LOCK="$idle"'))
+        self.assertIn('[ "$_PLEB_AUTO_LOCK" = on ] || idle=0', t)
+
+    def test_sleep_lock_seed_runs_before_the_power_manager(self):
+        text = SESSION.read_text()
+        self.assertLess(text.index("\n    _pleb_seed_sleep_lock_default\n"),
+                        text.index("_pleb_service_start power xfce4-power-manager"))
+
     def test_seed_runs_before_the_power_manager_starts(self):
         text = SESSION.read_text()
         self.assertLess(text.index("\n    _pleb_seed_lid_default\n"),
                         text.index("_pleb_service_start power xfce4-power-manager"))
 
     def test_seed_uses_the_nothing_action_for_both_properties(self):
-        fn = seed_function()
-        self.assertIn("lid-action-on-ac", fn)
-        self.assertIn("lid-action-on-battery", fn)
-        self.assertRegex(fn, r"--create --type uint --set 4\b")
+        fn = fn_text("_pleb_seed_absent")
+        self.assertIn("lid-action-on-ac", fn_text("_pleb_seed_lid_default"))
+        self.assertIn("lid-action-on-battery", fn_text("_pleb_seed_lid_default"))
+        self.assertRegex(fn, r"--create --type \"\$type\" --set \"\$value\"")
 
     def test_seed_only_creates_never_resets_or_rewrites_user_values(self):
-        fn = seed_function()
+        fn = fn_text("_pleb_seed_absent")
         self.assertNotRegex(fn, r"xfconf-query[^\n]*(\s-r\b|--reset)")
         self.assertIn("xfconf-query -c \"$ch\" -l", fn)
         self.assertIn("grep -qxF", fn)

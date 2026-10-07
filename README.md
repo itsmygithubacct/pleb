@@ -113,7 +113,16 @@ physical desktop. xss-lock obtains a logind sleep-delay inhibitor before the
 window manager, the power manager or the workspace starts, so their lock keys
 and the suspend lock all go through it and report the session as locked; if a
 required service dies, the session ends. Idle locking
-defaults to 600 seconds; `PLEB_IDLE_LOCK_SECONDS=0` disables the idle timeout.
+defaults to 600 seconds; `PLEB_IDLE_LOCK_SECONDS=0` turns automatic locking off
+(`PLEB_AUTO_LOCK=auto|on|off` overrides this): no lock on idle, on display
+power-off, or before suspend/hibernate (xss-lock ignores those events and the
+power manager's lock-before-sleep is seeded off), and waking from suspend shows
+the desktop unlocked. The lock keys, `pleb lock` and `loginctl lock-session`
+always lock. Plebian-OS ships with it off. A positive timeout, or
+`PLEB_AUTO_LOCK=on`, restores locking before sleep and on display power-off
+(plus the idle timer when the timeout is positive); an `xfce4-power-manager`
+setting already stored for lock-before-sleep is kept, so turn that on in
+`pleb devices power` if you also want the power manager to lock.
 The power manager's lock command is seeded only if the operator has not chosen one.
 That setting persists in the user's Xfce configuration; outside a serviced Pleb
 session `pleb-lock` runs i3lock directly rather than asking a coordinator that
