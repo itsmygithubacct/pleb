@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **No automatic lock when `PLEB_IDLE_LOCK_SECONDS=0`** (new `PLEB_AUTO_LOCK=auto|on|off`,
+  auto follows the timeout). Off means xss-lock ignores X screensaver events (idle and
+  display power-off) and suspend/hibernate, no sleep-delay inhibitor is taken, and
+  `lock-screen-suspend-hibernate` is seeded false when never set. Super-L,
+  Ctrl-Alt-L, `pleb lock` and `loginctl lock-session` still lock. The standalone
+  default stays 600 seconds (automatic locking on).
+
 - **Closing the lid does nothing by default.** The session seeds xfce4-power-manager's
   `lid-action-on-ac` and `lid-action-on-battery` to Nothing (4) only when unset, so a
   user's Lock or Suspend choice in `pleb devices power` is kept. A standalone

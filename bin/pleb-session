@@ -50,6 +50,13 @@
 #   PLEB_SESSION_SERVICES auto | on | off; auto enables desktop services in a
 #                     logind login session, and leaves nested tests alone
 #   PLEB_IDLE_LOCK_SECONDS idle lock timeout (default: 600; 0 disables idle lock)
+#   PLEB_AUTO_LOCK    auto | on | off; whether the session ever locks by itself.
+#                     auto (default): on when PLEB_IDLE_LOCK_SECONDS > 0, off at 0.
+#                     Off means no lock on idle, on display power-off (X screensaver
+#                     events) or before suspend/hibernate; Super-L, Ctrl-Alt-L,
+#                     `pleb lock` and `loginctl lock-session` still lock. on restores
+#                     all of them (lock before sleep and on display power-off, plus
+#                     the idle timer when PLEB_IDLE_LOCK_SECONDS > 0); off forces off.
 #   PLEB_INPUT_METHOD auto | ibus | off; auto preserves another selected IM
 #   PLEB_MIC_DEFAULT  one-time default microphone input level, percent
 #                     (default: 45; off to leave the level alone)
@@ -123,7 +130,7 @@ if [[ ! ${PLEB_CLOSURE_USER+x} ]]; then
 fi
 
 _pleb_release_vars="PLEBIAN_OS_VERSION PLEBIAN_OS_RELEASE PLEBIAN_OS_RELEASE_MODE PLEBIAN_OS_REPO PLEBIAN_OS_BRANCH PLEBIAN_OS_REF PLEB_REPO PLEB_BRANCH PLEB_REF KILIX_REPO KILIX_BRANCH KILIX_REF KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX_SYSTEM_MONITOR_REPO KILIX_SYSTEM_MONITOR_BRANCH KILIX_SYSTEM_MONITOR_REF KILIX_DESKTOP_SDK_REPO KILIX_DESKTOP_SDK_BRANCH KILIX_DESKTOP_SDK_REF KILIX_ICEWM_REPO KILIX_ICEWM_BRANCH KILIX_ICEWM_REF KILIX_MEDIA_SDK_REPO KILIX_MEDIA_SDK_BRANCH KILIX_MEDIA_SDK_REF KILIX_WAYDROID_REPO KILIX_WAYDROID_BRANCH KILIX_WAYDROID_REF PLEBIAN_OS_APT_SNAPSHOT PLEBIAN_OS_INSTALL_UV PLEBIAN_OS_UV_VERSION PLEBIAN_OS_UV_INSTALLER_SHA256 PLEBIAN_OS_UV_INSTALLER_MAX_BYTES KILIX_PREBUILT_VERSION KILIX_PREBUILT_SHA256 PLEBIAN_OS_BUILD_KILIX_FORK PLEBIAN_OS_KILIX_GO_MIN_VERSION PLEBIAN_OS_KILIX_GO_VERSION PLEBIAN_OS_KILIX_GO_SHA256_AMD64 PLEBIAN_OS_KILIX_GO_SHA256_ARM64 PLEBIAN_OS_INSTALL_VOICE_MODEL KILIX_VOICE_REF KILIX_VOICE_LIB_VERSION KILIX_VOICE_LIB_URL KILIX_VOICE_LIB_SHA256 KILIX_VOICE_MODEL_URL KILIX_VOICE_MODEL_SHA256 PLEBIAN_OS_INSTALL_WAYDROID PLEBIAN_OS_WAYDROID_CLOSURE_SHA256"
-_pleb_vars="$_pleb_release_vars PLEBIAN_OS_DIR PLEB_DIR GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_RECOVER_CRASHES PLEB_SESSION_SERVICES PLEB_IDLE_LOCK_SECONDS PLEB_INPUT_METHOD PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
+_pleb_vars="$_pleb_release_vars PLEBIAN_OS_DIR PLEB_DIR GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_RECOVER_CRASHES PLEB_SESSION_SERVICES PLEB_IDLE_LOCK_SECONDS PLEB_AUTO_LOCK PLEB_INPUT_METHOD PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
 declare -A _pleb_had _pleb_saved
 for _pleb_v in $_pleb_vars; do
     if [[ ${!_pleb_v+x} ]]; then
@@ -717,6 +724,7 @@ PLEB_SERVICES_ACTIVE=0
 PLEB_LOCKER_ACTIVE=0
 _PLEB_LOCK_BIN=""
 _PLEB_IDLE_LOCK=""
+_PLEB_AUTO_LOCK=on
 PLEB_WM_START=""
 _pleb_launching=0
 _pleb_pending_signal=""
@@ -877,6 +885,17 @@ _pleb_services_alive() {
     done
 }
 
+# Whether the session may lock by itself: PLEB_AUTO_LOCK (auto|on|off), where
+# auto follows the idle timeout (any positive value opts in, 0 is off).
+_pleb_auto_lock_policy() {
+    case "${PLEB_AUTO_LOCK:-auto}" in
+        on) _PLEB_AUTO_LOCK=on ;;
+        off) _PLEB_AUTO_LOCK=off ;;
+        auto) if [ "$1" -gt 0 ]; then _PLEB_AUTO_LOCK=on; else _PLEB_AUTO_LOCK=off; fi ;;
+        *) echo 'FATAL: PLEB_AUTO_LOCK must be auto, on or off' >&2; return 1 ;;
+    esac
+}
+
 # The locker starts before the window manager and every other client. Openbox's
 # lock keys (W-l, C-A-l) and xfce4-power-manager's suspend LockCommand run
 # pleb-lock with the environment they were started with, and pleb-lock hands
@@ -899,6 +918,9 @@ _pleb_start_locker() {
     [[ "$idle" =~ ^[0-9]{1,5}$ ]] && [ "$idle" -le 86400 ] || {
         echo 'FATAL: PLEB_IDLE_LOCK_SECONDS must be 0..86400' >&2; return 1;
     }
+    _pleb_auto_lock_policy "$idle" || return 1
+    # With automatic locking off the idle timer is off too, whatever the number.
+    [ "$_PLEB_AUTO_LOCK" = on ] || idle=0
     lock_bin=/usr/local/bin/pleb-lock
     if [ ! -x "$lock_bin" ]; then
         lock_bin="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/pleb-lock"
@@ -909,9 +931,18 @@ _pleb_start_locker() {
     _PLEB_LOCK_BIN="$lock_bin"
     _PLEB_IDLE_LOCK="$idle"
     _pleb_require_process_cleanup
-    _pleb_service_start locker xss-lock --transfer-sleep-lock -- "$lock_bin" --nofork || return 1
+    if [ "$_PLEB_AUTO_LOCK" = on ]; then
+        _pleb_service_start locker xss-lock --transfer-sleep-lock -- "$lock_bin" --nofork || return 1
+    else
+        # Still the logind Lock/Unlock handler (manual keys, loginctl lock-session),
+        # but blind to X screensaver events (idle and DPMS power-off) and to
+        # suspend/hibernate, so waking from sleep shows the desktop unlocked.
+        _pleb_service_start locker xss-lock --ignore-xss --ignore-sleep -- "$lock_bin" --nofork || return 1
+    fi
     # Do not start the desktop until logind confirms the delay inhibitor. A
     # live process alone does not establish lock-before-suspend protection.
+    # (Not applicable when automatic locking is off: no sleep lock is wanted.)
+    [ "$_PLEB_AUTO_LOCK" = on ] || { PLEB_LOCKER_ACTIVE=1; _pleb_export_lock_session; return 0; }
     /usr/bin/python3 - "${PLEB_SERVICE_PIDS[locker]}" <<'PY_INHIBITOR' || return 1
 import sys, time
 import dbus
@@ -927,6 +958,10 @@ else:
     sys.exit('FATAL: locker did not obtain the logind sleep-delay inhibitor')
 PY_INHIBITOR
     PLEB_LOCKER_ACTIVE=1
+    _pleb_export_lock_session
+}
+
+_pleb_export_lock_session() {
     # The capture backend binds its lock guard to this login session, the one
     # the locker above reports LockedHint for, whatever its Type: a startx
     # login is Type=tty and would otherwise leave capture running when locked.
@@ -938,36 +973,48 @@ PY_INHIBITOR
     fi
 }
 
-# Closing the lid does nothing by default (owner answer 17, 2026-10-07).
-# xfce4-power-manager holds logind's handle-lid-switch inhibitor, so its own
-# setting decides, and upstream's default is "lock screen". The distribution
-# package already owns /etc/xdg/xfce4/xfconf/.../xfce4-power-manager.xml, so
-# the default is seeded into the user's xfconf, and only for a property that is
-# positively known to be absent: the channel's property list is read (exit 0)
-# and must not contain it. Any failed read (xfconfd or D-Bus unavailable) is
-# uncertain, so it warns and writes nothing; a choice made in
-# xfce4-power-manager-settings (Lock, Suspend, ...) is never overwritten that
-# way. xfconf-query has no exclusive create, so one race remains: a client that
-# sets the property in the milliseconds between the listing and the write
-# loses its value to 4. Nothing else in the session writes these properties
-# at that point (the power manager has not started). 4 is NOTHING in
-# xfce4-power-manager's enum.
-_pleb_seed_lid_default() {
-    local ch=xfce4-power-manager props prop
+# Closing the lid does nothing by default (owner answer 17, 2026-10-07), and the
+# session never locks by itself unless asked (answers 18/19). xfce4-power-manager
+# decides the lid (it holds logind's handle-lid-switch inhibitor; upstream's
+# default is "lock screen") and also locks before suspend/hibernate by default,
+# so these defaults are seeded into the user's xfconf. The distribution package
+# owns /etc/xdg/xfce4/xfconf/.../xfce4-power-manager.xml, so nothing is shipped
+# there. A property is written only when it is positively known to be absent:
+# the channel's property list is read (exit 0) and must not contain it. Any
+# failed read (xfconfd or D-Bus unavailable) is uncertain, so it warns and
+# writes nothing; a choice made in xfce4-power-manager-settings is never
+# overwritten that way. xfconf-query has no exclusive create, so one race
+# remains: a client that sets a property in the window between the listing and
+# the write loses its value. Nothing else in the session writes these
+# properties at that point (the power manager has not started). 4 is NOTHING in
+# xfce4-power-manager's lid enum.
+_pleb_seed_absent() {
+    local type="$1" value="$2" what="$3" ch=xfce4-power-manager props prop
+    shift 3
     if ! props="$(xfconf-query -c "$ch" -l 2>/dev/null)"; then
-        for prop in lid-action-on-ac lid-action-on-battery; do
-            echo "WARNING: could not read the $ch settings; the lid default for $prop was not seeded" >&2
+        for prop in "$@"; do
+            echo "WARNING: could not read the $ch settings; the $what default for $prop was not seeded" >&2
         done
         return 0
     fi
-    for prop in lid-action-on-ac lid-action-on-battery; do
+    for prop in "$@"; do
         if printf '%s\n' "$props" | grep -qxF "/$ch/$prop"; then
             continue
         fi
-        xfconf-query -c "$ch" -p "/$ch/$prop" --create --type uint --set 4 \
-            || echo "WARNING: could not seed the lid default for $prop" >&2
+        xfconf-query -c "$ch" -p "/$ch/$prop" --create --type "$type" --set "$value" \
+            || echo "WARNING: could not seed the $what default for $prop" >&2
     done
     return 0
+}
+
+_pleb_seed_lid_default() {
+    _pleb_seed_absent uint 4 lid lid-action-on-ac lid-action-on-battery
+}
+
+# Only while automatic locking is off; when it is on, upstream's true stands.
+_pleb_seed_sleep_lock_default() {
+    [ "$_PLEB_AUTO_LOCK" = off ] || return 0
+    _pleb_seed_absent bool false sleep-lock lock-screen-suspend-hibernate
 }
 
 _pleb_start_services() {
@@ -982,6 +1029,7 @@ _pleb_start_services() {
             --create --type string --set "$lock_bin" || return 1
     fi
     _pleb_seed_lid_default
+    _pleb_seed_sleep_lock_default
     _pleb_service_start power xfce4-power-manager || return 1
     _pleb_service_start bluetooth blueman-applet || return 1
     _pleb_service_start storage udiskie --no-tray --notify || return 1
