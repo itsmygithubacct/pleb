@@ -1,0 +1,199 @@
+"""Lid close does nothing by default in the Pleb session, and a user choice wins.
+
+Owner answer 17 (2026-10-07). xfce4-power-manager holds logind's lid inhibitor
+so its xfconf setting decides. These tests run the real `_pleb_seed_lid_default`
+from bin/pleb-session against a real xfconfd on a private session bus, with a
+scratch HOME and XDG dirs: the live user's xfconf is never touched.
+"""
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+from _env_support import clean_env
+
+ROOT = Path(__file__).resolve().parents[1]
+SESSION = ROOT / "bin/pleb-session"
+CH = ("-c", "xfce4-power-manager")
+AC, BAT = "/xfce4-power-manager/lid-action-on-ac", "/xfce4-power-manager/lid-action-on-battery"
+NOTHING = "4"
+
+
+def seed_function():
+    m = re.search(r"^_pleb_seed_lid_default\(\) \{\n.*?^\}\n", SESSION.read_text(), re.S | re.M)
+    return m.group(0) if m else None
+
+
+@unittest.skipUnless(shutil.which("dbus-run-session") and shutil.which("xfconf-query")
+                     and Path("/usr/lib/x86_64-linux-gnu/xfce4/xfconf/xfconfd").exists(),
+                     "xfconf and a private D-Bus session are required")
+class LidDefault(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        for d in ("home", "config", "cache", "data", "run"):
+            (self.tmp / d).mkdir(mode=0o700)
+        self.env = {"PATH": "/usr/bin:/bin", "HOME": str(self.tmp / "home"),
+                    "XDG_CONFIG_HOME": str(self.tmp / "config"),
+                    "XDG_CACHE_HOME": str(self.tmp / "cache"),
+                    "XDG_DATA_HOME": str(self.tmp / "data"),
+                    "XDG_RUNTIME_DIR": str(self.tmp / "run")}
+
+    def bus(self, script):
+        """Run script under a private session bus; xfconfd is D-Bus activated."""
+        fn = seed_function()
+        self.assertIsNotNone(fn, "_pleb_seed_lid_default is missing")
+        r = subprocess.run(["dbus-run-session", "--", "bash", "-c", fn + "\n" + script],
+                           env=self.env, capture_output=True, text=True, timeout=60)
+        return r
+
+    def q(self, prop):
+        return f'xfconf-query -c xfce4-power-manager -p {prop}'
+
+    def read(self, script_tail=""):
+        r = self.bus(f'_pleb_seed_lid_default; echo "ac=$({self.q(AC)}) bat=$({self.q(BAT)})"; {script_tail}')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout.strip().splitlines()[-1]
+
+    def test_fresh_user_gets_nothing_on_ac_and_battery(self):
+        self.assertEqual(self.read(), f"ac={NOTHING} bat={NOTHING}")
+
+    def test_channel_reads_from_the_scratch_config_not_the_real_one(self):
+        self.read()
+        xml = self.tmp / "config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml"
+        self.assertTrue(xml.exists())
+        self.assertIn(f'name="lid-action-on-ac" type="uint" value="{NOTHING}"', xml.read_text())
+
+    def test_user_choices_are_never_overwritten(self):
+        r = self.bus(
+            f'{self.q(AC)} --create --type uint --set 1; '
+            f'{self.q(BAT)} --create --type uint --set 3; '
+            f'_pleb_seed_lid_default; _pleb_seed_lid_default; '
+            f'echo "ac=$({self.q(AC)}) bat=$({self.q(BAT)})"')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip().splitlines()[-1], "ac=1 bat=3")
+
+    def test_each_property_is_seeded_independently(self):
+        r = self.bus(
+            f'{self.q(AC)} --create --type uint --set 1; _pleb_seed_lid_default; '
+            f'echo "ac=$({self.q(AC)}) bat=$({self.q(BAT)})"')
+        self.assertEqual(r.stdout.strip().splitlines()[-1], f"ac=1 bat={NOTHING}")
+
+    def test_user_who_later_opts_in_keeps_it_across_sessions(self):
+        # What xfce4-power-manager-settings does: write the property, then the
+        # next session start runs the seed again.
+        self.assertEqual(self.read(), f"ac={NOTHING} bat={NOTHING}")
+        r = self.bus(f'{self.q(AC)} --set 1; {self.q(BAT)} --set 3')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.read(), "ac=1 bat=3")
+
+    def test_seeded_values_are_uint(self):
+        r = self.bus(f'_pleb_seed_lid_default; {self.q(AC)} -v; {self.q(BAT)} -v')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        xml = (self.tmp / "config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml").read_text()
+        self.assertEqual(xml.count('type="uint" value="4"'), 2)
+
+    def test_seed_failure_warns_and_does_not_end_the_session(self):
+        fake = self.tmp / "bin"
+        fake.mkdir()
+        (fake / "xfconf-query").write_text("#!/bin/sh\nexit 1\n")
+        (fake / "xfconf-query").chmod(0o700)
+        fn = seed_function()
+        r = subprocess.run(["bash", "-c", fn + "\n_pleb_seed_lid_default; echo rc=$?"],
+                           env={**self.env, "PATH": f"{fake}:/usr/bin:/bin"},
+                           capture_output=True, text=True)
+        self.assertIn("rc=0", r.stdout)
+        self.assertIn("could not seed the lid default for lid-action-on-ac", r.stderr)
+        self.assertIn("lid-action-on-battery", r.stderr)
+
+
+class SessionWiring(unittest.TestCase):
+    def test_seed_runs_before_the_power_manager_starts(self):
+        text = SESSION.read_text()
+        self.assertLess(text.index("\n    _pleb_seed_lid_default\n"),
+                        text.index("_pleb_service_start power xfce4-power-manager"))
+
+    def test_seed_uses_the_nothing_action_for_both_properties(self):
+        fn = seed_function()
+        self.assertIn("lid-action-on-ac", fn)
+        self.assertIn("lid-action-on-battery", fn)
+        self.assertRegex(fn, r"--create --type uint --set 4\b")
+
+    def test_seed_only_creates_never_resets_or_rewrites_user_values(self):
+        fn = seed_function()
+        self.assertNotRegex(fn, r"xfconf-query[^\n]*(\s-r\b|--reset)")
+        self.assertIn("if ! xfconf-query", fn)
+
+    def test_packaged_xfconf_defaults_are_not_edited(self):
+        # The distribution owns /etc/xdg/xfce4/xfconf/.../xfce4-power-manager.xml.
+        for path in ROOT.rglob("*"):
+            if path.is_file() and ".git" not in path.parts:
+                self.assertNotEqual(path.name, "xfce4-power-manager.xml", path)
+
+
+class LogindDropIn(unittest.TestCase):
+    NAME = "50-pleb-lid.conf"
+    EXPECTED = {"HandleLidSwitch": "ignore", "HandleLidSwitchExternalPower": "ignore",
+                "HandleLidSwitchDocked": "ignore"}
+
+    def run_fn(self, target, managed, call="install_lid_policy"):
+        script = r'''
+set -euo pipefail
+source "$PLEB_ROOT/lib/common.sh"
+source "$PLEB_ROOT/lib/install.sh"
+run_root() {
+    local -a args=("$@"); local last=$((${#args[@]} - 1))
+    [[ "${args[$last]}" = /* ]] && args[$last]="$FIXTURE_ROOT${args[$last]}"
+    "${args[@]}"
+}
+''' + call + "\n"
+        env = clean_env(target, PLEBIAN_OS_MANAGED_INSTALL=str(int(managed)),
+                        FIXTURE_ROOT=str(target), PLEB_ROOT=str(ROOT))
+        return subprocess.run(["bash", "-c", script], env=env, cwd=ROOT,
+                              capture_output=True, text=True)
+
+    def test_shipped_file_has_exact_keys_and_values(self):
+        lines = [l for l in (ROOT / "share/logind" / self.NAME).read_text().splitlines()
+                 if l and not l.startswith("#")]
+        self.assertEqual(lines[0], "[Login]")
+        self.assertEqual(dict(l.split("=", 1) for l in lines[1:]), self.EXPECTED)
+
+    def test_standalone_install_adds_only_its_file_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d)
+            dd = target / "etc/systemd/logind.conf.d"
+            dd.mkdir(parents=True)
+            (dd / "10-no-sleep-on-ac.conf").write_text("[Login]\nHandleLidSwitch=ignore\n")
+            (dd / "50-plebian-lid.conf").write_text("not ours\n")
+            for _ in range(2):
+                r = self.run_fn(target, False)
+                self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual((dd / self.NAME).read_bytes(),
+                             (ROOT / "share/logind" / self.NAME).read_bytes())
+            self.assertEqual((dd / "10-no-sleep-on-ac.conf").read_text(),
+                             "[Login]\nHandleLidSwitch=ignore\n")
+            self.assertEqual((dd / "50-plebian-lid.conf").read_text(), "not ours\n")
+            self.assertEqual(sorted(p.name for p in dd.iterdir()),
+                             ["10-no-sleep-on-ac.conf", self.NAME, "50-plebian-lid.conf"])
+
+    def test_plebian_os_managed_install_leaves_logind_to_plebian_os(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.run_fn(Path(d), True).returncode, 0)
+            self.assertFalse((Path(d) / "etc/systemd").exists())
+
+    def test_installer_installs_before_the_session_launcher_and_uninstall_removes_it(self):
+        text = (ROOT / "lib/install.sh").read_text()
+        self.assertLess(text.index("\n    install_lid_policy\n"),
+                        text.index('"$PLEB_BIN_SRC" "$SESSION_BIN_DST"'))
+        self.assertIn('for f in "$LID_POLICY_DST"', text)
+
+    def test_installer_never_restarts_logind(self):
+        text = (ROOT / "lib/install.sh").read_text() + SESSION.read_text()
+        self.assertNotRegex(text, r"systemctl\s+(try-)?(restart|reload)\s+systemd-logind")
+
+
+if __name__ == "__main__":
+    unittest.main()

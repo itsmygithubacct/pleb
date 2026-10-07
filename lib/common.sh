@@ -219,6 +219,8 @@ SESSION_BIN_DST="${SESSION_BIN_DST:-/usr/local/bin/pleb-session}"
 PLEB_LOCK_DST="${PLEB_LOCK_DST:-/usr/local/bin/pleb-lock}"
 PLEB_DISPLAYS_DST="${PLEB_DISPLAYS_DST:-/usr/local/lib/pleb/displays.py}"
 XSESSION_DST="${XSESSION_DST:-/usr/share/xsessions/pleb.desktop}"
+# Fixed, not operator-overridable: it is a logind drop-in, not a Pleb path.
+LID_POLICY_DST=/etc/systemd/logind.conf.d/50-pleb-lid.conf
 AUTOLOGIN_CONF="${AUTOLOGIN_CONF:-/etc/lightdm/lightdm.conf.d/50-pleb-autologin.conf}"
 # `kilix` command on PATH (so `kilix desktop`, `kilix serve`, … work out of the
 # box). /usr/local/bin is on PATH and FHS-correct for local installs.
