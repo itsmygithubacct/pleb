@@ -938,6 +938,25 @@ PY_INHIBITOR
     fi
 }
 
+# Closing the lid does nothing by default (owner answer 17, 2026-10-07).
+# xfce4-power-manager holds logind's handle-lid-switch inhibitor, so its own
+# setting decides, and upstream's default is "lock screen". The distribution
+# package already owns /etc/xdg/xfce4/xfconf/.../xfce4-power-manager.xml, so
+# the default is seeded into the user's xfconf, and only for a property that
+# has no value: a choice made in xfce4-power-manager-settings (Lock, Suspend,
+# ...) is never overwritten. 4 is NOTHING in xfce4-power-manager's enum.
+_pleb_seed_lid_default() {
+    local prop
+    for prop in lid-action-on-ac lid-action-on-battery; do
+        if ! xfconf-query -c xfce4-power-manager -p "/xfce4-power-manager/$prop" >/dev/null 2>&1; then
+            xfconf-query -c xfce4-power-manager -p "/xfce4-power-manager/$prop" \
+                --create --type uint --set 4 \
+                || echo "WARNING: could not seed the lid default for $prop" >&2
+        fi
+    done
+    return 0
+}
+
 _pleb_start_services() {
     local lock_bin="$_PLEB_LOCK_BIN" idle="$_PLEB_IDLE_LOCK" input
     [ "$PLEB_LOCKER_ACTIVE" = 1 ] || return 0
@@ -949,6 +968,7 @@ _pleb_start_services() {
         xfconf-query -c xfce4-session -p /general/LockCommand \
             --create --type string --set "$lock_bin" || return 1
     fi
+    _pleb_seed_lid_default
     _pleb_service_start power xfce4-power-manager || return 1
     _pleb_service_start bluetooth blueman-applet || return 1
     _pleb_service_start storage udiskie --no-tray --notify || return 1

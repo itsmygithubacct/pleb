@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Closing the lid does nothing by default.** The session seeds xfce4-power-manager's
+  `lid-action-on-ac` and `lid-action-on-battery` to Nothing (4) only when unset, so a
+  user's Lock or Suspend choice in `pleb devices power` is kept. A standalone
+  `pleb install` also adds `/etc/systemd/logind.conf.d/50-pleb-lid.conf` for the
+  no-session case.
+
 ## 0.2.1 — 2026-08-25
 
 Selected for the coordinated Plebian-OS 0.2.1 candidate. The exact stack

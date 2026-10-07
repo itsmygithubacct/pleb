@@ -119,10 +119,21 @@ That setting persists in the user's Xfce configuration; outside a serviced Pleb
 session `pleb-lock` runs i3lock directly rather than asking a coordinator that
 is not there.
 
+**Closing the laptop lid does nothing by default**, on AC and on battery. The
+session seeds the power manager's two lid settings to "Nothing" only when you
+have never set them, so a choice you make is never overwritten. To lock or
+suspend on lid close, run `pleb devices power` (Xfce Power Manager → General →
+"When laptop lid is closed") and pick Lock screen or Suspend per power source;
+that choice persists in your Xfce configuration and wins from then on. Outside
+a Pleb session (greeter, console) a standalone `pleb install` adds
+`/etc/systemd/logind.conf.d/50-pleb-lid.conf` (Plebian-OS ships
+`50-plebian-lid.conf`) so logind ignores the lid there too; it takes effect at
+the next boot and no other logind drop-in is changed.
+
 Kilix Settings → Tools and Kilix 95's Control Panel expose the same controls:
 
 ```sh
-pleb devices power          # lid, battery, brightness and sleep policy
+pleb devices power          # lid close (default: nothing), battery, brightness, sleep
 pleb devices bluetooth      # pairing and connections
 pleb devices storage        # mount, unmount and eject
 pleb devices printers       # physical printer setup and queues

@@ -879,6 +879,20 @@ install_capture_portal() {
     fi
 }
 
+# Closing the lid does nothing by default (owner answer 17, 2026-10-07). This
+# covers the times no Pleb session runs xfce4-power-manager (greeter, console);
+# inside a session its xfconf setting decides (bin/pleb-session seeds NOTHING).
+# Plebian-OS ships its own 50-plebian-lid.conf, so a managed install skips this.
+# Only this one file is written; other logind drop-ins are never touched, and
+# logind is not restarted: the drop-in applies at the next boot.
+install_lid_policy() {
+    if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
+        return 0
+    fi
+    log "lid close does nothing without a session policy -> $LID_POLICY_DST"
+    run_root install -D -m 0644 "$PLEB_ROOT/share/logind/50-pleb-lid.conf" "$LID_POLICY_DST"
+}
+
 do_install() {
     [ -f "$PLEB_BIN_SRC" ]    || die "missing $PLEB_BIN_SRC"
     [ -f "$PLEB_DESKTOP_IN" ] || die "missing $PLEB_DESKTOP_IN"
@@ -915,6 +929,7 @@ do_install() {
     run_root install -D -m 0644 "$PLEB_ROOT/lib/displays.py" "$PLEB_DISPLAYS_DST"
     run_root install -D -m 0755 "$PLEB_ROOT/bin/pleb-lock" "$PLEB_LOCK_DST"
     install_capture_portal
+    install_lid_policy
     run_root install -D -m 0755 "$PLEB_BIN_SRC" "$SESSION_BIN_DST"
 
     log "installing xsession entry -> $XSESSION_DST"
@@ -985,7 +1000,7 @@ do_uninstall() {
             removed=1
         fi
     done
-    for f in /usr/local/lib/pleb/capture_transport.so \
+    for f in "$LID_POLICY_DST" /usr/local/lib/pleb/capture_transport.so \
             /usr/local/share/xdg-desktop-portal/portals/pleb.portal \
             /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service; do
         if [ -e "$f" ] || [ -L "$f" ]; then
