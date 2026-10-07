@@ -942,7 +942,7 @@ _pleb_start_locker() {
     # Do not start the desktop until logind confirms the delay inhibitor. A
     # live process alone does not establish lock-before-suspend protection.
     # (Not applicable when automatic locking is off: no sleep lock is wanted.)
-    [ "$_PLEB_AUTO_LOCK" = on ] || { PLEB_LOCKER_ACTIVE=1; _pleb_export_lock_session; return 0; }
+    if [ "$_PLEB_AUTO_LOCK" = on ]; then
     /usr/bin/python3 - "${PLEB_SERVICE_PIDS[locker]}" <<'PY_INHIBITOR' || return 1
 import sys, time
 import dbus
@@ -957,11 +957,8 @@ for attempt in range(50):
 else:
     sys.exit('FATAL: locker did not obtain the logind sleep-delay inhibitor')
 PY_INHIBITOR
+    fi
     PLEB_LOCKER_ACTIVE=1
-    _pleb_export_lock_session
-}
-
-_pleb_export_lock_session() {
     # The capture backend binds its lock guard to this login session, the one
     # the locker above reports LockedHint for, whatever its Type: a startx
     # login is Type=tty and would otherwise leave capture running when locked.

@@ -204,7 +204,9 @@ class SessionWiring(unittest.TestCase):
 
     def test_off_mode_skips_the_sleep_inhibitor_wait_and_zeroes_the_idle_timer(self):
         t = self.locker()
-        self.assertIn('[ "$_PLEB_AUTO_LOCK" = on ] || { PLEB_LOCKER_ACTIVE=1; _pleb_export_lock_session; return 0; }', t)
+        wait = t.index("<<'PY_INHIBITOR'")
+        self.assertLess(t.rindex('if [ "$_PLEB_AUTO_LOCK" = on ]; then', 0, wait), wait)
+        self.assertLess(t.index("\nPY_INHIBITOR\n"), t.index("\n    fi\n    PLEB_LOCKER_ACTIVE=1"))
         self.assertLess(t.index('_pleb_auto_lock_policy "$idle"'), t.index('_PLEB_IDLE_LOCK="$idle"'))
         self.assertIn('[ "$_PLEB_AUTO_LOCK" = on ] || idle=0', t)
 
