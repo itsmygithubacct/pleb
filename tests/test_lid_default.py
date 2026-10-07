@@ -96,18 +96,51 @@ class LidDefault(unittest.TestCase):
         xml = (self.tmp / "config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml").read_text()
         self.assertEqual(xml.count('type="uint" value="4"'), 2)
 
-    def test_seed_failure_warns_and_does_not_end_the_session(self):
+    def stub_run(self, stub_body, tail):
         fake = self.tmp / "bin"
-        fake.mkdir()
-        (fake / "xfconf-query").write_text("#!/bin/sh\nexit 1\n")
+        fake.mkdir(exist_ok=True)
+        (fake / "xfconf-query").write_text(stub_body)
         (fake / "xfconf-query").chmod(0o700)
-        fn = seed_function()
-        r = subprocess.run(["bash", "-c", fn + "\n_pleb_seed_lid_default; echo rc=$?"],
-                           env={**self.env, "PATH": f"{fake}:/usr/bin:/bin"},
-                           capture_output=True, text=True)
+        return subprocess.run(["bash", "-c", seed_function() + "\n" + tail],
+                              env={**self.env, "PATH": f"{fake}:/usr/bin:/bin"},
+                              capture_output=True, text=True)
+
+    def test_unreachable_channel_warns_writes_nothing_and_continues(self):
+        log = self.tmp / "calls"
+        r = self.stub_run(f'#!/bin/sh\necho "$@" >> {log}\nexit 1\n', "_pleb_seed_lid_default; echo rc=$?")
+        self.assertIn("rc=0", r.stdout)
+        self.assertIn("could not read the xfce4-power-manager settings", r.stderr)
+        self.assertNotIn("--create", log.read_text())
+
+    def test_failed_create_warns_per_property_and_continues(self):
+        r = self.stub_run('#!/bin/sh\ncase "$*" in *-l*) exit 0;; *) exit 1;; esac\n',
+                          "_pleb_seed_lid_default; echo rc=$?")
         self.assertIn("rc=0", r.stdout)
         self.assertIn("could not seed the lid default for lid-action-on-ac", r.stderr)
         self.assertIn("lid-action-on-battery", r.stderr)
+
+    def test_transient_read_failure_never_overwrites_an_existing_choice(self):
+        # Reviewer regression: AC=3 is stored, one read fails, later calls work.
+        # Whatever form the read takes, a failed read must leave 3 in place.
+        r = self.bus(
+            f'{self.q(AC)} --create --type uint --set 3\n'
+            'failed=0\n'
+            'xfconf-query() { if [ "$failed" = 0 ]; then failed=1; return 1; fi; command xfconf-query "$@"; }\n'
+            f'_pleb_seed_lid_default; echo "ac=$(command {self.q(AC)})"')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip().splitlines()[-1], "ac=3")
+        self.assertIn("WARNING", r.stderr)
+
+    def test_failed_read_of_each_call_form_keeps_stored_values(self):
+        # Fail every read form in turn (the Nth call), real xfconfd behind it.
+        for n in (1, 2, 3):
+            with self.subTest(failing_call=n):
+                r = self.bus(
+                    f'{self.q(AC)} --create --type uint --set 3; {self.q(BAT)} --create --type uint --set 1\n'
+                    f'count=0\nxfconf-query() {{ count=$((count+1)); if [ "$count" = {n} ]; then return 1; fi; command xfconf-query "$@"; }}\n'
+                    f'_pleb_seed_lid_default; echo "ac=$(command {self.q(AC)}) bat=$(command {self.q(BAT)})"')
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertEqual(r.stdout.strip().splitlines()[-1], "ac=3 bat=1")
 
 
 class SessionWiring(unittest.TestCase):
@@ -125,7 +158,8 @@ class SessionWiring(unittest.TestCase):
     def test_seed_only_creates_never_resets_or_rewrites_user_values(self):
         fn = seed_function()
         self.assertNotRegex(fn, r"xfconf-query[^\n]*(\s-r\b|--reset)")
-        self.assertIn("if ! xfconf-query", fn)
+        self.assertIn("xfconf-query -c \"$ch\" -l", fn)
+        self.assertIn("grep -qxF", fn)
 
     def test_packaged_xfconf_defaults_are_not_edited(self):
         # The distribution owns /etc/xdg/xfce4/xfconf/.../xfce4-power-manager.xml.
