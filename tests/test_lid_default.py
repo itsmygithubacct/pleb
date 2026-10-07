@@ -28,8 +28,7 @@ def fn_text(name):
 
 
 def seed_function():
-    names = ("_pleb_seed_absent", "_pleb_seed_lid_default", "_pleb_seed_sleep_lock_default",
-             "_pleb_auto_lock_policy")
+    names = ("_pleb_seed_lid_default", "_pleb_auto_lock_policy")
     parts = [fn_text(n) for n in names]
     return "\n".join(parts) if all(parts) else None
 
@@ -106,7 +105,7 @@ class LidDefault(unittest.TestCase):
     SLEEP = "/xfce4-power-manager/lock-screen-suspend-hibernate"
 
     def test_no_lock_before_sleep_is_seeded_false_when_automatic_locking_is_off(self):
-        r = self.bus(f'_PLEB_AUTO_LOCK=off; _pleb_seed_sleep_lock_default; echo "v=$({self.q(self.SLEEP)})"')
+        r = self.bus(f'_PLEB_AUTO_LOCK=off; _pleb_seed_lid_default; echo "v=$({self.q(self.SLEEP)})"')
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout.strip().splitlines()[-1], "v=false")
         xml = (self.tmp / "config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml").read_text()
@@ -114,17 +113,17 @@ class LidDefault(unittest.TestCase):
 
     def test_a_stored_sleep_lock_choice_is_kept(self):
         r = self.bus(f'{self.q(self.SLEEP)} --create --type bool --set true; _PLEB_AUTO_LOCK=off; '
-                     f'_pleb_seed_sleep_lock_default; echo "v=$({self.q(self.SLEEP)})"')
+                     f'_pleb_seed_lid_default; echo "v=$({self.q(self.SLEEP)})"')
         self.assertEqual(r.stdout.strip().splitlines()[-1], "v=true")
 
     def test_sleep_lock_is_left_to_upstream_when_automatic_locking_is_on(self):
-        r = self.bus(f'_PLEB_AUTO_LOCK=on; _pleb_seed_sleep_lock_default; {self.q(self.SLEEP)}; echo rc=$?')
+        r = self.bus(f'_PLEB_AUTO_LOCK=on; _pleb_seed_lid_default; {self.q(self.SLEEP)}; echo rc=$?')
         self.assertIn("rc=1", r.stdout)
 
     def test_unreadable_channel_does_not_seed_the_sleep_lock(self):
         log = self.tmp / "calls"
         r = self.stub_run(f'#!/bin/sh\necho "$@" >> {log}\nexit 1\n',
-                          "_PLEB_AUTO_LOCK=off; _pleb_seed_sleep_lock_default; echo rc=$?")
+                          "_PLEB_AUTO_LOCK=off; _pleb_seed_lid_default; echo rc=$?")
         self.assertIn("rc=0", r.stdout)
         self.assertIn("lock-screen-suspend-hibernate was not seeded", r.stderr)
         self.assertNotIn("--create", log.read_text())
@@ -209,10 +208,10 @@ class SessionWiring(unittest.TestCase):
         self.assertLess(t.index('_pleb_auto_lock_policy "$idle"'), t.index('_PLEB_IDLE_LOCK="$idle"'))
         self.assertIn('[ "$_PLEB_AUTO_LOCK" = on ] || idle=0', t)
 
-    def test_sleep_lock_seed_runs_before_the_power_manager(self):
-        text = SESSION.read_text()
-        self.assertLess(text.index("\n    _pleb_seed_sleep_lock_default\n"),
-                        text.index("_pleb_service_start power xfce4-power-manager"))
+    def test_sleep_lock_seed_only_when_automatic_locking_is_off(self):
+        fn = fn_text("_pleb_seed_lid_default")
+        self.assertIn('[ "${_PLEB_AUTO_LOCK:-on}" != off ]', fn)
+        self.assertIn("lock-screen-suspend-hibernate bool false sleep-lock", fn)
 
     def test_seed_runs_before_the_power_manager_starts(self):
         text = SESSION.read_text()
@@ -220,13 +219,13 @@ class SessionWiring(unittest.TestCase):
                         text.index("_pleb_service_start power xfce4-power-manager"))
 
     def test_seed_uses_the_nothing_action_for_both_properties(self):
-        fn = fn_text("_pleb_seed_absent")
-        self.assertIn("lid-action-on-ac", fn_text("_pleb_seed_lid_default"))
-        self.assertIn("lid-action-on-battery", fn_text("_pleb_seed_lid_default"))
+        fn = fn_text("_pleb_seed_lid_default")
+        self.assertIn("lid-action-on-ac uint 4", fn)
+        self.assertIn("lid-action-on-battery uint 4", fn)
         self.assertRegex(fn, r"--create --type \"\$type\" --set \"\$value\"")
 
     def test_seed_only_creates_never_resets_or_rewrites_user_values(self):
-        fn = fn_text("_pleb_seed_absent")
+        fn = fn_text("_pleb_seed_lid_default")
         self.assertNotRegex(fn, r"xfconf-query[^\n]*(\s-r\b|--reset)")
         self.assertIn("xfconf-query -c \"$ch\" -l", fn)
         self.assertIn("grep -qxF", fn)

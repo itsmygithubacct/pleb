@@ -988,16 +988,23 @@ _pleb_export_lock_session() {
 # the write loses its value. Nothing else in the session writes these
 # properties at that point (the power manager has not started). 4 is NOTHING in
 # xfce4-power-manager's lid enum.
-_pleb_seed_absent() {
-    local type="$1" value="$2" what="$3" ch=xfce4-power-manager props prop
-    shift 3
+# One listing seeds all the power defaults (the function keeps its first name):
+# the two lid actions, and, only while automatic locking is off, a never-set
+# lock-screen-suspend-hibernate (upstream's true stands when it is on).
+_pleb_seed_lid_default() {
+    local ch=xfce4-power-manager props entry prop type value what
+    local -a entries=("lid-action-on-ac uint 4 lid" "lid-action-on-battery uint 4 lid")
+    [ "${_PLEB_AUTO_LOCK:-on}" != off ] \
+        || entries+=("lock-screen-suspend-hibernate bool false sleep-lock")
     if ! props="$(xfconf-query -c "$ch" -l 2>/dev/null)"; then
-        for prop in "$@"; do
+        for entry in "${entries[@]}"; do
+            read -r prop type value what <<<"$entry"
             echo "WARNING: could not read the $ch settings; the $what default for $prop was not seeded" >&2
         done
         return 0
     fi
-    for prop in "$@"; do
+    for entry in "${entries[@]}"; do
+        read -r prop type value what <<<"$entry"
         if printf '%s\n' "$props" | grep -qxF "/$ch/$prop"; then
             continue
         fi
@@ -1005,16 +1012,6 @@ _pleb_seed_absent() {
             || echo "WARNING: could not seed the $what default for $prop" >&2
     done
     return 0
-}
-
-_pleb_seed_lid_default() {
-    _pleb_seed_absent uint 4 lid lid-action-on-ac lid-action-on-battery
-}
-
-# Only while automatic locking is off; when it is on, upstream's true stands.
-_pleb_seed_sleep_lock_default() {
-    [ "$_PLEB_AUTO_LOCK" = off ] || return 0
-    _pleb_seed_absent bool false sleep-lock lock-screen-suspend-hibernate
 }
 
 _pleb_start_services() {
@@ -1029,7 +1026,6 @@ _pleb_start_services() {
             --create --type string --set "$lock_bin" || return 1
     fi
     _pleb_seed_lid_default
-    _pleb_seed_sleep_lock_default
     _pleb_service_start power xfce4-power-manager || return 1
     _pleb_service_start bluetooth blueman-applet || return 1
     _pleb_service_start storage udiskie --no-tray --notify || return 1
