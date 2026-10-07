@@ -121,14 +121,19 @@ is not there.
 
 **Closing the laptop lid does nothing by default**, on AC and on battery. The
 session seeds the power manager's two lid settings to "Nothing" only when you
-have never set them, so a choice you make is never overwritten. To lock or
+have no value for them (a failed read of your settings writes nothing), so a
+choice you make is kept. Removing a setting (`xfconf-query --reset`) makes the
+next login seed it again. To lock or
 suspend on lid close, run `pleb devices power` (Xfce Power Manager → General →
 "When laptop lid is closed") and pick Lock screen or Suspend per power source;
 that choice persists in your Xfce configuration and wins from then on. Outside
 a Pleb session (greeter, console) a standalone `pleb install` adds
 `/etc/systemd/logind.conf.d/50-pleb-lid.conf` (Plebian-OS ships
 `50-plebian-lid.conf`) so logind ignores the lid there too; it takes effect at
-the next boot and no other logind drop-in is changed.
+the next boot and no other logind drop-in is changed. `pleb update` does not
+install it (it never re-runs the system install steps); run `pleb install` on an
+existing standalone machine to add it. Plebian-OS installs and updates ship
+their own file.
 
 Kilix Settings → Tools and Kilix 95's Control Panel expose the same controls:
 

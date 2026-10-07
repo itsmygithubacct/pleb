@@ -6,7 +6,9 @@
   `lid-action-on-ac` and `lid-action-on-battery` to Nothing (4) only when unset, so a
   user's Lock or Suspend choice in `pleb devices power` is kept. A standalone
   `pleb install` also adds `/etc/systemd/logind.conf.d/50-pleb-lid.conf` for the
-  no-session case.
+  no-session case. The session seed writes only when the channel listing
+  positively shows the property absent. On an existing standalone machine run
+  `pleb install` to add the drop-in; `pleb update` does not.
 
 ## 0.2.1 — 2026-08-25
 

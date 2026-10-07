@@ -942,17 +942,28 @@ PY_INHIBITOR
 # xfce4-power-manager holds logind's handle-lid-switch inhibitor, so its own
 # setting decides, and upstream's default is "lock screen". The distribution
 # package already owns /etc/xdg/xfce4/xfconf/.../xfce4-power-manager.xml, so
-# the default is seeded into the user's xfconf, and only for a property that
-# has no value: a choice made in xfce4-power-manager-settings (Lock, Suspend,
-# ...) is never overwritten. 4 is NOTHING in xfce4-power-manager's enum.
+# the default is seeded into the user's xfconf, and only for a property that is
+# positively known to be absent: the channel's property list is read (exit 0)
+# and must not contain it. Any failed read (xfconfd or D-Bus unavailable) is
+# uncertain, so it warns and writes nothing; a choice made in
+# xfce4-power-manager-settings (Lock, Suspend, ...) is never overwritten that
+# way. xfconf-query has no exclusive create, so one race remains: a client that
+# sets the property in the milliseconds between the listing and the write
+# loses its value to 4. Nothing else in the session writes these properties
+# at that point (the power manager has not started). 4 is NOTHING in
+# xfce4-power-manager's enum.
 _pleb_seed_lid_default() {
-    local prop
+    local ch=xfce4-power-manager props prop
+    if ! props="$(xfconf-query -c "$ch" -l 2>/dev/null)"; then
+        echo "WARNING: could not read the $ch settings; the lid default was not seeded" >&2
+        return 0
+    fi
     for prop in lid-action-on-ac lid-action-on-battery; do
-        if ! xfconf-query -c xfce4-power-manager -p "/xfce4-power-manager/$prop" >/dev/null 2>&1; then
-            xfconf-query -c xfce4-power-manager -p "/xfce4-power-manager/$prop" \
-                --create --type uint --set 4 \
-                || echo "WARNING: could not seed the lid default for $prop" >&2
+        if printf '%s\n' "$props" | grep -qxF "/$ch/$prop"; then
+            continue
         fi
+        xfconf-query -c "$ch" -p "/$ch/$prop" --create --type uint --set 4 \
+            || echo "WARNING: could not seed the lid default for $prop" >&2
     done
     return 0
 }
