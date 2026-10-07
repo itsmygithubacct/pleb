@@ -955,7 +955,9 @@ PY_INHIBITOR
 _pleb_seed_lid_default() {
     local ch=xfce4-power-manager props prop
     if ! props="$(xfconf-query -c "$ch" -l 2>/dev/null)"; then
-        echo "WARNING: could not read the $ch settings; the lid default was not seeded" >&2
+        for prop in lid-action-on-ac lid-action-on-battery; do
+            echo "WARNING: could not read the $ch settings; the lid default for $prop was not seeded" >&2
+        done
         return 0
     fi
     for prop in lid-action-on-ac lid-action-on-battery; do

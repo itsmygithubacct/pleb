@@ -109,7 +109,7 @@ class LidDefault(unittest.TestCase):
         log = self.tmp / "calls"
         r = self.stub_run(f'#!/bin/sh\necho "$@" >> {log}\nexit 1\n', "_pleb_seed_lid_default; echo rc=$?")
         self.assertIn("rc=0", r.stdout)
-        self.assertIn("could not read the xfce4-power-manager settings", r.stderr)
+        self.assertIn("could not read the xfce4-power-manager settings; the lid default for", r.stderr)
         self.assertNotIn("--create", log.read_text())
 
     def test_failed_create_warns_per_property_and_continues(self):
