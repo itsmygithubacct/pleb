@@ -75,6 +75,10 @@ install_capture_portal
                 self.assertTrue(callable(getattr(transport, symbol)))
             service = target / "usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service"
             self.assertIn("Exec=/usr/bin/python3 /usr/local/lib/pleb/capture_portal.py", service.read_text())
+            shortcuts = target / "usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.shortcuts.service"
+            self.assertIn("Exec=/usr/bin/python3 /usr/local/lib/pleb/global_shortcuts.py", shortcuts.read_text())
+            self.assertEqual((target / "usr/local/share/xdg-desktop-portal/portals/pleb-shortcuts.portal").read_bytes(),
+                             (ROOT / "share/portals/pleb-shortcuts.portal").read_bytes())
 
     def previous_backend(self, target):
         directory = target / "usr/local/lib/pleb"
@@ -167,6 +171,7 @@ install_capture_portal
             self.assertIn("org.freedesktop.impl.portal.ScreenCast=pleb", preferences)
             self.assertIn("org.freedesktop.impl.portal.Screenshot=pleb", preferences)
             self.assertIn("default=gtk", preferences)
+            self.assertIn("org.freedesktop.impl.portal.GlobalShortcuts=pleb-shortcuts", preferences)
 
     def test_failed_transport_build_preserves_the_installed_backend(self):
         with tempfile.TemporaryDirectory() as directory:

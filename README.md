@@ -1,5 +1,9 @@
 # pleb — a kilix kiosk desktop session
 
+Application global shortcuts use a physical desktop consent dialog and the
+public portal. See [Global shortcuts](docs/GLOBAL_SHORTCUTS.md) for configuration,
+ownership, installed wiring and supported X11 limits.
+
 **Pleb** turns [`kilix`](https://github.com/itsmygithubacct/kilix) (a Tilix-styled
 [kitty](https://sw.kovidgoyal.net/kitty/) fork) into a **full desktop session**:
 you log in and get a single screen-filling Kilix as the entire "desktop" — its

@@ -225,6 +225,11 @@ _pleb_stop_owned "$control:$expected" || exit 83
         self.assert_stopped(wm, terminal)
 
     def with_services(self):
+        backend = self.root / 'global-shortcuts.py'
+        backend.write_text((self.bin / 'wm').read_text().replace("name=Path(__file__).name", "name='shortcuts'"))
+        self.driver.write_text(self.driver.read_text().replace(
+            '_PLEB_SHORTCUTS_PROGRAM=/usr/local/lib/pleb/global_shortcuts.py',
+            '_PLEB_SHORTCUTS_PROGRAM=' + str(backend)))
         self.env.update(PLEB_SESSION_SERVICES='on', PLEB_INPUT_METHOD='off',
                         DISPLAY=':77', DBUS_SESSION_BUS_ADDRESS='unix:path=/fixture',
                         PYTHONPATH=str(self.root), FIXTURE_MODE='ready')
@@ -248,6 +253,27 @@ def _inhibitors(self,**kwargs):
     return [('sleep','fixture','fixture','delay',os.getuid(),int(p.read_text()))] if p.exists() else []
 SystemBus.ListInhibitors=_inhibitors
 ''')
+
+    def test_shortcut_backend_death_restarts_without_replacing_the_desktop(self):
+        self.with_services()
+        # This isolated lifecycle driver omits the configuration preflight.
+        self.driver.write_text(self.driver.read_text().replace('set -u\n', 'set -u\nPLEB_CONFIG_HOME="$FIXTURE_ROOT/config"\n', 1))
+        self.env['FIXTURE_MODE'] = 'ready'
+        p = self.start()
+        wm, engine, shortcuts = self.child('wm'), self.child('kilix'), self.child('shortcuts')
+        fd = os.pidfd_open(shortcuts)
+        try:
+            signal.pidfd_send_signal(fd, signal.SIGKILL)
+        finally:
+            os.close(fd)
+        replacement = self.child('shortcuts', previous=shortcuts)
+        self.assertNotEqual(shortcuts, replacement)
+        self.assertIsNone(p.poll(), self.log())
+        self.assertEqual(int((self.root / 'wm.pid').read_text()), wm)
+        self.assertEqual(int((self.root / 'kilix.pid').read_text()), engine)
+        p.terminate()
+        self.assertEqual(p.wait(timeout=7), 143, self.log())
+        self.assert_stopped(wm, engine, replacement)
 
     def test_openbox_runs_without_the_input_method_applications_keep(self):
         # RC5 VM: with XMODIFIERS=@im=ibus inherited from the login, Openbox

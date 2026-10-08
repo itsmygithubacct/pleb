@@ -5,7 +5,7 @@
 # Install, uninstall and Plebian-OS's root transactions all read this list;
 # a second hand-typed copy left the lock guard (capture_session.py) out of
 # uninstall and out of the distribution's rollback.
-PLEB_CAPTURE_MODULES="displays.py capture_registry.py capture_sources.py capture_session.py capture_worker.py capture_screenshot.py capture_portal.py"
+PLEB_CAPTURE_MODULES="displays.py capture_registry.py capture_sources.py capture_session.py capture_worker.py capture_screenshot.py capture_portal.py shortcut_keys.py global_shortcuts.py"
 
 _install_missing_apt_packages() {
     local label="$1"
@@ -868,6 +868,10 @@ install_capture_portal() {
         /usr/local/share/xdg-desktop-portal/portals/pleb.portal
     run_root install -D -m 0644 "$PLEB_ROOT/share/portals/org.freedesktop.impl.portal.desktop.pleb.service" \
         /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service
+    run_root install -D -m 0644 "$PLEB_ROOT/share/portals/pleb-shortcuts.portal" \
+        /usr/local/share/xdg-desktop-portal/portals/pleb-shortcuts.portal
+    run_root install -D -m 0644 "$PLEB_ROOT/share/portals/org.freedesktop.impl.portal.desktop.pleb.shortcuts.service" \
+        /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.shortcuts.service
     # The distribution owns this audio/video policy. A standalone Pleb install
     # uses its host's session manager and must not change another desktop's
     # WirePlumber profile or portal preferences.
@@ -1002,7 +1006,9 @@ do_uninstall() {
     done
     for f in "$LID_POLICY_DST" /usr/local/lib/pleb/capture_transport.so \
             /usr/local/share/xdg-desktop-portal/portals/pleb.portal \
-            /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service; do
+            /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service \
+            /usr/local/share/xdg-desktop-portal/portals/pleb-shortcuts.portal \
+            /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.shortcuts.service; do
         if [ -e "$f" ] || [ -L "$f" ]; then
             log "removing $f"
             run_root rm -f "$f"
