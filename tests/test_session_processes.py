@@ -226,7 +226,8 @@ _pleb_stop_owned "$control:$expected" || exit 83
 
     def with_services(self):
         backend = self.root / 'global-shortcuts.py'
-        backend.write_text((self.bin / 'wm').read_text().replace("name=Path(__file__).name", "name='shortcuts'"))
+        backend.write_text((self.bin / 'wm').read_text().replace('import os,signal,time', 'import os,signal,time,sys')
+                           .replace("name=Path(__file__).name", "if '--check-owner' in sys.argv: raise SystemExit(1)\nname='shortcuts'"))
         self.driver.write_text(self.driver.read_text().replace(
             '_PLEB_SHORTCUTS_PROGRAM=/usr/local/lib/pleb/global_shortcuts.py',
             '_PLEB_SHORTCUTS_PROGRAM=' + str(backend)))

@@ -93,11 +93,19 @@ class PublicPortalIntegration(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('PLEB_GLOBALSHORTCUTS_RELAY'),
                          'Set PLEB_GLOBALSHORTCUTS_RELAY to a committed Kilix portal_bridge.py for the real relay/frontend/X11 lane')
     def test_public_portal_private_apps_physical_consent_and_native_keyboard(self):
+        self.run_fixture('global_shortcuts_fixture.py')
+
+    @unittest.skipUnless(os.environ.get('PLEB_GLOBALSHORTCUTS_RELAY'),
+                         'Set PLEB_GLOBALSHORTCUTS_RELAY for the real relay/frontend/X11 fix1 lane')
+    def test_queued_input_genuine_cycles_history_and_bounded_session_retirement(self):
+        self.run_fixture('global_shortcuts_fix1_fixture.py')
+
+    def run_fixture(self, fixture):
         for program in ('Xvfb', 'dbus-daemon', 'xdotool', 'openbox', 'xauth', 'setxkbmap', 'xmodmap'):
             self.assertIsNotNone(shutil.which(program), program)
         with tempfile.TemporaryDirectory(prefix='gs-integration-') as directory:
             env = clean_env(Path(directory), DISPLAY='', DBUS_SESSION_BUS_ADDRESS='', DBUS_SYSTEM_BUS_ADDRESS='')
-            result = subprocess.run(['/usr/bin/python3', str(ROOT / 'tests/fixtures/global_shortcuts_fixture.py'),
+            result = subprocess.run(['/usr/bin/python3', str(ROOT / 'tests/fixtures' / fixture),
                                      '--output', directory, '--relay', os.environ['PLEB_GLOBALSHORTCUTS_RELAY']],
                                     env=env, capture_output=True, text=True, timeout=100)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

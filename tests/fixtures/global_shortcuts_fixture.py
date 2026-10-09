@@ -700,7 +700,10 @@ class Fixture:
         start = len(b.messages)
         b.send(op='create')
         self.wait(lambda: any('response' in m for m in b.messages[start:]))
-        self.check('locked-desktop-refuses-fresh-session', next(m for m in b.messages[start:] if 'response' in m)['response'] == 2)
+        self.settle(.1)
+        close_error = 'UnknownMethod: Method "Close" with signature "" on interface "org.freedesktop.impl.portal.Session"'
+        self.check('locked-desktop-refuses-fresh-session', next(m for m in b.messages[start:] if 'response' in m)['response'] == 2
+                   and close_error not in (self.directory / 'frontend-restarted.log').read_text())
         self.run(['gdbus', 'call', '--address', self.env['DBUS_SYSTEM_BUS_ADDRESS'], '--dest', 'org.freedesktop.login1',
                   '--object-path', '/org/freedesktop/login1', '--method', 'org.example.ShortcutsFixture.SetState', 'true', 'false', 'false'])
         self.settle()
@@ -713,7 +716,9 @@ class Fixture:
         self.wm.kill()
         self.wm.process.wait(timeout=3)
         reserved_session = self.create(b)
-        reserved = self.bind(b, reserved_session, 'LOGO+l')
+        # Use a new ID so remembered preferences cannot prefill a different
+        # previously approved chord and mask the actual reservation check.
+        reserved = self.bind(b, reserved_session, 'LOGO+l', ident='reserved-lock')
         self.settle(.25)
         window = self.window('Allow global shortcuts')
         self.run(['xdotool', 'windowfocus', '--sync', window])

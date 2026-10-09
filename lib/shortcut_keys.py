@@ -6,6 +6,7 @@ import re
 import time
 
 from Xlib import X, display, error
+from Xlib.ext import ge, xinput
 from gi.repository import GLib
 
 
@@ -27,6 +28,14 @@ class ShortcutKeys:
         self.remapped, self.failed = remapped, failed
         self.display = display.Display(display_name)
         self.root = self.display.screen().root
+        if not self.display.has_extension(xinput.extname) or self.display.xinput_query_version().major_version < 2:
+            raise ShortcutError('Global shortcuts require XInput 2.')
+        keyboards = [device.deviceid for device in self.display.xinput_query_device(xinput.AllMasterDevices).devices
+                     if device.use == xinput.MasterKeyboard and device.enabled]
+        if len(keyboards) != 1:
+            raise ShortcutError('Global shortcuts require one master keyboard.')
+        self.keyboard = keyboards[0]
+        self.input_opcode = self.display.display.get_extension_major(xinput.extname)
         self.grabs, self.active = {}, {}
         self.closed = False
         self.keysyms = ctypes.CDLL('libxkbcommon.so.0')
@@ -115,21 +124,31 @@ class ShortcutKeys:
             for pair in desired:
                 if pair in self.grabs:
                     continue
+                # Core and XI2 passive grabs have distinct conflict namespaces.
+                # Reserve this same approved chord in both, installing XI2 last
+                # so its press event carries the server's reliable repeat flag.
                 failures = []
-                self.root.grab_key(pair[0], pair[1], False, X.GrabModeAsync, X.GrabModeAsync,
-                                   onerror=lambda err, _request: failures.append(err))
+                self.root.grab_key(pair[0], pair[1], False, X.GrabModeAsync, X.GrabModeSync,
+                                   onerror=lambda err, _request: failures.append(err) or True)
                 self.display.sync()
+                if not failures:
+                    added.append(pair)
+                    result = self.root.xinput_grab_keycode(self.keyboard, X.CurrentTime, pair[0],
+                                                         xinput.GrabModeSync, xinput.GrabModeAsync, False,
+                                                         xinput.KeyPressMask, [pair[1]])
+                    failures.extend(result.modifiers)
                 if failures:
                     raise ShortcutError('The shortcut is already used by the desktop or another application.')
-                added.append(pair)
         except Exception:
             for code, mask in added:
+                self.root.xinput_ungrab_keycode(self.keyboard, code, [mask])
                 self.root.ungrab_key(code, mask)
             self.display.sync()
             raise
         self.end_active(owner)
         for pair, value in list(self.grabs.items()):
             if value[0] is owner and pair not in desired:
+                self.root.xinput_ungrab_keycode(self.keyboard, pair[0], [pair[1]])
                 self.root.ungrab_key(*pair)
                 del self.grabs[pair]
         self.grabs.update(desired)
@@ -167,23 +186,37 @@ class ShortcutKeys:
                     self.display.refresh_keyboard_mapping(event)
                     self.end_active()
                     for code, mask in self.grabs:
+                        self.root.xinput_ungrab_keycode(self.keyboard, code, [mask])
                         self.root.ungrab_key(code, mask)
                     self.grabs.clear()
                     self.refresh()
                     self.remapped()
-                elif event.type == X.KeyPress:
-                    # A passive grab becomes a keyboard-wide active grab until
-                    # release. End it immediately so intervening typing reaches
-                    # the focused window, never this service.
-                    self.display.ungrab_keyboard(X.CurrentTime)
+                elif event.type == ge.GenericEventCode and event.extension == self.input_opcode and event.evtype == xinput.KeyPress:
+                    # The synchronous passive grab freezes subsequent keyboard
+                    # processing in the server. Ungrab before thawing: queued
+                    # unrelated input then goes directly to the focused client.
+                    self.display.xinput_ungrab_device(self.keyboard, X.CurrentTime)
                     self.display.flush()
-                    value = self.grabs.get((event.detail, event.state & 255))
-                    if value is not None:
+                    data = event.data
+                    value = self.grabs.get((data.detail, data.mods.effective_mods & 255))
+                    if value is not None and not data.flags & xinput.KeyRepeat:
                         session, ident, chord = value
                         key = (session, ident)
-                        if key not in self.active:
-                            self.active[key] = value
-                            self.activated(session, ident, self.timestamp())
+                        # A genuine press implies an intervening physical
+                        # release even when both fit between release polls.
+                        if key in self.active:
+                            del self.active[key]
+                            self.deactivated(session, ident, self.timestamp())
+                        self.active[key] = value
+                        self.activated(session, ident, self.timestamp())
+                elif event.type == X.KeyPress:
+                    # A core reservation can activate during grab setup before
+                    # XI2 is installed. Thaw queued typing and revoke instead
+                    # of leaving an unhandled synchronous grab frozen.
+                    self.display.ungrab_keyboard(X.CurrentTime)
+                    self.display.flush()
+                    self.failed()
+                    return False
             # Reply reads may queue MappingNotify; the release timer drains it.
         except (error.XError, error.ConnectionClosedError, OSError):
             self.failed()
