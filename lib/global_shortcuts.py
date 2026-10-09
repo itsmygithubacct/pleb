@@ -66,6 +66,7 @@ class Session(Properties):
         self.closed, self.attempted = False, False
         self.shortcuts, self.pending, self.indicator, self.editor = {}, None, None, None
         self.status = None
+        self.retirement_timer = None
 
     @property
     def identity(self):
@@ -81,6 +82,8 @@ class Session(Properties):
         self.portal.authenticate(sender)
         if sender != self.frontend:
             raise ShortcutError('Stale frontend session')
+        # Acknowledgements can already be in flight more than once. Closed
+        # tombstones accept them idempotently for the bounded retirement window.
         self.close()
 
     @dbus.service.signal(IMPL + 'Session', signature='')
@@ -101,8 +104,29 @@ class Session(Properties):
         self.editor = self.indicator = None
         self.portal.sessions.pop(self.path, None)
         self.portal.save_sessions()
+        self.shortcuts = {}
+        self.defer_retirement()
         self.portal.emit(self.frontend, self.path, IMPL + 'Session', 'Closed', '', ())
-        self.remove_from_connection()
+
+    def defer_retirement(self):
+        # Closed objects have no grants or request authority. Keep only a
+        # bounded acknowledgement target for two seconds, including duplicate
+        # acknowledgements already in flight when the first one completes.
+        self.portal.retiring[self.path] = self
+        self.retirement_timer = GLib.timeout_add(2000, self.retire)
+        while len(self.portal.retiring) > 32:
+            next(iter(self.portal.retiring.values())).retire()
+
+    def retire(self):
+        if self.retirement_timer is not None:
+            GLib.source_remove(self.retirement_timer)
+            self.retirement_timer = None
+        self.portal.retiring.pop(self.path, None)
+        try:
+            self.remove_from_connection()
+        except LookupError:
+            pass
+        return False
 
     def apply(self, items):
         self.portal.require_unlocked()
@@ -228,15 +252,23 @@ class Portal(Properties):
 
     def __init__(self, bus):
         self.bus = bus
-        self.name = dbus.service.BusName(BUS_NAME, bus=bus, do_not_queue=True)
-        super().__init__(bus, ROOT)
-        self.sessions, self.requests, self.history = {}, {}, {}
+        self.sessions, self.requests, self.history, self.retiring = {}, {}, {}, {}
         self.state = self.state_path()
         previous = self.load_sessions()
         self.keys = ShortcutKeys(self.activated, self.deactivated, self.remapped, self.input_failed)
         environment = physical_environment()
         self.guard = CaptureSessionGuard(self.close, environment['DISPLAY'],
                                          session_id=environment.get('PLEB_DESKTOP_SESSION_ID'))
+        super().__init__(bus, ROOT)
+        # Publish acknowledgement targets before claiming the well-known name:
+        # the frontend can have Close calls already queued at backend restart.
+        for path, frontend in previous:
+            match = HANDLE.fullmatch(path)
+            if match and match[1] == 'session':
+                retired = Session(self, path, None, '', frontend)
+                retired.closed = True
+                retired.defer_retirement()
+        self.name = dbus.service.BusName(BUS_NAME, bus=bus, do_not_queue=True)
         bus.add_signal_receiver(self.owner_changed, signal_name='NameOwnerChanged',
                                 dbus_interface='org.freedesktop.DBus', bus_name='org.freedesktop.DBus')
         bus.call_on_disconnection(lambda _bus: (self.close(), Gtk.main_quit()))
@@ -245,7 +277,8 @@ class Portal(Properties):
         # sessions. Never restore grants, triggers, or application permissions.
         for path, frontend in previous:
             try:
-                if frontend == bus.get_name_owner(FRONTEND) and HANDLE.fullmatch(path):
+                match = HANDLE.fullmatch(path)
+                if frontend == bus.get_name_owner(FRONTEND) and match and match[1] == 'session':
                     self.emit(frontend, path, IMPL + 'Session', 'Closed', '', ())
             except dbus.exceptions.DBusException:
                 pass
@@ -363,15 +396,27 @@ class Portal(Properties):
     @dbus.service.method(INTERFACE, in_signature='oosa{sv}', out_signature='ua{sv}', sender_keyword='sender')
     def CreateSession(self, handle, session_handle, app_id, options, sender=None):
         self.authenticate(sender)
+        valid_handle = False
         try:
-            self.require_unlocked()
             owner = self.owner(session_handle, 'session')
-            if owner != self.owner(handle, 'request') or str(session_handle) in self.sessions or len(self.sessions) >= 16:
+            if (owner != self.owner(handle, 'request') or str(session_handle) in self.sessions
+                    or str(session_handle) in self.retiring):
                 raise ShortcutError('Duplicate, foreign or excessive session')
+            valid_handle = True
+            self.require_unlocked()
+            if len(self.sessions) >= 16:
+                raise ShortcutError('Excessive session')
             self.sessions[str(session_handle)] = Session(self, session_handle, owner, app_id, sender)
             self.save_sessions()
             return 0, {}
         except ShortcutError:
+            if valid_handle:
+                # The frontend also sends Close when a valid CreateSession
+                # returns failure (for example while locked or at capacity).
+                # Give that cleanup the same bounded, powerless target.
+                rejected = Session(self, session_handle, None, '', sender)
+                rejected.closed = True
+                rejected.defer_retirement()
             return 2, {}
 
     @dbus.service.method(INTERFACE, in_signature='ooa(sa{sv})sa{sv}', out_signature='ua{sv}',
@@ -393,6 +438,12 @@ class Portal(Properties):
                         or not text(description) or not isinstance(trigger, str) or len(trigger) > 64):
                     raise ShortcutError('Invalid shortcut description, ID or trigger')
                 items[ident] = {'description': text(description), 'trigger': str(trigger)}
+            # Remembered preferences are editor defaults, never registrations
+            # of this fresh session. Match current requested IDs only.
+            previous = self.history.get(session.history_key, {})
+            for ident, item in items.items():
+                if ident in previous:
+                    item['trigger'] = previous[ident]['trigger']
             session.attempted = True
             request = ConsentRequest(self, handle, success, session)
             session.pending = request
@@ -408,8 +459,7 @@ class Portal(Properties):
         self.authenticate(sender)
         try:
             session = self.session(session_handle, handle)
-            items = session.shortcuts if session.attempted else self.history.get(session.history_key, {})
-            return 0, {'shortcuts': shortcut_array(items)}
+            return 0, {'shortcuts': shortcut_array(session.shortcuts)}
         except ShortcutError:
             return 2, {}
 
@@ -445,8 +495,51 @@ class Portal(Properties):
         Gtk.main_quit()
 
 
+def existing_backend():
+    """Return the exact responsive activated owner; no activation or mutation."""
+    bus = dbus.SessionBus(private=True)
+    try:
+        broker = dbus.Interface(bus.get_object('org.freedesktop.DBus', '/org/freedesktop/DBus', introspect=False),
+                                'org.freedesktop.DBus')
+        owner = str(broker.GetNameOwner(BUS_NAME, timeout=0.25))
+        if int(broker.GetConnectionUnixUser(owner, timeout=0.25)) != os.getuid():
+            return None
+        pid = int(broker.GetConnectionUnixProcessID(owner, timeout=0.25))
+        process = Path('/proc') / str(pid)
+        fields = (process / 'stat').read_text().rsplit(')', 1)[1].split()
+        start = fields[19]
+        argv = (process / 'cmdline').read_bytes().split(b'\0')
+        if fields[0] in ('Z', 'X') or len(argv) < 2 or Path(os.fsdecode(argv[1])).resolve() != Path(__file__).resolve():
+            return None
+        environment = dict(part.split(b'=', 1) for part in (process / 'environ').read_bytes().split(b'\0') if b'=' in part)
+        display = environment.get(b'PLEB_DESKTOP_DISPLAY') or environment.get(b'DISPLAY')
+        address = environment.get(b'PLEB_DESKTOP_BUS_ADDRESS') or environment.get(b'DBUS_SESSION_BUS_ADDRESS')
+        if display != os.fsencode(os.environ['DISPLAY']) or address != os.fsencode(os.environ['DBUS_SESSION_BUS_ADDRESS']):
+            return None
+        properties = dbus.Interface(bus.get_object(owner, ROOT, introspect=False), 'org.freedesktop.DBus.Properties')
+        if int(properties.Get(INTERFACE, 'version', timeout=0.25)) != 1:
+            return None
+        if str(broker.GetNameOwner(BUS_NAME, timeout=0.25)) != owner:
+            return None
+        if (process / 'stat').read_text().rsplit(')', 1)[1].split()[19] != start:
+            return None
+        return f'{pid}:{start}:{owner}'
+    except (dbus.exceptions.DBusException, OSError, ValueError, IndexError):
+        return None
+    finally:
+        bus.close()
+
+
 def main():
     os.environ.update(physical_environment())
+    if sys.argv[1:] == ['--check-owner']:
+        identity = existing_backend()
+        if identity:
+            print(identity)
+            return
+        raise SystemExit(1)
+    if sys.argv[1:]:
+        raise ShortcutError('Unknown shortcuts backend argument')
     os.umask(0o077)
     DBusGMainLoop(set_as_default=True)
     Gtk.init([])

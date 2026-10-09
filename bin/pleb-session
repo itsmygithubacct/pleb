@@ -724,6 +724,7 @@ PLEB_SERVICES_ACTIVE=0
 PLEB_LOCKER_ACTIVE=0
 _PLEB_SHORTCUTS_PROGRAM=""
 _PLEB_SHORTCUTS_NEXT_START=0
+_PLEB_SHORTCUTS_ACTIVATED_ID=""
 _PLEB_LOCK_BIN=""
 _PLEB_IDLE_LOCK=""
 _PLEB_AUTO_LOCK=on
@@ -890,8 +891,16 @@ _pleb_services_alive() {
     if [ -n "$_PLEB_SHORTCUTS_PROGRAM" ] && [ "$SECONDS" -ge "$_PLEB_SHORTCUTS_NEXT_START" ]; then
         if ! _pleb_owned_alive "${PLEB_SERVICE_PIDS[shortcuts]:-}" "${PLEB_SERVICE_STARTS[shortcuts]:-}"; then
             [ -z "${PLEB_SERVICE_PIDS[shortcuts]:-}" ] || wait "${PLEB_SERVICE_PIDS[shortcuts]}" 2>/dev/null || true
+            unset 'PLEB_SERVICE_PIDS[shortcuts]' 'PLEB_SERVICE_STARTS[shortcuts]'
             _PLEB_SHORTCUTS_NEXT_START=$((SECONDS + 5))
-            _pleb_service_start shortcuts /usr/bin/python3 "$_PLEB_SHORTCUTS_PROGRAM" || return 1
+            # A responsive activated owner is managed by the bus and physical
+            # session guard. Verify owner/PID/start/program/display each time;
+            # never adopt it into our direct-child cleanup or trust a marker.
+            _PLEB_SHORTCUTS_ACTIVATED_ID="$(/usr/bin/python3 "$_PLEB_SHORTCUTS_PROGRAM" --check-owner)" \
+                || _PLEB_SHORTCUTS_ACTIVATED_ID=""
+            if [ -z "$_PLEB_SHORTCUTS_ACTIVATED_ID" ]; then
+                _pleb_service_start shortcuts /usr/bin/python3 "$_PLEB_SHORTCUTS_PROGRAM" || return 1
+            fi
         fi
     fi
 }
@@ -1030,8 +1039,8 @@ _pleb_start_services() {
         _PLEB_SHORTCUTS_PROGRAM="$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")/lib/global_shortcuts.py"
     fi
     [ -r "$_PLEB_SHORTCUTS_PROGRAM" ] || { echo 'FATAL: shortcut backend missing; run pleb install' >&2; return 1; }
-    _pleb_service_start shortcuts /usr/bin/python3 "$_PLEB_SHORTCUTS_PROGRAM" || return 1
-    _PLEB_SHORTCUTS_NEXT_START=$((SECONDS + 5))
+    _PLEB_SHORTCUTS_NEXT_START=0
+    _pleb_services_alive || return 1
     _pleb_service_start inhibit xssproxy || return 1
     _pleb_service_start polkit lxpolkit || return 1
     # libxfce4ui checks this command before its screensaver D-Bus fallbacks.

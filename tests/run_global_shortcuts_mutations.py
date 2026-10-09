@@ -33,8 +33,8 @@ MUTATIONS = [
      'ignored = self.locks & ~mask', 'ignored = 0',
      'Timed out', 'modifier-release-first-deactivates-without-stuck-state'),
     ('active-keyboard-grab-release', 'shortcut_keys.py',
-     'self.display.ungrab_keyboard(X.CurrentTime)', 'pass  # Deliberate keyboard-wide grab mutation',
-     'intervening-typing-goes-to-focused-window', None),
+     'self.display.xinput_ungrab_device(self.keyboard, X.CurrentTime)', 'pass  # Deliberate keyboard-wide grab mutation',
+     'Timed out', 'public-create-bind-and-physical-consent'),
     ('keyboard-map-rebinding', 'shortcut_keys.py',
      'self.remapped()', 'pass  # Deliberate lost-rebinding mutation',
      'Timed out', 'modifier-release-first-deactivates-without-stuck-state'),
@@ -66,7 +66,8 @@ def main():
         if module:
             path = source / 'lib' / module
             text = path.read_text()
-            assert text.count(before) == 1, (name, text.count(before))
+            expected_count = 2 if name == 'backend-restart-session-record' else 1
+            assert text.count(before) == expected_count, (name, text.count(before))
             path.write_text(text.replace(before, after))
             (directory / 'mutation.json').write_text(json.dumps(dict(module=module, before=before, after=after), indent=2))
         environment = {'PATH': '/usr/bin:/bin', 'HOME': str(directory), 'LANG': 'C.UTF-8', 'PYTHONNOUSERSITE': '1'}
