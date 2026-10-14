@@ -503,6 +503,9 @@ ensure_system_deps
             capture_output=True, check=True,
         )
         self.assertIn("unzip", result.stdout.splitlines())
+        # xinit only recommends an X server; standalone installs use
+        # --no-install-recommends and otherwise leave LightDM unable to start.
+        self.assertIn("xserver-xorg", result.stdout.splitlines())
         # PDF Conversion deliberately does not depend on uv; Debian's venv
         # package supplies its isolated pip runtime even when an OS release
         # also installs uv as system tooling.
