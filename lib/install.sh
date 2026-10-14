@@ -54,7 +54,7 @@ ensure_system_deps() {
     local -a deps
     deps=(
         git curl tar unzip sudo tmux network-manager build-essential cmake zlib1g-dev
-        lightdm xinit x11-xserver-utils x11-utils xterm openbox
+        lightdm xserver-xorg xinit x11-xserver-utils x11-utils xterm openbox
         libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
         fontconfig fonts-dejavu-core xfonts-base
         python3-pil python3-xlib python3-websockets python3-venv python3-tk
