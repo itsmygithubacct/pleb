@@ -1,0 +1,24 @@
+#!/usr/bin/python3
+"""Session-local xdg-screensaver lock routing for the serviced Pleb desktop."""
+import os
+from pathlib import Path
+import sys
+
+if sys.argv[1:] == ["lock"] and os.environ.get("PLEB_SCREENSAVER_SERVICE") == "1" \
+        and os.environ.get("PLEB_DESKTOP_DISPLAY") \
+        and os.environ.get("PLEB_DESKTOP_SESSION_ID"):
+    import dbus
+    module_dir = Path(__file__).resolve().parent.parent
+    if not (module_dir / "screensaver.py").is_file():
+        module_dir = module_dir / "lib"
+    sys.path.insert(0, str(module_dir))
+    from screensaver import lock_current_context
+    try:
+        # The current bus is either the physical service or Kilix's private
+        # standard relay. Always let that service reach the physical locker.
+        if lock_current_context(os.environ):
+            sys.exit(0)
+    except (dbus.DBusException, KeyError, ValueError, TypeError) as exc:
+        print("xdg-screensaver: Pleb lock request failed: " + str(exc), file=sys.stderr)
+        sys.exit(1)
+os.execv("/usr/bin/xdg-screensaver", ["/usr/bin/xdg-screensaver", *sys.argv[1:]])

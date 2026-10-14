@@ -60,11 +60,11 @@ ensure_system_deps() {
         python3-pil python3-xlib python3-websockets python3-venv python3-tk
         pulseaudio pulseaudio-utils pulsemixer alsa-utils ffmpeg xauth zenity
         zstd espeak-ng
-        python3-dbus python3-gi dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
+        systemd libpam-systemd polkitd python3-dbus python3-gi dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
         pipewire pipewire-bin libpipewire-0.3-dev pkg-config gstreamer1.0-pipewire gstreamer1.0-x
         gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gst-plugins-base-1.0 gir1.2-gtk-3.0 python3-gi-cairo
         xdg-utils desktop-file-utils shared-mime-info xfce4-notifyd libnotify-bin
-        xss-lock i3lock xssproxy xfce4-power-manager xfconf lxpolkit
+        xss-lock i3lock libxss1 libx11-6 xfce4-power-manager xfconf lxpolkit
         blueman pulseaudio-module-bluetooth udisks2 udiskie gnome-disk-utility
         cups cups-client system-config-printer system-config-printer-udev
         pavucontrol ibus ibus-gtk ibus-gtk3 ibus-gtk4
@@ -879,6 +879,35 @@ install_capture_portal() {
     fi
 }
 
+# Closing the lid does nothing by default (owner answer 17, 2026-10-07). This
+# covers the times no Pleb session runs xfce4-power-manager (greeter, console);
+# inside a session its xfconf setting decides (bin/pleb-session seeds NOTHING).
+# Plebian-OS ships its own 50-plebian-lid.conf, so a managed install skips this.
+# Only this one file is written; other logind drop-ins are never touched, and
+# logind is not restarted: the drop-in applies at the next boot.
+install_lid_policy() {
+    if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
+        return 0
+    fi
+    log "lid close does nothing without a session policy -> $LID_POLICY_DST"
+    run_root install -D -m 0644 "$PLEB_ROOT/share/logind/50-pleb-lid.conf" "$LID_POLICY_DST"
+}
+
+install_screensaver() {
+    local dest=/usr/local/lib/pleb
+    # Stage both files before publication. A failed copy leaves the previous
+    # service/shim in place; publish before the session that requires them.
+    if ! run_root install -D -m 0644 "$PLEB_ROOT/lib/screensaver.py" "$dest/.screensaver.py.new" \
+        || ! run_root install -D -m 0755 "$PLEB_ROOT/bin/xdg-screensaver" "$dest/session-bin/.xdg-screensaver.new"; then
+        run_root rm -f -- "$dest/.screensaver.py.new" "$dest/session-bin/.xdg-screensaver.new" || true
+        die "Could not stage Pleb ScreenSaver service"
+    fi
+    run_root mv -fT -- "$dest/.screensaver.py.new" "$dest/screensaver.py" \
+        || die "Could not publish Pleb ScreenSaver service; rerun the install"
+    run_root mv -fT -- "$dest/session-bin/.xdg-screensaver.new" "$dest/session-bin/xdg-screensaver" \
+        || die "Could not publish Pleb ScreenSaver command; rerun the install"
+}
+
 do_install() {
     [ -f "$PLEB_BIN_SRC" ]    || die "missing $PLEB_BIN_SRC"
     [ -f "$PLEB_DESKTOP_IN" ] || die "missing $PLEB_DESKTOP_IN"
@@ -891,6 +920,19 @@ do_install() {
 
     ensure_system_deps
     ensure_kilix   # fresh-clone kilix + set up an engine if not already present
+    # The shared SDK uses one fixed installed ancestor per private bus.
+    # No service is enabled permanently and no session environment is authority.
+    # Publish a launcher only with the complete installed SDK source contract.
+    [ -f "$KILIX_DIR/config/kilix_sdk/bus_platform.py" ] \
+        && [ ! -L "$KILIX_DIR/config/kilix_sdk/bus_platform.py" ] \
+        || die "Missing/unsafe private GUI bus platform source; install the reviewed complete Kilix tuple"
+    python3 "$KILIX_DIR/config/kilix_sdk/bus_platform.py" --check-source-delivery \
+        || die "Incomplete private GUI bus platform source; install the reviewed complete Kilix tuple"
+    [ -f "$KILIX_DIR/scripts/install-private-bus-supervisor.py" ] \
+        && [ ! -L "$KILIX_DIR/scripts/install-private-bus-supervisor.py" ] \
+        || die "Missing/unsafe private-bus supervisor installer"
+    run_root /usr/bin/python3 -I "$KILIX_DIR/scripts/install-private-bus-supervisor.py" --install \
+        || die "Private-bus supervisor delivery failed; launcher not published"
     install_pty_broker
     install_kilix_tui_utils
     install_tmux_tui
@@ -915,6 +957,8 @@ do_install() {
     run_root install -D -m 0644 "$PLEB_ROOT/lib/displays.py" "$PLEB_DISPLAYS_DST"
     run_root install -D -m 0755 "$PLEB_ROOT/bin/pleb-lock" "$PLEB_LOCK_DST"
     install_capture_portal
+    install_lid_policy
+    install_screensaver
     run_root install -D -m 0755 "$PLEB_BIN_SRC" "$SESSION_BIN_DST"
 
     log "installing xsession entry -> $XSESSION_DST"
@@ -985,7 +1029,8 @@ do_uninstall() {
             removed=1
         fi
     done
-    for f in /usr/local/lib/pleb/capture_transport.so \
+    for f in "$LID_POLICY_DST" /usr/local/lib/pleb/capture_transport.so \
+            /usr/local/lib/pleb/screensaver.py /usr/local/lib/pleb/session-bin/xdg-screensaver \
             /usr/local/share/xdg-desktop-portal/portals/pleb.portal \
             /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service; do
         if [ -e "$f" ] || [ -L "$f" ]; then
@@ -994,6 +1039,13 @@ do_uninstall() {
             removed=1
         fi
     done
+    # Never recursively remove this private PATH directory or operator files.
+    local shim_dir=/usr/local/lib/pleb/session-bin
+    if [ -d "$shim_dir" ] && [ ! -L "$shim_dir" ] \
+            && [ "$(stat -c '%u' "$shim_dir" 2>/dev/null)" = 0 ] \
+            && [ -z "$(ls -A -- "$shim_dir" 2>/dev/null)" ]; then
+        run_root rmdir -- "$shim_dir" || true
+    fi
     # prune the Pleb-owned Openbox directories, leaf first, and only at the exact
     # paths install_openbox_profile creates: a customized OPENBOX_CONFIG_DST is
     # left alone entirely. Each one must still be a real, root-owned, empty

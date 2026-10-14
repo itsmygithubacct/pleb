@@ -217,6 +217,7 @@ OPENBOX_CONFIG_SRC="$PLEB_ROOT/share/openbox/rc.xml"
 # install destinations (system-wide, so LightDM/other users can see them)
 SESSION_BIN_DST="${SESSION_BIN_DST:-/usr/local/bin/pleb-session}"
 PLEB_LOCK_DST="${PLEB_LOCK_DST:-/usr/local/bin/pleb-lock}"
+LID_POLICY_DST="${LID_POLICY_DST:-/etc/systemd/logind.conf.d/50-pleb-lid.conf}"
 PLEB_DISPLAYS_DST="${PLEB_DISPLAYS_DST:-/usr/local/lib/pleb/displays.py}"
 XSESSION_DST="${XSESSION_DST:-/usr/share/xsessions/pleb.desktop}"
 AUTOLOGIN_CONF="${AUTOLOGIN_CONF:-/etc/lightdm/lightdm.conf.d/50-pleb-autologin.conf}"
