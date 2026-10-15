@@ -1271,10 +1271,13 @@ _prepare_pleb_self_update() {
             return 0 ;;
         *) die "invalid PLEB_SELF_UPDATE=$PLEB_SELF_UPDATE (expected 0/1)" ;;
     esac
-    if [ "${_UPDATE_LOCK_BORROWED:-0}" = 1 ]; then
+    if [ "${_UPDATE_LOCK_BORROWED:-0}" = 1 ] \
+            && [ "${PLEB_RELEASE_HOP_APPLY:-0}" != 1 ]; then
         # The OS-layer updater hands its lock down and has already put the Pleb
         # checkout where its own release manifest wants it. Moving it underneath
         # the process that launched us would undo that run's pinned checkout.
+        # A standalone named-release hop instead borrows the Pleb parent's
+        # lock; that parent has selected pins but has not moved this checkout.
         log "an outer updater owns the pleb checkout for this run; not self-updating"
         return 0
     fi
@@ -1297,7 +1300,8 @@ _prepare_pleb_self_update() {
 }
 
 _update_pleb_self() {
-    local before after branch current version
+    local before after branch current version local_ref="${1:-}"
+    case "$local_ref" in ''|--local-ref) ;; *) die "invalid Pleb self-update mode" ;; esac
     [ "$_PLEB_SELF_UPDATE_OK" = 1 ] || return 0
     before="$(git -C "$PLEB_ROOT" rev-parse --verify HEAD 2>/dev/null)" \
         || die "could not read the current pleb commit at $PLEB_ROOT"
@@ -1308,7 +1312,18 @@ _update_pleb_self() {
 
     if [ -n "$PLEB_REF" ]; then
         _preserve_pleb_before_move
-        checkout_fetched_ref "$PLEB_ROOT" "$PLEB_REF" "pleb" PLEB_REF _preserve_pleb_before_move
+        if [ "$local_ref" = --local-ref ]; then
+            # The target selector has already fetched and validated this exact
+            # commit. Its standalone bootstrap must also work with --offline.
+            [ "$(git -C "$PLEB_ROOT" rev-parse --verify "$PLEB_REF^{commit}" 2>/dev/null)" = "$PLEB_REF" ] \
+                || die "selected Pleb ref is not present locally: $PLEB_REF"
+            _assert_still_clean "$PLEB_ROOT" pleb \
+                || die "pleb checkout changed while its preservation snapshot was prepared"
+            git -C "$PLEB_ROOT" -c submodule.recurse=false checkout --detach "$PLEB_REF" \
+                || die "could not check out selected Pleb ref $PLEB_REF"
+        else
+            checkout_fetched_ref "$PLEB_ROOT" "$PLEB_REF" "pleb" PLEB_REF _preserve_pleb_before_move
+        fi
     else
         current="${PLEB_BRANCH:-$branch}"
         { [ -n "$current" ] && [ "$current" != HEAD ]; } || current=main

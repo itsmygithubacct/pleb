@@ -306,6 +306,36 @@ class SelfUpdateTests(unittest.TestCase):
             self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), base)
             self.assertIn("outer updater owns the pleb checkout", result.stdout)
 
+    def test_standalone_release_child_moves_pleb_under_the_parents_lock(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            upstream, checkout, _, head = self._stack(tmp)
+            (checkout / "VERSION").write_text("operator version edit\n")
+            result = run_update_shell(
+                "_acquire_update_lock\n"
+                'PLEB_UPDATE_LOCK_FD="$_UPDATE_LOCK_FD"\n'
+                "export PLEB_UPDATE_LOCK_FD\n"
+                "(\n"
+                '  . "$PLEB_CODE_ROOT/lib/update.sh"\n'
+                "  _acquire_update_lock\n"
+                "  trap _update_cleanup EXIT\n"
+                "  _prepare_pleb_self_update\n_update_pleb_self --local-ref\n"
+                ")\n"
+                'if flock -n "$PLEB_STATE_HOME/update.lock" true; then exit 91; fi',
+                clean_env(tmp),
+                PLEB_ROOT=str(checkout),
+                PLEB_DIR=str(checkout),
+                PLEB_REPO=str(upstream),
+                PLEB_REF=head,
+                PLEB_RELEASE_HOP_APPLY="1",
+                PLEB_STATE_HOME=str(tmp / ".local/gpu_terminal/pleb/state"),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), head)
+            self.assertEqual(
+                (checkout / "VERSION.local").read_text(), "operator version edit\n"
+            )
+
     def test_a_configured_directory_elsewhere_is_never_moved(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)

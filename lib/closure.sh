@@ -441,8 +441,9 @@ pleb_release_hop() {
             _pleb_clear_active_selector
             log "rollback completed; the previous closure and stack are active"
             return 0
+        else
+            apply_rc=$?
         fi
-        apply_rc=$?
         warn "stack rollback failed with status $apply_rc; restoring the selected closure"
         if _pleb_selector_env "$_PLEB_HOP_SELECTOR" "$_PLEB_HOP_TARGET" \
                 --source "$_PLEB_HOP_REPO"; then
@@ -508,8 +509,9 @@ pleb_release_hop() {
         _PLEB_HOP_EMERGENCY_ROLLBACK=0
         log "release hop $current -> $target completed"
         return 0
+    else
+        apply_rc=$?
     fi
-    apply_rc=$?
     _PLEB_HOP_EMERGENCY_ROLLBACK=0
     warn "target stack apply failed with status $apply_rc; restoring the previous closure"
     if ! _pleb_selector_env "$_PLEB_HOP_SELECTOR" --rollback; then
