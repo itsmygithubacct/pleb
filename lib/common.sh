@@ -393,7 +393,9 @@ info() { printf '  %s%s%s\n' "$_c_b" "$*" "$_c_0"; }
 ask()  { printf '%s[pleb]%s %s ' "$_c_g" "$_c_0" "$*"; }
 
 # shellcheck source=storage.sh
-. "$PLEB_ROOT/lib/storage.sh"
+# Keep staged release helpers together while PLEB_ROOT names the checkout
+# being upgraded, which can still contain an older storage implementation.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/storage.sh"
 
 # --- privilege ---------------------------------------------------------------
 # run_root CMD... — run as root: directly if already root, else via sudo.

@@ -219,6 +219,7 @@ class ReleaseHopTests(unittest.TestCase):
                 env=env, capture_output=True, text=True, check=False,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn("target stack apply failed with status 7", result.stderr)
             self.assertIn("previous closure and stack were restored", result.stderr)
             self.assertFalse(
                 (Path(env["PLEB_STATE_HOME"]) / "release-hop/active").exists())
@@ -226,6 +227,27 @@ class ReleaseHopTests(unittest.TestCase):
             self.assertIn(
                 "--rollback", (base / "selector.log").read_text().splitlines()[-1]
             )
+
+    def test_failed_stack_rollback_reports_real_status(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            remote = self._release_remote(base)
+            env = self._env(base, remote)
+            selected = subprocess.run(
+                [str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(selected.returncode, 0, selected.stderr)
+            env["PLEB_TEST_UPDATER_FAIL_ONCE"] = "1"
+            failed = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn("stack rollback failed with status 7", failed.stderr)
+            self.assertIn("release 0.2.1 remains selected", failed.stderr)
+            phase = Path(env["PLEB_STATE_HOME"]) / "release-hop/phase"
+            self.assertEqual(phase.read_text(), "complete\n")
 
     def test_pending_selected_phase_is_recovered_before_new_work(self):
         with tempfile.TemporaryDirectory() as td:
