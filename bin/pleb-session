@@ -524,6 +524,13 @@ unset _pleb_log_dir
 exec >>"$PLEB_LOG" 2>&1
 echo "=== pleb-session start $(date) DISPLAY=${DISPLAY:-?} user=$(id -un) ==="
 
+# This session does not run an XDG autostart manager. Initialize the standard
+# user directories before desktop helpers (notably Bluetooth transfers) need
+# them. The utility preserves the user's existing directory choices.
+if command -v xdg-user-dirs-update >/dev/null 2>&1; then
+    xdg-user-dirs-update || echo "pleb-session: could not initialize user directories"
+fi
+
 export XDG_CURRENT_DESKTOP=Pleb
 export XDG_SESSION_DESKTOP=pleb
 

@@ -63,7 +63,7 @@ ensure_system_deps() {
         systemd libpam-systemd polkitd python3-dbus python3-gi dbus-user-session dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk
         pipewire pipewire-bin libpipewire-0.3-dev pkg-config gstreamer1.0-pipewire gstreamer1.0-x
         gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gst-plugins-base-1.0 gir1.2-gtk-3.0 python3-gi-cairo
-        xdg-utils desktop-file-utils shared-mime-info xfce4-notifyd libnotify-bin
+        xdg-utils xdg-user-dirs desktop-file-utils shared-mime-info xfce4-notifyd libnotify-bin
         xss-lock i3lock libxss1 libx11-6 xfce4-power-manager xfconf lxpolkit
         blueman pulseaudio-module-bluetooth udisks2 udiskie gnome-disk-utility
         cups cups-client system-config-printer system-config-printer-udev
