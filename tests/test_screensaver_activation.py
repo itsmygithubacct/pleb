@@ -15,7 +15,7 @@ import dbus
 import test_screensaver as base
 
 KILIX = Path(os.environ.get("CHECK_KILIX", base.ROOT.parent / "kilix"))
-ACTIVATED = '''import dbus,json,os,subprocess,sys,time
+ACTIVATED = '''import dbus,json,os,subprocess,sys,time,traceback
 from pathlib import Path
 bus=dbus.bus.BusConnection(os.environ['DBUS_SESSION_BUS_ADDRESS'])
 bus.request_name(os.environ['ACTIVATED_NAME'],dbus.bus.NAME_FLAG_DO_NOT_QUEUE)
@@ -23,18 +23,22 @@ if os.environ.get('BEFORE_LOCK_GATE'):
  gate=Path(os.environ['BEFORE_LOCK_GATE'])
  Path(str(gate)+'-ready').write_text('ready')
  while not gate.exists():time.sleep(.01)
-if os.environ.get('ACTIVATED_PRIVATE')=='1':
- sys.path.insert(0,os.environ['KILIX_CONFIG'])
- from kilix_sdk.xapp import XAppSession
- session=XAppSession('activated-lock',320,240)
- try:
-  session.start_xvfb()
-  app=session.launch_app(['xdg-screensaver','lock'],isolate_bus=True,clipboard=False,capture_source=False)
-  result={'returncode':app.wait(timeout=8),'stderr':''}
- finally:session.close()
-else:
- r=subprocess.run(['xdg-screensaver','lock'],capture_output=True,text=True,timeout=7)
- result={'returncode':r.returncode,'stderr':r.stderr}
+try:
+ if os.environ.get('ACTIVATED_PRIVATE')=='1':
+  sys.path.insert(0,os.environ['KILIX_CONFIG'])
+  from kilix_sdk.xapp import XAppSession
+  session=XAppSession('activated-lock',320,240)
+  try:
+   session.start_xvfb()
+   app=session.launch_app(['xdg-screensaver','lock'],isolate_bus=True,clipboard=False,capture_source=False,stderr=subprocess.PIPE)
+   code=app.wait(timeout=8)
+   result={'returncode':code if isinstance(code,int) else repr(code),'stderr':app.stderr.read().decode(errors='replace')}
+  finally:session.close()
+ else:
+  r=subprocess.run(['xdg-screensaver','lock'],capture_output=True,text=True,timeout=7)
+  result={'returncode':r.returncode,'stderr':r.stderr}
+except Exception:
+ result={'returncode':125,'stderr':traceback.format_exc()}
 result['env']={k:os.environ.get(k) for k in ['XDG_SESSION_ID','PLEB_DESKTOP_SESSION_ID','DISPLAY','XDG_CURRENT_DESKTOP']}
 Path(os.environ['ACTIVATION_RESULT']).write_text(json.dumps(result))
 time.sleep(20)
