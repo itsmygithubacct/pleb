@@ -248,7 +248,10 @@ if '--wait-ready' in sys.argv:
     until = time.monotonic() + 3
     while not record.exists() and time.monotonic() < until: time.sleep(.01)
     raise SystemExit(0 if record.exists() and record.read_text() == expected else 1)
-Path(os.environ['FIXTURE_ROOT'], 'screensaver.pid').write_text(str(os.getpid()))
+record = Path(os.environ['FIXTURE_ROOT'], 'screensaver.pid')
+pending = record.with_suffix('.pending')
+pending.write_text(str(os.getpid()))
+pending.replace(record)
 while True: time.sleep(.05)
 ''')
         self.script('xdg-screensaver', '#!/bin/sh\nexit 0\n')
