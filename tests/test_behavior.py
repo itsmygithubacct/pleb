@@ -225,6 +225,11 @@ exit "$VOICE_INSTALL_EXIT"
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             destination = tmp / "usr/local/share/doc/pleb/RECOVERY.md"
+            # The uninstaller also handles fixed system delivery paths. Relocate
+            # those paths in this fixture before executing its real body.
+            installer = tmp / "install-fixture.sh"
+            installer.write_text((ROOT / "lib/install.sh").read_text().replace(
+                "/usr/local/", str(tmp / "usr/local") + "/"))
             env = clean_env(tmp)
             env.update(
                 {
@@ -235,6 +240,8 @@ exit "$VOICE_INSTALL_EXIT"
                     "PLEB_LINK": str(tmp / "missing/pleb"),
                     "AUTOLOGIN_CONF": str(tmp / "missing/autologin.conf"),
                     "OPENBOX_CONFIG_DST": str(tmp / "missing/openbox/rc.xml"),
+                    "PLEB_DISPLAYS_DST": str(tmp / "missing/displays.py"),
+                    "LID_POLICY_DST": str(tmp / "missing/lid.conf"),
                 }
             )
             install_script = textwrap.dedent(
@@ -265,7 +272,7 @@ exit "$VOICE_INSTALL_EXIT"
                 PLEB_CODE_ROOT={ROOT!s}
                 PLEB_ROOT="$PLEB_CODE_ROOT"
                 . "$PLEB_ROOT/lib/common.sh"
-                . "$PLEB_ROOT/lib/install.sh"
+                . {installer!s}
                 run_root() {{ "$@"; }}
                 do_uninstall
                 """

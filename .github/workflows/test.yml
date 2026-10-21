@@ -20,3 +20,30 @@ jobs:
         run: |
           bash -n bin/pleb bin/pleb-session lib/*.sh scripts/*.sh
           shellcheck -S warning bin/pleb bin/pleb-session lib/*.sh scripts/*.sh
+
+  private-sdk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Check out the pinned private-app SDK
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: itsmygithubacct/kilix
+          ref: 3846a622ed8155f24a582051a28ade620fd88947
+          path: .fixture-kilix
+          persist-credentials: false
+      - name: Install the native integration platform
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pil python3-dbus python3-gi python3-xlib gir1.2-gtk-3.0 xvfb xauth dbus-daemon dbus-x11 polkitd
+          sudo chown root:root /usr/share /usr/share/polkit-1 /usr/share/polkit-1/rules.d
+          sudo chmod go-w /usr/share /usr/share/polkit-1 /usr/share/polkit-1/rules.d
+          sudo python3 .fixture-kilix/scripts/install-private-bus-supervisor.py --install
+      - name: Exercise activation into a private SDK app
+        run: |
+          CHECK_KILIX="$GITHUB_WORKSPACE/.fixture-kilix" \
+            python3 -m unittest discover -s tests -p test_screensaver_activation.py -k current_private_sdk -v
+      - name: Retain private-bus diagnostics
+        if: failure()
+        run: sudo journalctl --since '15 minutes ago' -u 'kilix-private-bus-*' --no-pager -n 200

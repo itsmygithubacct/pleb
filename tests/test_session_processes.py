@@ -50,6 +50,7 @@ while True: time.sleep(.05)
         self.env = clean_env(self.root, PATH=str(self.bin)+':/usr/bin:/bin',
                              DISPLAY='', XAUTHORITY='', PLEB_MIC_DEFAULT='off',
                              PLEB_CLIPBOARD='off', PLEB_NO_FILL='1',
+                             PLEB_CONFIG_HOME=str(self.root/'config'),
                              PLEB_DESKTOP='0', PLEB_RESPAWN='0',
                              PLEB_WM=str(self.bin/'wm'), PLEB_WM_TIMEOUT='30',
                              PLEB_LOG=str(self.root/'session.log'),
@@ -233,8 +234,27 @@ _pleb_stop_owned "$control:$expected" || exit 83
         locker.chmod(0o700)
         self.script('i3lock', '#!/bin/sh\nexit 0\n')
         self.script('xfconf-query', '#!/bin/sh\nexit 0\n')
-        for name in ('xss-lock', 'xssproxy', 'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie'):
+        for name in ('xss-lock', 'screensaver', 'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie'):
             self.script(name, (self.bin / 'wm').read_text())
+        # The installed ScreenSaver replaced xssproxy. Keep the session's
+        # service launch/readiness/supervision path and supply its private
+        # daemon stand-in at the two installed paths this fixture relocates.
+        module = self.root / 'screensaver.py'
+        module.write_text('''import os,sys,time
+from pathlib import Path
+if '--wait-ready' in sys.argv:
+    expected = sys.argv[sys.argv.index('--wait-ready') + 1]
+    record = Path(os.environ['FIXTURE_ROOT'], 'screensaver.pid')
+    until = time.monotonic() + 3
+    while not record.exists() and time.monotonic() < until: time.sleep(.01)
+    raise SystemExit(0 if record.exists() and record.read_text() == expected else 1)
+Path(os.environ['FIXTURE_ROOT'], 'screensaver.pid').write_text(str(os.getpid()))
+while True: time.sleep(.05)
+''')
+        self.script('xdg-screensaver', '#!/bin/sh\nexit 0\n')
+        self.driver.write_text(self.driver.read_text().replace(
+            'module=/usr/local/lib/pleb/screensaver.py', 'module=' + str(module)).replace(
+            'session_bin=/usr/local/lib/pleb/session-bin', 'session_bin=' + str(self.bin)))
         # Only logind is a stand-in here. Process ownership, signals, service
         # launch arguments and the session supervision loop execute unchanged.
         (self.root / 'dbus.py').write_text('''
@@ -331,7 +351,7 @@ SystemBus.ListInhibitors=_inhibitors
     def test_owned_desktop_services_are_reaped_with_the_session(self):
         self.with_services()
         p = self.start()
-        children = [self.child(name) for name in ('wm', 'xss-lock', 'xssproxy', 'lxpolkit',
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver', 'lxpolkit',
                     'xfce4-power-manager', 'blueman-applet', 'udiskie', 'kilix')]
         p.terminate()
         self.assertEqual(p.wait(timeout=7), 143, self.log())
@@ -340,7 +360,7 @@ SystemBus.ListInhibitors=_inhibitors
     def test_default_login_recovers_killed_frontend_without_replacing_services(self):
         self.with_services()
         p = self.start()
-        names = ('wm', 'xss-lock', 'xssproxy', 'lxpolkit',
+        names = ('wm', 'xss-lock', 'screensaver', 'lxpolkit',
                  'xfce4-power-manager', 'blueman-applet', 'udiskie')
         children = [self.child(name) for name in names]
         original = self.child('kilix')
@@ -360,7 +380,7 @@ SystemBus.ListInhibitors=_inhibitors
         self.with_services()
         self.engine_exits(0)
         p = self.start()
-        children = [self.child(name) for name in ('wm', 'xss-lock', 'xssproxy',
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver',
                     'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie')]
         self.assertEqual(p.wait(timeout=7), 0, self.log())
         self.assertEqual(len(self.engine_runs()), 1)
@@ -371,7 +391,7 @@ SystemBus.ListInhibitors=_inhibitors
         self.env['PLEB_RECOVER_CRASHES'] = 'off'
         self.engine_exits(17)
         p = self.start()
-        children = [self.child(name) for name in ('wm', 'xss-lock', 'xssproxy',
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver',
                     'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie')]
         self.assertEqual(p.wait(timeout=7), 17, self.log())
         self.assertEqual(len(self.engine_runs()), 1)
@@ -432,7 +452,7 @@ SystemBus.ListInhibitors=_inhibitors
         self.with_services()
         self.engine_exits(17, None)
         p = self.start()
-        children = [self.child(name) for name in ('wm', 'xss-lock', 'xssproxy',
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver',
                     'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie')]
         until = time.monotonic()+5
         while 'respawning in' not in self.log():
@@ -448,7 +468,7 @@ SystemBus.ListInhibitors=_inhibitors
     def test_locker_failure_ends_the_desktop_and_reaps_owned_children(self):
         self.with_services()
         p = self.start()
-        children = [self.child(name) for name in ('wm', 'xss-lock', 'xssproxy', 'lxpolkit',
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver', 'lxpolkit',
                     'xfce4-power-manager', 'blueman-applet', 'udiskie', 'kilix')]
         fd = next(fd for pid, fd in self.handles if pid == children[1])
         signal.pidfd_send_signal(fd, signal.SIGKILL)

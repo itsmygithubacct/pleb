@@ -234,6 +234,13 @@ class Image:
             if name.endswith(".socket") and SOUND_SERVER_ENDPOINT.search(text):
                 service = re.search(r"^Service=(\S+)", text, re.M)
                 servers.add(service.group(1) if service else name[: -len(".socket")] + ".service")
+        # The same sound-server executable can also run a graph/filter service.
+        # It is part of the shared audio stack, not an unrelated synthesiser
+        # taking the hardware behind that stack's back.
+        programs = {exec_program(self.units[name][1]) for name in servers if name in self.units}
+        programs.discard("")
+        servers.update(name for name, (_, text) in self.units.items()
+                       if name.endswith(".service") and exec_program(text) in programs)
         return servers
 
     def holds_card(self, service: str) -> bool:

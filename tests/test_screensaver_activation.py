@@ -158,6 +158,11 @@ class Activation(base.Screensaver):
         obj.UnInhibit(cookie, timeout=3)
 
     def test_activation_current_private_sdk_lock_without_login_id(self):
+        if not (KILIX / 'config/kilix_sdk/xapp.py').is_file():
+            message = 'CHECK_KILIX must select the pinned SDK for private-app integration'
+            if os.environ.get('CHECK_KILIX'):
+                self.fail(message)
+            self.skipTest(message)
         self.activation_bus()
         bus, obj = self.client()
         cookie = self.hold(obj)
