@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: itsmygithubacct/kilix
-          ref: 3846a622ed8155f24a582051a28ade620fd88947
+          ref: 3040dcaf033759aa0cbf803b8cd30905b3ac94cd
           path: .fixture-kilix
           persist-credentials: false
       - name: Install the native integration platform

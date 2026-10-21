@@ -1299,6 +1299,8 @@ _prepare_pleb_self_update() {
     _PLEB_SELF_UPDATE_OK=1
 }
 
+# Standalone update delivery also calls this with --local-ref.
+# shellcheck disable=SC2120
 _update_pleb_self() {
     local before after branch current version local_ref="${1:-}"
     case "$local_ref" in ''|--local-ref) ;; *) die "invalid Pleb self-update mode" ;; esac
