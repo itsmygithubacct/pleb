@@ -167,20 +167,48 @@ class Screensaver(unittest.TestCase):
         (self.root / "home").mkdir()
         self.env["DBUS_SESSION_BUS_ADDRESS"] = self.start_bus()
         self.env["DBUS_SYSTEM_BUS_ADDRESS"] = self.start_bus()
+        xvfb_log = tempfile.TemporaryFile()
+        self.addCleanup(xvfb_log.close)
         fd, output = os.pipe()
         try:
             self.xvfb = self.spawn(["Xvfb", "-displayfd", str(output), "-screen", "0", "400x300x24",
-                                    "-nolisten", "tcp", "-ac"], pass_fds=(output,))
+                                    "-nolisten", "tcp", "-ac"], pass_fds=(output,), stderr=xvfb_log)
         finally:
             os.close(output)
         try:
-            self.assertTrue(select.select([fd], [], [], 5)[0], "owned Xvfb did not start")
-            display = ":" + os.read(fd, 32).decode().strip()
+            # Xvfb can write the number and newline separately. Closing after
+            # the first read gives its second write EPIPE and aborts the server.
+            answer = bytearray()
+            deadline = time.monotonic() + 5
+            while b'\n' not in answer:
+                left = deadline - time.monotonic()
+                self.assertGreater(left, 0, 'owned Xvfb did not finish readiness')
+                self.assertTrue(select.select([fd], [], [], left)[0], 'owned Xvfb did not start')
+                chunk = os.read(fd, 32)
+                self.assertTrue(chunk, 'owned Xvfb closed readiness before its newline')
+                answer.extend(chunk)
+                self.assertLessEqual(len(answer), 32)
+            number = bytes(answer).strip().decode('ascii')
+            self.assertTrue(number.isdigit(), 'invalid owned Xvfb display number')
+            display = ':' + number
         finally:
             os.close(fd)
         self.env.update(DISPLAY=display, PLEB_DESKTOP_DISPLAY=display,
                         PLEB_DESKTOP_XAUTHORITY=self.env["XAUTHORITY"])
-        self.probe = XProbe(display)
+        # Finish readiness with a client handshake while our server is alive.
+        ready_deadline = time.monotonic() + 2
+        while True:
+            if self.xvfb.poll() is not None:
+                xvfb_log.seek(0)
+                self.fail('owned Xvfb exited before client readiness: ' +
+                          xvfb_log.read().decode(errors='replace')[-4096:])
+            try:
+                self.probe = XProbe(display)
+                break
+            except RuntimeError:
+                if time.monotonic() >= ready_deadline:
+                    raise
+                time.sleep(.02)
         self.env.update(LOCK_RECORD=str(self.root / "lock.jsonl"), LOCK_MODE=str(self.root / "mode"),
                         LOGIND_READY=str(self.root / "logind-ready"), SESSION_STATE=str(self.root / "session-state.json"),
                         SESSION_QUERIES=str(self.root / "session-queries.jsonl"))
