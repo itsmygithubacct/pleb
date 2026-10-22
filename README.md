@@ -154,7 +154,22 @@ pleb displays configure                 # interactive layout editor
 pleb displays snapshot > layout.json     # optional JSON editing workflow
 pleb displays preview layout.json       # 15-second confirmation deadline
 pleb displays restore                   # restore a previously confirmed layout
+pleb displays save-current              # remember the layout already on screen
+pleb displays launch DP-1               # a separate Kilix terminal on DP-1
+pleb displays launch DP-1 -- kilix nvr view doorway
 ```
+
+An extended output does not automatically get a second Kilix window. `launch`
+opens a new native window on the named active output, then maximizes it using
+the window manager. The original desktop stays where it is. An optional command
+after `--` runs inside that terminal, so a camera view can occupy the second
+screen while the first remains a desktop. Closing that window closes its app;
+this does not create an automatic login application. Startup errors are retained
+in a private log under `$PLEB_STATE_HOME/displays`.
+
+`save-current` remembers the already-active layout without applying a new one.
+It requires monitor identities and refuses a layout that changes while being
+read. Use the timed `preview` or graphical arranger when changing outputs.
 
 Choose enabled outputs, resolution, refresh rate, rotation, scale from 50% to
 400%, horizontal/vertical position and one primary monitor. A larger scale
@@ -178,7 +193,7 @@ that session. The baseline is retained under `$PLEB_STATE_HOME/displays`.
 
 Confirmed profiles live in `$PLEB_CONFIG_HOME/displays` (private JSON files).
 They match both EDID identity and connector, with no guessing after recabling.
-Automatic restore is skipped when an output has no EDID. A future installed RC5
+Automatic restore is skipped when an output has no EDID. The installed
 Pleb session restores matching profiles at login and on connector/monitor changes;
 the watcher exits with its session or X server. Ordinary manual layout changes
 do not trigger it. Unknown monitor combinations are left as configured by X11.

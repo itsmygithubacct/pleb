@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 
 class DisplayError(Exception):
@@ -608,11 +609,136 @@ def watch(parent_pid, backend, config, state):
             connection.close()
 
 
+def save_current(backend, config, state):
+    """Remember the already-active layout without changing any output."""
+    with locked(state):
+        current = backend.query()
+        layout = validate(snapshot(current), current)
+        if any(o["identity"] == hashlib.sha256(b"").hexdigest() for o in current["outputs"]):
+            raise DisplayError("Cannot save a persistent layout without monitor identities")
+        if not matches(layout, backend.query()):
+            raise DisplayError("Layout changed while it was being read; try again")
+        save(config, layout)
+    print("Current layout saved for these monitors; no outputs changed.")
+
+
+def launch(output_name, command, backend, state):
+    """Open one independent Kilix window on an exact active output."""
+    from Xlib import X, Xatom, error
+    from Xlib.display import Display
+    from Xlib.protocol.event import ClientMessage
+
+    current = backend.query()
+    output = next((o for o in current["outputs"] if o["name"] == output_name), None)
+    if output is None or not output["enabled"]:
+        raise DisplayError("Choose a connected, enabled output from `pleb displays list`")
+    validate(snapshot(current), current)
+    width, height = dimensions(output)
+    token = "pleb-display-" + uuid.uuid4().hex
+    connection = Display()
+    process = None
+    ready = False
+    log_path = state / (token + ".log")
+    try:
+        root = connection.screen().root
+        clients_atom = connection.intern_atom("_NET_CLIENT_LIST")
+        wm = root.get_full_property(connection.intern_atom("_NET_SUPPORTING_WM_CHECK"), Xatom.WINDOW)
+        if wm is None or not len(wm.value):
+            raise DisplayError("A window manager is required to place a Kilix window")
+        argv = ["kilix", "--class", token, "--title", "Kilix — " + output_name,
+                "--start-as=normal", "-o", "remember_window_size=no",
+                "-o", "hide_window_decorations=yes"]
+        if command and command[0] == "--":
+            command = command[1:]
+        if command:
+            argv += ["--", *command]
+        with open(log_path, "x", opener=lambda path, flags: os.open(path, flags, 0o600)) as log:
+            process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log,
+                                       stderr=log, start_new_session=True)
+        deadline = time.monotonic() + 20
+        window = None
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise DisplayError(f"Kilix exited before its window appeared; see {log_path}")
+            clients = root.get_full_property(clients_atom, Xatom.WINDOW)
+            for window_id in (() if clients is None else clients.value):
+                candidate = connection.create_resource_object("window", int(window_id))
+                try:
+                    if token in (candidate.get_wm_class() or ()):
+                        window = candidate
+                        break
+                except error.BadWindow:
+                    continue
+            if window is not None:
+                break
+            time.sleep(.05)
+        if window is None:
+            raise DisplayError(f"Kilix did not create a managed window; see {log_path}")
+        # The monitor could have been unplugged while the application started.
+        if not matches(snapshot(current), backend.query()):
+            raise DisplayError("Display layout changed during launch; try again")
+
+        def send(kind, values):
+            root.send_event(ClientMessage(window=window, client_type=connection.intern_atom(kind),
+                            data=(32, values)), event_mask=X.SubstructureRedirectMask | X.SubstructureNotifyMask)
+            connection.flush()
+
+        # First move an ordinary window wholly onto the requested output. Only
+        # then maximize: maximizing on the primary output and moving afterwards
+        # lets Openbox keep the original monitor's geometry.
+        send("_NET_MOVERESIZE_WINDOW", [1 | (15 << 8) | (2 << 12),
+             output["x"] + 16, output["y"] + 16, max(64, width - 32), max(64, height - 32)])
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            connection.sync()
+            position = root.translate_coords(window, 0, 0)
+            if abs(position.x - output["x"] - 16) <= 2 and abs(position.y - output["y"] - 16) <= 2:
+                break
+            time.sleep(.05)
+        else:
+            raise DisplayError("Window manager did not move the new window to the requested output")
+        send("_NET_WM_STATE", [1, connection.intern_atom("_NET_WM_STATE_MAXIMIZED_HORZ"),
+             connection.intern_atom("_NET_WM_STATE_MAXIMIZED_VERT"), 2, 0])
+        maximized = {connection.intern_atom("_NET_WM_STATE_MAXIMIZED_HORZ"),
+                     connection.intern_atom("_NET_WM_STATE_MAXIMIZED_VERT")}
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            connection.sync()
+            position = root.translate_coords(window, 0, 0)
+            geometry = window.get_geometry()
+            flags = window.get_full_property(connection.intern_atom("_NET_WM_STATE"), Xatom.ATOM)
+            if (flags is not None and maximized.issubset(set(flags.value)) and
+                    output["x"] <= position.x < output["x"] + width and
+                    output["y"] <= position.y < output["y"] + height and
+                    position.x + geometry.width <= output["x"] + width + 2 and
+                    position.y + geometry.height <= output["y"] + height + 2):
+                break
+            time.sleep(.05)
+        else:
+            raise DisplayError("Window manager did not maximize the new window on the requested output")
+        ready = True
+        print(json.dumps({"output": output_name, "window": window.id, "pid": process.pid,
+                          "log": str(log_path)}))
+    finally:
+        if process is not None and not ready and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        connection.close()
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Manage Pleb X11 monitors (RC5)")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="print detected outputs and available modes as JSON")
     sub.add_parser("snapshot", help="print an editable layout as JSON")
+    sub.add_parser("save-current", help="remember the active layout without changing outputs")
+    p = sub.add_parser("launch", help="open a separate Kilix window on an enabled output")
+    p.add_argument("output", help="exact connector name, such as DP-1")
+    p.add_argument("application", nargs=argparse.REMAINDER, help="optional command after --")
     sub.add_parser("configure", help="choose a layout and preview it with timed rollback")
     sub.add_parser("gui", help="open the graphical arranger inside a Kilix tab")
     p = sub.add_parser("preview", help="preview a layout JSON file; save only on confirmation")
@@ -635,6 +761,12 @@ def main(argv=None):
             print(json.dumps(current if args.command == "list" else snapshot(current), indent=2))
             return 0
         config, state = paths()
+        if args.command == "save-current":
+            save_current(backend, config, state)
+            return 0
+        if args.command == "launch":
+            launch(args.output, args.application, backend, state)
+            return 0
         if args.command == "gui":
             os.execvp("kilix", ["kilix", "run", "--size", "1100x740", "python3",
                       str(Path(__file__).with_name("displays_gui.py")),

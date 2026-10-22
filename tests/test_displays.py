@@ -87,6 +87,34 @@ class DisplaysTests(unittest.TestCase):
         self.assertTrue(all(o["safe"] for o in outputs))
         d.validate(self.target, self.backend.query())
 
+    def test_save_current_never_applies_a_layout(self):
+        d.save_current(self.backend, self.config, self.state)
+        self.assertEqual(self.backend.applied, [])
+        saved = json.loads(next(self.config.glob("*.json")).read_text())
+        self.assertEqual(saved, self.before)
+
+    def test_save_current_refuses_missing_identity_or_racing_layout(self):
+        self.backend.state["outputs"][0]["identity"] = d.hashlib.sha256(b"").hexdigest()
+        with self.assertRaisesRegex(d.DisplayError, "identities"):
+            d.save_current(self.backend, self.config, self.state)
+        self.assertEqual(list(self.config.glob("*.json")), [])
+        self.backend = Backend()
+        before = self.backend.query()
+        after = copy.deepcopy(before)
+        after["outputs"][0]["rate"] = "74.97"
+        with mock.patch.object(self.backend, "query", side_effect=[before, after]), \
+                self.assertRaisesRegex(d.DisplayError, "changed"):
+            d.save_current(self.backend, self.config, self.state)
+        self.assertEqual(list(self.config.glob("*.json")), [])
+
+    def test_launch_refuses_disabled_or_unknown_output_before_spawning(self):
+        self.backend.state["outputs"][1]["enabled"] = False
+        for name in ("HDMI-1", "missing"):
+            with mock.patch.object(d.subprocess, "Popen") as spawn, \
+                    self.assertRaisesRegex(d.DisplayError, "enabled"):
+                d.launch(name, ["--", "kilix", "nvr", "view"], self.backend, self.state)
+            spawn.assert_not_called()
+
     def test_refuses_all_off_unsupported_modes_and_oversized_framebuffer(self):
         mutations = (
             lambda x: [o.update(enabled=False, primary=False) for o in x["outputs"]],
