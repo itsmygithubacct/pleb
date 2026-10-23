@@ -66,6 +66,57 @@ class Backend:
 
 
 class DisplaysTests(unittest.TestCase):
+    def test_launch_places_only_the_new_window_and_preserves_command_arguments(self):
+        window = mock.Mock(id=77)
+        window.get_wm_class.return_value = ('pleb-display-fixture',)
+        window.get_geometry.return_value = types.SimpleNamespace(width=1920, height=1080)
+        window.get_full_property.return_value = types.SimpleNamespace(value=[4, 5])
+        root = mock.Mock()
+        root.get_full_property.side_effect = [types.SimpleNamespace(value=[1]),
+                                             types.SimpleNamespace(value=[77])]
+        root.translate_coords.side_effect = [types.SimpleNamespace(x=1936, y=16),
+                                            types.SimpleNamespace(x=1920, y=0)]
+        connection = mock.Mock()
+        connection.screen.return_value.root = root
+        connection.create_resource_object.return_value = window
+        atoms = {'_NET_WM_STATE_MAXIMIZED_HORZ': 4, '_NET_WM_STATE_MAXIMIZED_VERT': 5}
+        connection.intern_atom.side_effect = lambda name: atoms.get(name, 1)
+        process = mock.Mock(pid=12345)
+        process.poll.return_value = None
+        with mock.patch('Xlib.display.Display', return_value=connection), \
+                mock.patch('Xlib.protocol.event.ClientMessage', side_effect=lambda **kw: kw), \
+                mock.patch.object(d.uuid, 'uuid4', return_value=types.SimpleNamespace(hex='fixture')), \
+                mock.patch.object(d.subprocess, 'Popen', return_value=process) as spawn:
+            d.launch('HDMI-1', ['--', 'program', 'a b', ';literal'], self.backend, self.state)
+        self.assertEqual(spawn.call_args.args[0][-4:], ['--', 'program', 'a b', ';literal'])
+        self.assertTrue(spawn.call_args.kwargs['start_new_session'])
+        events = [call.args[0] for call in root.send_event.call_args_list]
+        self.assertEqual(len(events), 2)
+        self.assertTrue(all(event['window'] is window for event in events))
+        self.assertEqual(events[0]['data'][1][1:3], [1936, 16])
+        self.assertEqual((self.state / 'pleb-display-fixture.log').stat().st_mode & 0o777, 0o600)
+        process.terminate.assert_not_called()
+        connection.close.assert_called_once()
+
+    def test_launch_failure_stops_its_new_process_and_retains_log(self):
+        root = mock.Mock()
+        root.get_full_property.return_value = types.SimpleNamespace(value=[1])
+        connection = mock.Mock()
+        connection.screen.return_value.root = root
+        process = mock.Mock()
+        process.poll.return_value = None
+        process.wait.side_effect = [d.subprocess.TimeoutExpired('fixture', 3), 0]
+        with mock.patch('Xlib.display.Display', return_value=connection), \
+                mock.patch.object(d.uuid, 'uuid4', return_value=types.SimpleNamespace(hex='fixture')), \
+                mock.patch.object(d.time, 'monotonic', side_effect=[0, 21]), \
+                mock.patch.object(d.subprocess, 'Popen', return_value=process), \
+                self.assertRaisesRegex(d.DisplayError, 'did not create a managed window'):
+            d.launch('HDMI-1', [], self.backend, self.state)
+        process.terminate.assert_called_once()
+        process.kill.assert_called_once()
+        self.assertTrue((self.state / 'pleb-display-fixture.log').exists())
+        connection.close.assert_called_once()
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -515,7 +566,7 @@ class DisplaysTests(unittest.TestCase):
         with mock.patch.dict(sys.modules, {"Xlib": types.ModuleType("Xlib"), "Xlib.display": module}), \
                 mock.patch.object(d, "process_identity", side_effect=["start", "start", "start", "reused"]), \
                 mock.patch.object(d.time, "sleep"), \
-                mock.patch.object(d, "restore", side_effect=[d.DisplayError("Another display operation is running"), None]) as restore:
+                mock.patch.object(d, "restore", side_effect=[d.RetryableDisplayError("Another display operation is running"), None]) as restore:
             d.watch(123, self.backend, self.config, self.state)
         self.assertEqual(restore.call_count, 2)
         connection.close.assert_called_once()

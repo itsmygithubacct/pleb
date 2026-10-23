@@ -611,7 +611,7 @@ def watch(parent_pid, backend, config, state):
 
 def save_current(backend, config, state):
     """Remember the already-active layout without changing any output."""
-    with locked(state):
+    with locked(state, getattr(backend, "env", {}).get("DISPLAY")):
         current = backend.query()
         layout = validate(snapshot(current), current)
         if any(o["identity"] == hashlib.sha256(b"").hexdigest() for o in current["outputs"]):
