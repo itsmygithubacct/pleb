@@ -466,6 +466,12 @@ no launcher or screenshot keys, and no rule pinning kilix `above` anything. The
 profile lives at `share/openbox/rc.xml` and installs to
 `/usr/local/share/pleb/openbox/rc.xml`.
 
+Window decorations use Openbox's packaged dark Nightmare-02 theme. Notification
+popups use xfce4-notifyd's dark Smoke theme. At login, Pleb selects Smoke for
+fresh notification settings and replaces the older `Default` setting; other
+explicit notification theme choices are preserved. These defaults also apply
+after an upgrade and the next Pleb login.
+
 If Openbox is unavailable, `PLEB_WM=auto` (the default) falls back to the older
 no-WM path: `pleb-session` sizes the kitty window to the whole screen in pixels
 — a borderless window at `0,0` that fills the display. Verified: on a 1280×800

@@ -552,6 +552,24 @@ if command -v dbus-update-activation-environment >/dev/null 2>&1; then
         XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP 2>/dev/null || true
 fi
 
+# --- notification appearance ------------------------------------------------
+# Smoke ships with xfce4-notifyd. Seed fresh sessions and migrate its old light
+# default on upgrade; keep an explicitly selected alternative. Configure through
+# xfconf before notification activation, so its cached settings stay coherent.
+if [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] \
+        && command -v xfconf-query >/dev/null 2>&1 \
+        && [ -r /usr/share/themes/Smoke/xfce-notify-4.0/gtk.css ]; then
+    _pleb_notify_theme="$(xfconf-query --channel xfce4-notifyd --property /theme 2>/dev/null)" \
+        || _pleb_notify_theme=""
+    case "$_pleb_notify_theme" in
+        ""|Default)
+            xfconf-query --channel xfce4-notifyd --property /theme \
+                --create --type string --set Smoke \
+                || echo "pleb-session: could not initialize dark notification theme" ;;
+    esac
+    unset _pleb_notify_theme
+fi
+
 # --- clipboard ownership -----------------------------------------------------
 # X has no clipboard *store*. A selection is owned by a live client and its
 # content is transferred on demand, so when the owning client exits the

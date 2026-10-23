@@ -55,7 +55,7 @@ class OpenboxProfileTests(unittest.TestCase):
         self.assertEqual(self.tree.findtext(".//o:placement/o:monitor", None, NS), "Primary")
 
     def test_packaged_theme(self):
-        self.assertEqual(self.tree.findtext(".//o:theme/o:name", None, NS), "Clearlooks")
+        self.assertEqual(self.tree.findtext(".//o:theme/o:name", None, NS), "Nightmare-02")
 
     def test_alt_tab_cycles_windows_in_both_directions(self):
         for key, action in (("A-Tab", "NextWindow"), ("A-S-Tab", "PreviousWindow")):
