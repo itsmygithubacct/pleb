@@ -671,9 +671,21 @@ class Delivery(unittest.TestCase):
         env = dict(os.environ, PLEB_ROOT=str(ROOT), FIXTURE_ROOT=str(self.root))
         for key in ("XSESSION_DST", "SESSION_BIN_DST", "PLEB_RECOVERY_DOC_DST", "OPENBOX_CONFIG_DST",
                     "PLEB_DISPLAYS_DST", "PLEB_LOCK_DST", "LID_POLICY_DST", "KILIX_LINK",
-                    "KILIX_SETTINGS_LINK"):
+                    "KILIX_SETTINGS_LINK", "KILIX_TEMPS_LINK", "TMUX_TUI_LINK",
+                    "TMUX_CLI_LINK", "KILIX_VOICE_TTS_LINK", "KILIX_VOICE_STT_LINK",
+                    "PLEB_LINK", "AUTOLOGIN_CONF"):
             env[key] = str(self.root / key)
-        script = 'set -eu\nsource "$PLEB_ROOT/lib/common.sh"\nsource "$FIXTURE_ROOT/install-fixture.sh"\nrun_root() { "$@"; }\ndo_uninstall\n'
+        script = '''set -eu
+source "$PLEB_ROOT/lib/common.sh"
+source "$FIXTURE_ROOT/install-fixture.sh"
+run_root() {
+ case "${!#}" in
+  "$FIXTURE_ROOT"/*) "$@";;
+  *) echo "non-fixture destination refused" >&2; return 1;;
+ esac
+}
+do_uninstall
+'''
         result = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((dest / "screensaver.py").exists())

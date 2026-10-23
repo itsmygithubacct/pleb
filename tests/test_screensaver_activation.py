@@ -63,7 +63,12 @@ GLib.MainLoop().run()
 
 class Activation(base.Screensaver):
     def setUp(self):
-        self.assertEqual(ctypes.CDLL(None).prctl(36, 1, 0, 0, 0), 0)
+        libc = ctypes.CDLL(None)
+        previous = ctypes.c_int()
+        self.assertEqual(libc.prctl(37, ctypes.byref(previous), 0, 0, 0), 0)
+        self.assertEqual(libc.prctl(36, 1, 0, 0, 0), 0)
+        self.addCleanup(lambda: self.assertEqual(
+            libc.prctl(36, previous.value, 0, 0, 0), 0))
         self.activated_pids = []
         self.activation_number = 0
         super().setUp()
@@ -85,7 +90,16 @@ class Activation(base.Screensaver):
             '<servicedir>' + str(directory) + '</servicedir><policy context="default">'
             '<allow send_destination="*"/><allow receive_sender="*"/><allow own="*"/></policy></busconfig>')
         saved = self.env
-        self.env = dict(os.environ)
+        # Activation must acquire its login context from the explicit import,
+        # even when this test runs inside an existing graphical login.
+        self.env = {key: value for key, value in os.environ.items()
+                    if key not in ("XDG_SESSION_ID", "XDG_SESSION_DESKTOP",
+                                   "XDG_CURRENT_DESKTOP", "DISPLAY", "XAUTHORITY")
+                    and not key.startswith(("PLEB_", "KILIX", "KITTY_",
+                                            "GPU_TERMINAL_", "BASH_FUNC_"))}
+        for key in ("HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
+                    "XDG_STATE_HOME", "XDG_RUNTIME_DIR"):
+            self.env[key] = saved[key]
         self.activation_daemon = self.spawn(["dbus-daemon", "--nofork", "--print-address", "--config-file=" + str(config)],
                                              stdout=subprocess.PIPE)
         self.assertTrue(select.select([self.activation_daemon.stdout], [], [], 5)[0])
