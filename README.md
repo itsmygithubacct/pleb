@@ -26,6 +26,19 @@ launchers additionally need process-namespace containment.
 log out ──▶ LightDM greeter ──▶ pick "Pleb" ──▶ screen-filling Kilix
 ```
 
+## 0.2.2 integration status
+
+This session is selected by the Plebian-OS 0.2.2 development manifest. The
+coordinated source includes desktop services, display controls, frontend
+recovery and owned-process cleanup. Component checks do not establish final
+installation, upgrade, rollback or physical desktop acceptance.
+
+On a managed Plebian-OS installation, use its coordinated update tools and
+[upgrade policy](https://github.com/itsmygithubacct/plebian-os/blob/main/UPGRADING.md).
+Release pins live in `/etc/pleb/closure.env`; operator session choices remain
+in `/etc/pleb/session.env`. The selected 0.2.2 binary artifacts target AMD64;
+standalone engine support for ARM64 does not qualify the complete OS release.
+
 ## Watch the episode
 
 https://github.com/user-attachments/assets/c7fb031d-92be-4683-9730-106e65f71a70
@@ -37,7 +50,7 @@ stack series (1920×1080, 2m46s, 9.3 MB; published as a
 small). The [full series](https://github.com/itsmygithubacct/plebian-os#watch-the-series) (31m22s)
 lives on `plebian-os` and plays at [plebian-os.com](https://plebian-os.com/#watch).
 
-## RC5: desktop services
+## Desktop services
 
 Pleb supplies a consent-based X11 Screenshot and ScreenCast backend for
 `xdg-desktop-portal`. Every capture asks the user to select a display or window;
@@ -136,9 +149,9 @@ session bus. `--native` opens the control on the current display. IBus is the
 default input method; `PLEB_INPUT_METHOD=auto` preserves a different selected
 input framework, and `off` leaves input-method startup to the operator.
 Orca's presence does not establish screen-reader support for the custom desktop
-widgets; that integration and the hardware acceptance workflow remain RC5 work.
+widgets; that integration and hardware acceptance remain open.
 
-## RC5: monitor layouts
+## Monitor layouts
 
 Pleb owns physical display configuration; **Kilix Settings → Tools → Displays**
 opens `pleb displays gui`. The graphical arranger runs inside a Kilix app tab,
@@ -278,14 +291,14 @@ name is genuinely free, and never replaces or shadows anything.
 The PDF Viewer is installed here so its catalog-pinned launcher and native
 Poppler/Cairo renderer are ready before first use. If a standalone machine
 lacks the development files, the install retains the launcher's Evince
-fallback and reports that the native core was skipped. Plebian-OS 0.1.9 ships
+fallback and reports that the native core was skipped. Plebian-OS supplies
 both Evince and the native build prerequisites; the viewer always retains its
 complete CPU path when GPU presentation is unavailable.
 
 PDF Conversion follows the same catalog pinning contract but installs on first
 use from `kilix pdf` or the desktop menu. Standalone `pleb install` includes
 Debian's `python3-venv`, so its hash-locked Python 3.11 runtime does not depend
-on `uv`. Plebian-OS 0.1.9 separately installs an exact, checksum-verified `uv`
+on `uv`. Plebian-OS separately installs an exact, checksum-verified `uv`
 release as system tooling.
 
 The install also selects Kilix's immutable voice closure. The standalone
@@ -295,7 +308,7 @@ without the speech library or acoustic model. Setting
 closure; a failed full install returns nonzero and never silently falls back to
 read-aloud-only.
 
-The pinned 0.1.9 Voice runtime owns the `kilix.speech.models/v1` catalog.
+The pinned Voice runtime owns the `kilix.speech.models/v1` catalog.
 `kilix stt --models --json` reports its choices, installed/default state, and
 explicit install-and-default argv without downloading. The CLI, dictation TUI,
 Kilix 95 Settings, built-in WM Settings, and terminal microphone button use that
