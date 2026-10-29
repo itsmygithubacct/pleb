@@ -48,7 +48,8 @@ class OpenboxProfileTests(unittest.TestCase):
         )
 
     def test_focus_and_placement_policy(self):
-        self.assertEqual(self.tree.findtext(".//o:focus/o:focusNew", None, NS), "yes")
+        # a window that maps mid-typing must not take the keyboard
+        self.assertEqual(self.tree.findtext(".//o:focus/o:focusNew", None, NS), "no")
         # click-to-focus, not focus-follows-mouse
         self.assertEqual(self.tree.findtext(".//o:focus/o:followMouse", None, NS), "no")
         self.assertEqual(self.tree.findtext(".//o:placement/o:policy", None, NS), "Smart")

@@ -461,6 +461,13 @@ client: a browser could be running, focused and permanently invisible. With
 Openbox you get `Alt-Tab`, `Alt-Shift-Tab`, decorations for ordinary native
 windows, `Alt-F4`, and a browser raised over Kilix.
 
+New windows open on top but do not take the keyboard: whatever you are typing
+keeps going to the window you were typing in, even when a background job, a
+notification or a browser started by a script maps a window mid-keystroke.
+Click a new window, or `Alt-Tab` to it, to type into it. An application that
+explicitly asks to be activated can still take focus; Kilix itself does not do
+that for a pane you are not using.
+
 Pleb's Openbox is deliberately minimal — one desktop, no root menu, no panel,
 no launcher or screenshot keys, and no rule pinning kilix `above` anything. The
 profile lives at `share/openbox/rc.xml` and installs to

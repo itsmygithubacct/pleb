@@ -15,7 +15,8 @@
   is deliberately reduced to the surface Pleb needs:
 
     - one desktop, and no way to switch desktops (keys or scroll wheel)
-    - focusNew, click-to-focus, click-to-raise
+    - new windows open on top without taking the keyboard; click-to-focus,
+      click-to-raise
     - Alt-Tab / Alt-Shift-Tab window cycling, ending in Focus + Raise + Unshade
     - Alt-F4 close; normal decorations and title-bar controls
     - no root-window menu or dock; Super-L / Ctrl-Alt-L lock the physical session
@@ -50,10 +51,13 @@
 </resistance>
 
 <focus>
-  <!-- Focus new windows as they appear: a browser launched from a Kilix shell
-       must come to the front rather than opening behind the screen-filling
-       terminal. -->
-  <focusNew>yes</focusNew>
+  <!-- Do not focus new windows as they appear. A window that maps while you
+       type (a background job, a notification, a browser started by a script)
+       would otherwise take the rest of what you are typing, a password
+       included. New windows still open on top of the screen-filling terminal,
+       so a browser launched from a Kilix shell is visible; click it to type
+       into it. -->
+  <focusNew>no</focusNew>
   <!-- Click to focus, not focus-follows-mouse. -->
   <followMouse>no</followMouse>
   <focusLast>yes</focusLast>
