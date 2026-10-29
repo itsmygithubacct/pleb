@@ -824,6 +824,17 @@ install_openbox_profile() {
         "$OPENBOX_CONFIG_SRC" "$OPENBOX_CONFIG_DST"
 }
 
+install_notification_theme() {
+    if [ ! -f "$NOTIFICATION_THEME_SRC" ] || [ -L "$NOTIFICATION_THEME_SRC" ]; then
+        die "missing or unsafe Pleb notification theme: $NOTIFICATION_THEME_SRC"
+    fi
+    case "$NOTIFICATION_THEME_DST" in
+        /*) ;;
+        *) die "NOTIFICATION_THEME_DST must be absolute: $NOTIFICATION_THEME_DST" ;;
+    esac
+    run_root install -D -m 0644 -- "$NOTIFICATION_THEME_SRC" "$NOTIFICATION_THEME_DST"
+}
+
 # do_install — ensure kilix is present, copy pleb-session to /usr/local/bin, and
 # drop the xsession entry so LightDM lists "Pleb" as a choosable session.
 install_capture_portal() {
@@ -952,6 +963,7 @@ do_install() {
     # profile is a hard session failure under PLEB_WM=openbox, and do_install
     # has no rollback, so ordering is the staging mechanism.
     install_openbox_profile
+    install_notification_theme
 
     log "installing session launcher -> $SESSION_BIN_DST"
     run_root install -D -m 0644 "$PLEB_ROOT/lib/displays.py" "$PLEB_DISPLAYS_DST"
@@ -1013,7 +1025,7 @@ do_install() {
 do_uninstall() {
     local removed=0
     for f in "$XSESSION_DST" "$SESSION_BIN_DST" "$PLEB_RECOVERY_DOC_DST" \
-            "$OPENBOX_CONFIG_DST" "$PLEB_DISPLAYS_DST" "$PLEB_LOCK_DST"; do
+            "$OPENBOX_CONFIG_DST" "$NOTIFICATION_THEME_DST" "$PLEB_DISPLAYS_DST" "$PLEB_LOCK_DST"; do
         if [ -e "$f" ] || [ -L "$f" ]; then
             log "removing $f"
             run_root rm -f "$f"
@@ -1056,6 +1068,18 @@ do_uninstall() {
                 && [ "$(stat -c '%u' "$d" 2>/dev/null)" = 0 ] \
                 && [ -z "$(ls -A -- "$d" 2>/dev/null)" ] || continue
             log "removing empty $d"
+            if run_root rmdir -- "$d"; then
+                removed=1
+            fi
+        done
+    fi
+    # Keep packaged Smoke files and any other local theme content. Removing the
+    # local override lets the unchanged Smoke setting resolve to the package.
+    if [ "$NOTIFICATION_THEME_DST" = /usr/local/share/themes/Smoke/xfce-notify-4.0/gtk.css ]; then
+        for d in /usr/local/share/themes/Smoke/xfce-notify-4.0 /usr/local/share/themes/Smoke; do
+            [ -d "$d" ] && [ ! -L "$d" ] \
+                && [ "$(stat -c '%u' "$d" 2>/dev/null)" = 0 ] \
+                && [ -z "$(ls -A -- "$d" 2>/dev/null)" ] || continue
             if run_root rmdir -- "$d"; then
                 removed=1
             fi

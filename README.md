@@ -474,8 +474,10 @@ profile lives at `share/openbox/rc.xml` and installs to
 `/usr/local/share/pleb/openbox/rc.xml`.
 
 Window decorations use Openbox's packaged dark Nightmare-02 theme. Notification
-popups use xfce4-notifyd's dark Smoke theme. At login, Pleb selects Smoke for
-fresh notification settings and replaces the older `Default` setting; other
+popups use xfce4-notifyd's dark Smoke theme with Tango blue action labels. The
+installed override at `/usr/local/share/themes/Smoke/xfce-notify-4.0/gtk.css`
+inherits the packaged theme without modifying it. At login, Pleb selects Smoke
+for fresh notification settings and replaces the older `Default` setting; other
 explicit notification theme choices are preserved. These defaults also apply
 after an upgrade and the next Pleb login.
 

@@ -1,0 +1,8 @@
+/* Keep the packaged Smoke appearance, with Tango blue action labels. */
+@import url("/usr/share/themes/Smoke/xfce-notify-4.0/gtk.css");
+
+#XfceNotifyWindow button,
+#XfceNotifyWindow button label {
+    color: #729fcf;
+    text-shadow: none;
+}

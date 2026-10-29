@@ -213,6 +213,7 @@ PLEB_BIN_SRC="$PLEB_ROOT/bin/pleb-session"
 PLEB_DESKTOP_IN="$PLEB_ROOT/share/pleb.desktop.in"
 PLEB_RECOVERY_DOC_SRC="$PLEB_ROOT/docs/RECOVERY.md"
 OPENBOX_CONFIG_SRC="$PLEB_ROOT/share/openbox/rc.xml"
+NOTIFICATION_THEME_SRC="$PLEB_ROOT/share/notifications/gtk.css"
 
 # install destinations (system-wide, so LightDM/other users can see them)
 SESSION_BIN_DST="${SESSION_BIN_DST:-/usr/local/bin/pleb-session}"
@@ -279,6 +280,7 @@ PLEB_RECOVERY_DOC_DST="${PLEB_RECOVERY_DOC_DST:-/usr/local/share/doc/pleb/RECOVE
 # is a sync pair with PLEB_OPENBOX_CONFIG in bin/pleb-session: the launcher is
 # self-contained and cannot source this file, so the two literals must match.
 OPENBOX_CONFIG_DST="${OPENBOX_CONFIG_DST:-/usr/local/share/pleb/openbox/rc.xml}"
+NOTIFICATION_THEME_DST="${NOTIFICATION_THEME_DST:-/usr/local/share/themes/Smoke/xfce-notify-4.0/gtk.css}"
 
 # pleb itself. `pleb update` moves this checkout like any other component, so a
 # release that bumps Pleb reaches an installed machine through the same command
