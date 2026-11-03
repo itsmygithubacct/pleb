@@ -26,12 +26,18 @@ launchers additionally need process-namespace containment.
 log out ──▶ LightDM greeter ──▶ pick "Pleb" ──▶ screen-filling Kilix
 ```
 
-## 0.2.2 integration status
+## Release 0.2.2 — Linux
 
-This session is selected by the Plebian-OS 0.2.2 development manifest. The
-coordinated source includes desktop services, display controls, frontend
-recovery and owned-process cleanup. Component checks do not establish final
-installation, upgrade, rollback or physical desktop acceptance.
+Pleb is selected by the Plebian-OS 0.2.2 Linux release published November 3,
+2026. Its `v0.2.2` tag identifies the released source; this branch can contain
+later development. The coordinated source includes desktop services, display
+controls, frontend recovery and owned-process cleanup.
+
+Linux installation and lifecycle qualification covers QEMU/KVM BIOS and EFI
+virtual machines. Bare-metal USB installation and physical GPU operation were
+not qualified. Windows remains at `windows-v0.2.2-preview.4`; ARM64 is not a
+supported OS release target. See the [published release notes](https://github.com/itsmygithubacct/plebian-os/releases/tag/v0.2.2)
+for known issues and deferred feature qualification.
 
 On a managed Plebian-OS installation, use its coordinated update tools and
 [upgrade policy](https://github.com/itsmygithubacct/plebian-os/blob/main/UPGRADING.md).
@@ -582,8 +588,8 @@ root-owned or is writable by group/other users.
 ```sh
 pleb update              # revalidate the selected closure; never drift to a newer release
 pleb update --show       # print every selected release value and the file that supplied it
-pleb update --to 0.2.1 --dry-run # validate and report the exact published target; write no installed state
-pleb update --to 0.2.1   # select and apply one named, supported release hop
+pleb update --to 0.2.2 --dry-run # validate and report the exact published target; write no installed state
+pleb update --to 0.2.2   # select and apply one named, supported release hop
 pleb update --latest     # select the newest release only when that is an accepted adjacent hop
 pleb update --rollback   # restore the immediately previous closure and stack (one generation)
 pleb update -y           # ...and restart an active Pleb kiosk without asking
