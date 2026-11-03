@@ -25,7 +25,7 @@ _pleb_release_version() {
     if [ -z "$version" ]; then
         version="$(cat "$PLEB_ROOT/VERSION" 2>/dev/null || true)"
     fi
-    if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[1-9][0-9]*)?$ ]]; then
         printf '%s\n' "$version"
     else
         printf '%s\n' unknown
@@ -38,7 +38,7 @@ _pleb_remote_release_inventory() {
         | while IFS=$'\t' read -r object ref; do
             [[ "$object" =~ ^[0-9a-f]{40}$ ]] || continue
             version="${ref#refs/tags/v}"
-            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[1-9][0-9]*)?$ ]] || continue
             printf '%s\t%s\n' "$version" "$object"
         done \
         | sort -t $'\t' -k1,1V -u
@@ -78,7 +78,7 @@ _pleb_write_private_line() {
 _pleb_prepare_target_selector() {
     local target="$1" offline="$2" advertised="" local_object trust_file
     local selector_tmp selector_sha
-    [[ "$target" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+    [[ "$target" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[1-9][0-9]*)?$ ]] \
         || die "invalid release identifier: $target"
     _pleb_release_cache_prepare
     trust_file="$_PLEB_HOP_CACHE/tag-trust/v$target"
@@ -267,7 +267,7 @@ _pleb_load_active_selector() {
         IFS= read -r _PLEB_HOP_TAG_OBJECT
         IFS= read -r _PLEB_HOP_SELECTOR_SHA
     } <"$state"
-    [[ "$_PLEB_HOP_TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+    [[ "$_PLEB_HOP_TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[1-9][0-9]*)?$ ]] \
         && [[ "$_PLEB_HOP_COMMIT" =~ ^[0-9a-f]{40}$ ]] \
         && [[ "$_PLEB_HOP_TAG_OBJECT" =~ ^[0-9a-f]{40}$ ]] \
         && [[ "$_PLEB_HOP_SELECTOR_SHA" =~ ^[0-9a-f]{64}$ ]] \
@@ -460,7 +460,7 @@ pleb_release_hop() {
             --format='%(refname:short)%09%(objectname)' 'refs/tags/v*' \
             | while IFS=$'\t' read -r ref object; do
                 version="${ref#v}"
-                [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+                [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[1-9][0-9]*)?$ ]] || continue
                 printf '%s\t%s\n' "$version" "$object"
             done | sort -t $'\t' -k1,1V -u)"
         [ -n "$inventory" ] \

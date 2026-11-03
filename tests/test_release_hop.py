@@ -13,7 +13,7 @@ PLEB = ROOT / "bin/pleb"
 
 
 class ReleaseHopTests(unittest.TestCase):
-    def _release_remote(self, base: Path) -> Path:
+    def _release_remote(self, base: Path, versions=("0.2.0", "0.2.1", "0.2.2")) -> Path:
         remote = base / "plebian-os.git"
         work = base / "release-work"
         subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
@@ -42,7 +42,7 @@ class ReleaseHopTests(unittest.TestCase):
             }
             """
         )
-        for version in ("0.2.0", "0.2.1", "0.2.2"):
+        for version in versions:
             (work / "provision").mkdir(exist_ok=True)
             (work / "releases").mkdir(exist_ok=True)
             (work / "VERSION").write_text(version + "\n")
@@ -169,6 +169,22 @@ class ReleaseHopTests(unittest.TestCase):
                 result.stderr,
             )
             self.assertFalse((base / "selector.log").exists())
+
+    def test_maintenance_hop_uses_target_selector_and_preserves_dry_run(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            remote = self._release_remote(base, ('0.2.2', '0.2.2.1'))
+            env = self._env(base, remote)
+            closure = Path(env['PLEB_CLOSURE_USER'])
+            closure.write_text(closure.read_text().replace('0.2.0', '0.2.2'))
+            before = closure.read_bytes()
+            for arguments in (['--to', '0.2.2.1'], ['--latest']):
+                result = subprocess.run([str(PLEB), 'update', *arguments, '--dry-run'],
+                                        env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('0.2.2.1', (base / 'selector.log').read_text())
+                self.assertEqual(closure.read_bytes(), before)
+                self.assertFalse((base / 'updater.log').exists())
 
     def test_latest_refuses_a_skip_and_names_the_adjacent_hop(self):
         with tempfile.TemporaryDirectory() as td:

@@ -1,5 +1,11 @@
 # pleb — a kilix kiosk desktop session
 
+## 0.2.2.1 maintenance candidate
+
+Release updates recognize an optional positive maintenance number, such as `0.2.2.1`, and preserve adjacent-release and exact-tag checks.
+
+This source is a release candidate; installation-media and upgrade acceptance are pending.
+
 **Pleb** turns [`kilix`](https://github.com/itsmygithubacct/kilix) (a Tilix-styled
 [kitty](https://sw.kovidgoyal.net/kitty/) fork) into a **full desktop session**:
 you log in and get a single screen-filling Kilix as the entire "desktop" — its
