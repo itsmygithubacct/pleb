@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Run a reviewed release driver against an older installed Pleb checkout.
+# The installed checkout remains the participating PLEB_ROOT throughout.
+set -euo pipefail
+fail() { printf 'pleb-release-hop: %s\n' "$*" >&2; exit 1; }
+installed=""
+driver_ref=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --installed-pleb) [ "$#" -ge 2 ] && [ -z "$installed" ] || fail "one --installed-pleb is required"; installed="$2"; shift 2 ;;
+        --driver-ref) [ "$#" -ge 2 ] && [ -z "$driver_ref" ] || fail "one --driver-ref is required"; driver_ref="$2"; shift 2 ;;
+        --) shift; break ;;
+        --help) printf '%s\n' 'usage: pleb-release-hop --installed-pleb PATH --driver-ref SHA -- update --to VERSION --release-tag TAG [options]' 'Uses installed configuration and a separate exact reviewed driver; never replaces the old CLI before selection.'; exit 0 ;;
+        *) fail "unknown bootstrap option: $1" ;;
+    esac
+done
+[ "$EUID" -ne 0 ] || fail "run as the installed Pleb user, without sudo"
+[[ "$driver_ref" =~ ^[0-9a-f]{40}$ ]] || fail "--driver-ref must be a full commit SHA"
+[ -n "$installed" ] && [ -x "$installed" ] || fail "--installed-pleb must name an executable installed CLI"
+[ "${1:-}" = update ] && [ "$#" -gt 1 ] || fail "an explicit update operation is required"
+shift
+case "$1" in --to|--to=*|--rollback|--show|--help|-h) ;; *) fail "bootstrap requires a named release operation" ;; esac
+self="$(readlink -f -- "${BASH_SOURCE[0]}")"
+driver_root="$(cd "$(dirname "$self")/.." && pwd -P)"
+[ "$(git -C "$driver_root" rev-parse --verify HEAD)" = "$driver_ref" ] || fail "driver checkout is not the requested commit"
+git -C "$driver_root" ls-files --error-unmatch bin/pleb-release-hop lib/update.sh lib/closure.sh lib/preserve.sh >/dev/null \
+    || fail "driver modules must be committed"
+git -C "$driver_root" diff --quiet HEAD -- bin/pleb-release-hop lib/update.sh lib/closure.sh lib/preserve.sh \
+    || fail "driver modules differ from the requested commit"
+installed="$(readlink -f -- "$installed")"
+PLEB_ROOT="$(cd "$(dirname "$installed")/.." && pwd -P)"
+[ "$installed" = "$PLEB_ROOT/bin/pleb" ] && [ -f "$PLEB_ROOT/lib/common.sh" ] \
+    && [ -d "$PLEB_ROOT/.git" ] || fail "installed CLI is not a Pleb source checkout"
+[ "$driver_root" != "$PLEB_ROOT" ] || fail "bootstrap driver must be separate from the installed checkout"
+# Preserve the installed resolver, operator configuration, and checkout identity.
+# Only the release driver is taken from the explicit reviewed source commit.
+. "$PLEB_ROOT/lib/common.sh"
+. "$driver_root/lib/update.sh"
+do_update "$@"

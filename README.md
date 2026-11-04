@@ -598,6 +598,33 @@ pleb update --no-restart # update only; leave LightDM alone
 pleb update --preserve-only # verified snapshots only; move no checkout
 ```
 
+For an explicitly chosen release candidate, use
+`pleb update --to 0.2.3 --release-tag v0.2.3-rc1 --dry-run`, then repeat without
+`--dry-run` to apply it. The tag must match the numeric target exactly; only a
+stable tag or a positive numbered `-rcN` suffix is accepted. `--latest` remains
+stable-only. The exact tag identity is retained for rollback and interrupted
+operation recovery, and image updates revalidate the selected closure.
+
+Older installations, including 0.2.2, do not understand `--release-tag`. They
+need an explicit migration driver from a separately obtained, verified Pleb
+source commit containing `bin/pleb-release-hop`. Check the source provenance
+before executing it, and use the full commit SHA from that release's source
+instructions:
+
+```sh
+/path/to/verified-driver/bin/pleb-release-hop \
+  --installed-pleb "$(command -v pleb)" --driver-ref "$DRIVER_REF" -- \
+  update --to 0.2.3 --release-tag v0.2.3-rc1 --dry-run
+```
+
+The driver checks its exact source commit and module bytes, then uses the
+installed configuration and checkout paths. It does not replace the installed
+CLI before selection. Repeat without `--dry-run` only after reviewing the
+reported closure. This is a distinct legacy migration entrypoint; it does not
+make the old CLI support the new option. Qualification reports identify the
+bootstrap source commit separately. Both routes require the target tag and its
+component sources to have actually been published.
+
 `--to` and `--latest` execute the selector extracted from the target's exact
 published Plebian-OS tag. They never read closure bytes from a branch or from a
 working tree. Pleb records and checks the remote tag-object identity, validates

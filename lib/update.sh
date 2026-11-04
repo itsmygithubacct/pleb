@@ -1718,7 +1718,7 @@ _rebuild_kilix_fork() {
 do_update() {
     _UPDATE_YES=0
     _UPDATE_RESTART=ask
-    local preserve_only=0 hop_mode="" hop_target="" dry_run=0 offline=0
+    local preserve_only=0 hop_mode="" hop_target="" hop_tag="" dry_run=0 offline=0
     _PLEB_SELF_INITIAL_PRESERVE=""
     _PLEB_SELF_PRESERVATIONS=()
     _PLEB_SELF_MOVE_ACTIVE=0
@@ -1740,18 +1740,30 @@ do_update() {
             --latest|--show|--rollback)
                 [ -z "$hop_mode" ] || die "select only one of --to, --latest, --show, or --rollback"
                 hop_mode="${1#--}"; shift ;;
+            --release-tag)
+                [ "$#" -ge 2 ] && [ -z "$hop_tag" ] || die "--release-tag needs one tag"
+                [ -n "$2" ] || die "--release-tag cannot be empty"
+                hop_tag="$2"; shift 2 ;;
+            --release-tag=*)
+                [ -z "$hop_tag" ] || die "--release-tag may only appear once"
+                hop_tag="${1#--release-tag=}"; [ -n "$hop_tag" ] || die "--release-tag cannot be empty"; shift ;;
             --dry-run) dry_run=1; shift ;;
             --offline) offline=1; shift ;;
             -h|--help)
                 info "usage: pleb update [-y|--yes] [--no-restart|--restart] [--preserve-only]"
                 info "       pleb update --show"
                 info "       pleb update (--to X.Y.Z | --latest) [--dry-run] [--offline] [-y] [--no-restart|--restart]"
+                info "       pleb update --to X.Y.Z --release-tag vX.Y.Z-rcN [--dry-run] [--offline] [-y] [--no-restart|--restart]"
                 info "       pleb update --rollback [-y] [--no-restart|--restart]"
                 return 0 ;;
             *) die "unknown update option: $1" ;;
         esac
     done
 
+    if [ -n "$hop_tag" ]; then
+        [ "$hop_mode" = to ] || die "--release-tag requires --to"
+        _pleb_valid_release_tag "$hop_target" "$hop_tag" || die "--release-tag must match --to (stable or numbered RC)"
+    fi
     if [ "$hop_mode" = show ]; then
         [ "$dry_run" = 0 ] && [ "$offline" = 0 ] && [ "$preserve_only" = 0 ] \
             || die "--show cannot be combined with --dry-run, --offline, or --preserve-only"
@@ -1769,14 +1781,14 @@ do_update() {
         _require_managed_source_layout
         if [ "$dry_run" = 1 ]; then
             pleb_release_hop "$hop_mode" "$hop_target" "$dry_run" "$offline" \
-                "$_UPDATE_YES" "$_UPDATE_RESTART"
+                "$_UPDATE_YES" "$_UPDATE_RESTART" "$hop_tag"
             return 0
         fi
         _acquire_update_lock
         PLEB_UPDATE_LOCK_FD="$_UPDATE_LOCK_FD"
         export PLEB_UPDATE_LOCK_FD
         pleb_release_hop "$hop_mode" "$hop_target" "$dry_run" "$offline" \
-            "$_UPDATE_YES" "$_UPDATE_RESTART"
+            "$_UPDATE_YES" "$_UPDATE_RESTART" "$hop_tag"
         _release_update_lock
         trap - EXIT INT TERM
         return 0

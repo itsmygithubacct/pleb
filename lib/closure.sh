@@ -13,6 +13,7 @@ _PLEB_HOP_CACHE=""
 _PLEB_HOP_REPO=""
 _PLEB_HOP_SELECTOR=""
 _PLEB_HOP_TARGET=""
+_PLEB_HOP_TAG=""
 _PLEB_HOP_COMMIT=""
 _PLEB_HOP_TAG_OBJECT=""
 _PLEB_HOP_SELECTOR_SHA=""
@@ -30,6 +31,14 @@ _pleb_release_version() {
     else
         printf '%s\n' unknown
     fi
+}
+
+_pleb_valid_release_tag() {
+    local version="$1" tag="$2" suffix
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[1-9][0-9]*)?$ ]] || return 1
+    [ "$tag" = "v$version" ] && return 0
+    suffix="${tag#"v$version-rc"}"
+    [ "$suffix" != "$tag" ] && [[ "$suffix" =~ ^[1-9][0-9]*$ ]]
 }
 
 _pleb_remote_release_inventory() {
@@ -77,50 +86,51 @@ _pleb_write_private_line() {
 
 _pleb_prepare_target_selector() {
     local target="$1" offline="$2" advertised="" local_object trust_file
-    local selector_tmp selector_sha
+    local selector_tmp selector_sha tag="${3:-v$1}"
+    _pleb_valid_release_tag "$target" "$tag" || die "release tag does not match target: $tag"
     [[ "$target" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[1-9][0-9]*)?$ ]] \
         || die "invalid release identifier: $target"
     _pleb_release_cache_prepare
-    trust_file="$_PLEB_HOP_CACHE/tag-trust/v$target"
+    trust_file="$_PLEB_HOP_CACHE/tag-trust/$tag"
     if [ "$offline" = 1 ]; then
         [ -f "$trust_file" ] && [ ! -L "$trust_file" ] \
-            || die "release tag v$target has no recorded public tag-object identity; --offline cannot trust it"
+            || die "release tag $tag has no recorded public tag-object identity; --offline cannot trust it"
         advertised="$(cat "$trust_file")"
         [[ "$advertised" =~ ^[0-9a-f]{40}$ ]] \
-            || die "release tag v$target has an invalid recorded tag-object identity"
+            || die "release tag $tag has an invalid recorded tag-object identity"
     else
-        advertised="$(git ls-remote --refs "$PLEBIAN_OS_REPO" "refs/tags/v$target" \
+        advertised="$(git ls-remote --refs "$PLEBIAN_OS_REPO" "refs/tags/$tag" \
             2>/dev/null | awk 'NF == 2 {print $1}')"
         [[ "$advertised" =~ ^[0-9a-f]{40}$ ]] \
-            || die "could not resolve one published tag object for v$target"
-        log "fetching published Plebian-OS tag v$target into the private release cache"
+            || die "could not resolve one published tag object for $tag"
+        log "fetching published Plebian-OS tag $tag into the private release cache"
         git -C "$_PLEB_HOP_REPO" fetch --quiet --force --no-tags origin \
-            "refs/tags/v$target:refs/tags/v$target" \
-            || die "could not fetch published release tag v$target"
+            "refs/tags/$tag:refs/tags/$tag" \
+            || die "could not fetch published release tag $tag"
     fi
     local_object="$(git -C "$_PLEB_HOP_REPO" rev-parse --verify \
-        "refs/tags/v$target" 2>/dev/null || true)"
+        "refs/tags/$tag" 2>/dev/null || true)"
     [ "$local_object" = "$advertised" ] \
-        || die "release tag v$target object is $local_object, not trusted public object $advertised"
+        || die "release tag $tag object is $local_object, not trusted public object $advertised"
     _PLEB_HOP_COMMIT="$(git -C "$_PLEB_HOP_REPO" rev-parse --verify \
-        "refs/tags/v$target^{commit}" 2>/dev/null || true)"
+        "refs/tags/$tag^{commit}" 2>/dev/null || true)"
     [[ "$_PLEB_HOP_COMMIT" =~ ^[0-9a-f]{40}$ ]] \
-        || die "release tag v$target does not resolve to a commit"
+        || die "release tag $tag does not resolve to a commit"
     [ "$(git -C "$_PLEB_HOP_REPO" show "$_PLEB_HOP_COMMIT:VERSION" \
         2>/dev/null | tr -d '\n')" = "$target" ] \
-        || die "release tag v$target disagrees with its VERSION file"
+        || die "release tag $tag disagrees with its VERSION file"
     git -C "$_PLEB_HOP_REPO" cat-file -e \
         "$_PLEB_HOP_COMMIT:releases/$target.env" 2>/dev/null \
-        || die "release tag v$target has no releases/$target.env"
+        || die "release tag $tag has no releases/$target.env"
 
     _PLEB_HOP_SELECTOR="$_PLEB_HOP_CACHE/selectors/$_PLEB_HOP_COMMIT"
     selector_tmp="$(mktemp "$_PLEB_HOP_CACHE/selectors/.selector.XXXXXX")" \
         || die "could not stage the target release selector"
     git -C "$_PLEB_HOP_REPO" show \
         "$_PLEB_HOP_COMMIT:provision/plebian-os-select-closure.sh" >"$selector_tmp" \
-        || die "release tag v$target has no closure selector"
+        || die "release tag $tag has no closure selector"
     bash -n "$selector_tmp" \
-        || die "release tag v$target contains an invalid closure selector"
+        || die "release tag $tag contains an invalid closure selector"
     selector_sha="$(sha256sum "$selector_tmp" | awk '{print $1}')"
     if [ -f "$_PLEB_HOP_SELECTOR" ]; then
         [ ! -L "$_PLEB_HOP_SELECTOR" ] \
@@ -133,6 +143,7 @@ _pleb_prepare_target_selector() {
     fi
     [ "$offline" = 1 ] || _pleb_write_private_line "$trust_file" "$advertised"
     _PLEB_HOP_TARGET="$target"
+    _PLEB_HOP_TAG="$tag"
     _PLEB_HOP_TAG_OBJECT="$advertised"
     _PLEB_HOP_SELECTOR_SHA="$selector_sha"
     warn "release tags are unsigned; trusting tag object $advertised advertised by $PLEBIAN_OS_REPO"
@@ -191,6 +202,10 @@ _pleb_refuse_release_env_overrides() {
 
 _pleb_selector_env() {
     local selector="$1"; shift
+    local -a identity_args=()
+    if [ "${1:-}" = "$_PLEB_HOP_TARGET" ] && [ "$_PLEB_HOP_TAG" != "v$_PLEB_HOP_TARGET" ]; then
+        identity_args=(--release-tag "$_PLEB_HOP_TAG")
+    fi
     local mode session closure recovery selector_dst updater_dst
     if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
         mode=image
@@ -221,7 +236,7 @@ _pleb_selector_env() {
         "PLEBIAN_OS_KILIX_DIR=$KILIX_DIR" \
         "PLEBIAN_OS_KILIX95_DIR=$KILIX95_DIR" \
         "PLEBIAN_OS_TRUSTED_TAG_OBJECT_SHA=$_PLEB_HOP_TAG_OBJECT" \
-        bash "$selector" "$@"
+        bash "$selector" "$@" "${identity_args[@]}"
 }
 
 _pleb_active_state_dir() {
@@ -239,6 +254,7 @@ _pleb_record_active_selector() {
         printf '%s\n' "$_PLEB_HOP_COMMIT"
         printf '%s\n' "$_PLEB_HOP_TAG_OBJECT"
         printf '%s\n' "$_PLEB_HOP_SELECTOR_SHA"
+        printf '%s\n' "$_PLEB_HOP_TAG"
     } >"$tmp"
     chmod 0600 "$tmp"
     mv -fT -- "$tmp" "$state/active"
@@ -260,18 +276,22 @@ _pleb_load_active_selector() {
     [ -f "$state" ] && [ ! -L "$state" ] \
         || die "no selected release closure is available to roll back"
     line_count="$(wc -l <"$state")"
-    [ "$line_count" = 4 ] || die "release-hop active state is malformed"
+    { [ "$line_count" = 4 ] || [ "$line_count" = 5 ]; } || die "release-hop active state is malformed"
     {
         IFS= read -r _PLEB_HOP_TARGET
         IFS= read -r _PLEB_HOP_COMMIT
         IFS= read -r _PLEB_HOP_TAG_OBJECT
         IFS= read -r _PLEB_HOP_SELECTOR_SHA
+        _PLEB_HOP_TAG="v$_PLEB_HOP_TARGET"
+        if [ "$line_count" = 5 ]; then IFS= read -r _PLEB_HOP_TAG; fi
     } <"$state"
     [[ "$_PLEB_HOP_TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[1-9][0-9]*)?$ ]] \
         && [[ "$_PLEB_HOP_COMMIT" =~ ^[0-9a-f]{40}$ ]] \
         && [[ "$_PLEB_HOP_TAG_OBJECT" =~ ^[0-9a-f]{40}$ ]] \
         && [[ "$_PLEB_HOP_SELECTOR_SHA" =~ ^[0-9a-f]{64}$ ]] \
         || die "release-hop active state contains an invalid identity"
+    _pleb_valid_release_tag "$_PLEB_HOP_TARGET" "$_PLEB_HOP_TAG" \
+        || die "release-hop active tag does not match target"
     _pleb_release_cache_prepare
     _PLEB_HOP_SELECTOR="$_PLEB_HOP_CACHE/selectors/$_PLEB_HOP_COMMIT"
     [ -f "$_PLEB_HOP_SELECTOR" ] && [ ! -L "$_PLEB_HOP_SELECTOR" ] \
@@ -280,7 +300,7 @@ _pleb_load_active_selector() {
     [ "$actual" = "$_PLEB_HOP_SELECTOR_SHA" ] \
         || die "the cached selector for release $_PLEB_HOP_TARGET changed"
     [ "$(git -C "$_PLEB_HOP_REPO" rev-parse --verify \
-        "refs/tags/v$_PLEB_HOP_TARGET" 2>/dev/null || true)" = "$_PLEB_HOP_TAG_OBJECT" ] \
+        "refs/tags/$_PLEB_HOP_TAG" 2>/dev/null || true)" = "$_PLEB_HOP_TAG_OBJECT" ] \
         || die "the cached tag object for release $_PLEB_HOP_TARGET changed"
     _PLEB_HOP_PHASE="$(cat "$(_pleb_active_state_dir)/phase" 2>/dev/null || true)"
     case "$_PLEB_HOP_PHASE" in selecting|selected|rolling-back|complete) ;;
@@ -367,9 +387,9 @@ _pleb_apply_selected_stack() {
         local updater="${PLEBIAN_OS_UPDATER_DST:-/usr/local/bin/plebian-os-update}"
         [ -x "$updater" ] || die "target selector did not install a runnable updater at $updater"
         if [ "$restart" = yes ]; then
-            "$updater" --restart
+            "$updater" --revalidate-current --restart
         else
-            "$updater"
+            "$updater" --revalidate-current
         fi
     else
         local -a args=()
@@ -386,7 +406,7 @@ _pleb_restore_selected_stack() {
     local yes="$1"
     if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
         local updater="${PLEBIAN_OS_UPDATER_DST:-/usr/local/bin/plebian-os-update}"
-        [ -x "$updater" ] && "$updater"
+        [ -x "$updater" ] && "$updater" --revalidate-current
     else
         local -a args=(--no-restart)
         [ "$yes" = 1 ] && args+=(--yes)
@@ -409,7 +429,7 @@ pleb_release_show() {
 }
 
 pleb_release_hop() {
-    local mode="$1" requested="$2" dry_run="$3" offline="$4" yes="$5" restart="$6"
+    local mode="$1" requested="$2" dry_run="$3" offline="$4" yes="$5" restart="$6" requested_tag="${7:-}"
     local current inventory target latest selector_rc=0 apply_rc=0 recovered=0
     _pleb_refuse_release_env_overrides
     current="$(_pleb_release_version)"
@@ -463,12 +483,12 @@ pleb_release_hop() {
                 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[1-9][0-9]*)?$ ]] || continue
                 printf '%s\t%s\n' "$version" "$object"
             done | sort -t $'\t' -k1,1V -u)"
-        [ -n "$inventory" ] \
+        { [ -n "$inventory" ] || [ -n "$requested_tag" ]; } \
             || die "the private release cache contains no semantic tags; --offline cannot select a target"
     else
         inventory="$(_pleb_remote_release_inventory)" \
             || die "could not list published Plebian-OS releases"
-        [ -n "$inventory" ] || die "the Plebian-OS remote advertises no semantic release tags"
+        { [ -n "$inventory" ] || [ -n "$requested_tag" ]; } || die "the Plebian-OS remote advertises no semantic release tags"
     fi
     case "$mode" in
         to) target="$requested" ;;
@@ -483,7 +503,12 @@ pleb_release_hop() {
             ;;
         *) die "internal release-hop mode is invalid: $mode" ;;
     esac
-    _pleb_prepare_target_selector "$target" "$offline"
+    _pleb_prepare_target_selector "$target" "$offline" "${requested_tag:-v$target}"
+    if [ -n "$requested_tag" ]; then
+        # An explicitly resolved RC participates only in this adjacent-hop
+        # check. Stable inventory and --latest never gain prerelease entries.
+        inventory="$(printf '%s\n%s\t%s\n' "$inventory" "$target" "$_PLEB_HOP_TAG_OBJECT" | sort -t $'\t' -k1,1V -u)"
+    fi
     _pleb_enforce_adjacent_hop "$current" "$target" "$inventory"
     local -a selector_args=("$target" --source "$_PLEB_HOP_REPO")
     [ "$offline" = 1 ] && selector_args+=(--offline)
