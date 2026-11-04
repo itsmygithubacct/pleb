@@ -235,7 +235,14 @@ _pleb_stop_owned "$control:$expected" || exit 83
         self.script('i3lock', '#!/bin/sh\nexit 0\n')
         self.script('xfconf-query', '#!/bin/sh\nexit 0\n')
         for name in ('xss-lock', 'screensaver', 'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie'):
-            self.script(name, (self.bin / 'wm').read_text())
+            # Publish a complete registration record before logind can observe it.
+            body = (self.bin / 'wm').read_text().replace(
+                "Path(os.environ['FIXTURE_ROOT'],name+'.pid').write_text(str(os.getpid()))",
+                "record = Path(os.environ['FIXTURE_ROOT'],name+'.pid')\n"
+                "pending = record.with_suffix('.pending')\n"
+                "pending.write_text(str(os.getpid()))\n"
+                "pending.replace(record)")
+            self.script(name, body)
         # The installed ScreenSaver replaced xssproxy. Keep the session's
         # service launch/readiness/supervision path and supply its private
         # daemon stand-in at the two installed paths this fixture relocates.

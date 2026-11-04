@@ -673,7 +673,7 @@ class Delivery(unittest.TestCase):
                     "PLEB_DISPLAYS_DST", "PLEB_LOCK_DST", "LID_POLICY_DST", "KILIX_LINK",
                     "KILIX_SETTINGS_LINK", "KILIX_TEMPS_LINK", "TMUX_TUI_LINK",
                     "TMUX_CLI_LINK", "KILIX_VOICE_TTS_LINK", "KILIX_VOICE_STT_LINK",
-                    "PLEB_LINK", "AUTOLOGIN_CONF"):
+                    "PLEB_LINK", "AUTOLOGIN_CONF", "NOTIFICATION_THEME_DST"):
             env[key] = str(self.root / key)
         script = '''set -eu
 source "$PLEB_ROOT/lib/common.sh"
