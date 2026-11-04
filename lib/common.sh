@@ -34,6 +34,7 @@ fi
 if [[ ! ${PLEB_CLOSURE_USER+x} ]]; then
     PLEB_CLOSURE_USER="$(dirname "$PLEB_ENV_USER")/closure.env"
 fi
+export PLEB_ENV_USER
 
 _pleb_config_safe_to_source() {
     local cfg="$1" owner mode dir

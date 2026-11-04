@@ -12,6 +12,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import displays as core
+import screenlock_gui
 
 BG = "#101827"
 PANEL = "#192438"
@@ -40,7 +41,7 @@ class Arranger:
         self.channel = self.worker = None
         self.drag = None
         self.preview_deadline = None
-        root.title("Displays · RC5 preview")
+        root.title("Display Settings")
         root.geometry("1100x740")
         root.minsize(850, 680)
         root.configure(bg=BG)
@@ -64,7 +65,12 @@ class Arranger:
         root.option_add("*TCombobox*Listbox.background", PANEL)
         root.option_add("*TCombobox*Listbox.foreground", TEXT)
         root.option_add("*TCombobox*Listbox.selectBackground", "#395273")
-        outer = ttk.Frame(root, padding=26)
+        self.tabs = ttk.Notebook(root)
+        self.tabs.pack(fill="both", expand=True)
+        display_page = ttk.Frame(self.tabs)
+        self.tabs.add(display_page, text="Displays")
+        self.tabs.add(screenlock_gui.tk_page(self.tabs), text="Screen Lock")
+        outer = ttk.Frame(display_page, padding=26)
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(3, weight=1)
@@ -103,7 +109,7 @@ class Arranger:
         ttk.Label(outer, textvariable=self.status, style="Muted.TLabel", wraplength=1000).grid(row=5, column=0, sticky="w", pady=(0, 14))
         footer = ttk.Frame(outer)
         footer.grid(row=6, column=0, sticky="ew")
-        ttk.Label(footer, text="RC5 TEST BUILD  ·  X11", style="Muted.TLabel").pack(side="left")
+        ttk.Label(footer, text="X11", style="Muted.TLabel").pack(side="left")
         self.apply_button = ttk.Button(footer, text="Preview changes", style="Accent.TButton", command=self.apply)
         self.apply_button.pack(side="right")
         self.keep_button = ttk.Button(footer, text="Keep this layout", style="Accent.TButton", command=lambda: self.reply(b"confirm"))

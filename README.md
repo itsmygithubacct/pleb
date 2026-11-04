@@ -138,10 +138,32 @@ That setting persists in the user's Xfce configuration; outside a serviced Pleb
 session `pleb-lock` runs i3lock directly rather than asking a coordinator that
 is not there.
 
+Display Settings and Kilix Power Controls both include a **Screen Lock** page. It
+controls automatic locking on idle, display power-off and suspend/hibernate.
+Choose **Disabled** to turn these automatic locks off; manual lock commands
+remain available. Settings are per user and apply at the next login.
+**Follow session defaults** keeps the existing session policy and idle timeout.
+An explicit Enabled or Disabled choice also sets the power manager's sleep-lock
+policy on login. The idle timeout is in seconds; 0 disables just the idle timer.
+
+The same preferences are available in the terminal:
+
+```sh
+kilix tui screen-lock       # interactive settings
+kilix tui screen-lock --show
+kilix tui screen-lock --set off
+kilix tui screen-lock --set on --idle-seconds 600
+kilix tui screen-lock --set session  # follow the existing session defaults
+```
+
+`pleb screen-lock` offers the same TUI and options. Preferences are stored as
+`screen-lock.json` in the user's Pleb configuration directory, alongside
+`session.env`.
+
 Kilix Settings → Tools and Kilix 95's Control Panel expose the same controls:
 
 ```sh
-pleb devices power          # lid, battery, brightness and sleep policy
+pleb devices power          # Kilix Power Controls: lid, battery, display and sleep policy
 pleb devices bluetooth      # pairing and connections
 pleb devices storage        # mount, unmount and eject
 pleb devices printers       # physical printer setup and queues
@@ -521,6 +543,29 @@ from the installed XDG desktop catalogue. `KILIX_RUN_ALIASES=1` is the Pleb
 default. Set it to `0` for native Openbox windows, extend the catalogue with
 `KILIX_RUN_ALIAS_APPS="foo bar"`, or exempt commands with
 `KILIX_RUN_ALIAS_EXCLUDE_APPS="foo"`.
+
+At login Pleb prepends private command launchers to the session PATH, so scripts
+and non-interactive shells get the same tab routing as interactive terminals.
+This includes installed browsers, Evince, mpv, Kilix Amp, Cheese, GParted, XTerm,
+and graphical QEMU. The PDF viewer's absolute Evince fallback is pointed at
+the routed executable unless an explicit viewer override is set. Catalog GUI
+applications also route to tabs even when their executable path is absolute.
+Applications already inside a private Kilix display run
+there directly; help/version, headless browser, headless QEMU and terminal mpv
+modes retain their command-line behavior. Notifications, authentication agents
+and power daemons remain desktop services.
+
+Graphical QEMU `-daemonize` is converted to a foreground process owned by its
+new tab, with a message explaining the change. Closing the tab ends the VM.
+The launch command returns when the tab is created, not when the guest or its
+PID file is ready; scripts requiring guest readiness must check it separately.
+Headless QEMU retains its daemon flags.
+
+The launchers are created on login and retained for persistent broker shells.
+Newly installed applications enter the discovered catalogue on the next login.
+An absolute executable path bypasses PATH routing; use `kilix run /path/to/app`
+for such callers. Explicit native opt-outs remain supported. This policy does
+not move existing native windows into tabs.
 
 ### Choosing the window manager
 
