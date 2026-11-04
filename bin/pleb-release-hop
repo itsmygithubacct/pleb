@@ -23,10 +23,52 @@ case "$1" in --to|--to=*|--rollback|--show|--help|-h) ;; *) fail "bootstrap requ
 self="$(readlink -f -- "${BASH_SOURCE[0]}")"
 driver_root="$(cd "$(dirname "$self")/.." && pwd -P)"
 [ "$(git -C "$driver_root" rev-parse --verify HEAD)" = "$driver_ref" ] || fail "driver checkout is not the requested commit"
-git -C "$driver_root" ls-files --error-unmatch bin/pleb-release-hop lib/update.sh lib/closure.sh lib/preserve.sh >/dev/null \
-    || fail "driver modules must be committed"
-git -C "$driver_root" diff --quiet HEAD -- bin/pleb-release-hop lib/update.sh lib/closure.sh lib/preserve.sh \
-    || fail "driver modules differ from the requested commit"
+snapshot="$(mktemp -d "${TMPDIR:-/tmp}/pleb-hop-driver.XXXXXX")" || fail "cannot stage verified driver"
+trap 'rm -rf -- "$snapshot"' EXIT
+# Read Git blobs directly: index assume-unchanged/skip-worktree flags are not
+# evidence about current bytes. Execute only the verified private snapshot.
+python3 - "$driver_root" "$driver_ref" "$snapshot" <<'PYVERIFY' || fail "driver source verification failed"
+import os
+from pathlib import Path
+import stat
+import subprocess
+import sys
+root, ref, snapshot = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
+git = ['git', '--no-replace-objects', '-C', str(root)]
+for name in ('bin/pleb-release-hop', 'lib/update.sh', 'lib/closure.sh', 'lib/preserve.sh'):
+    record = subprocess.check_output(git + ['ls-tree', '-z', ref, '--', name], timeout=10)
+    fields = record.rstrip(b'\0').split(b'\t')
+    if len(fields) != 2 or fields[1].decode() != name:
+        raise SystemExit('driver module missing from requested tree: ' + name)
+    mode, kind, oid = fields[0].decode().split()
+    if mode not in ('100644', '100755') or kind != 'blob':
+        raise SystemExit('driver module is not a regular Git blob: ' + name)
+    size = int(subprocess.check_output(git + ['cat-file', '-s', oid], timeout=10))
+    if size > 16 * 1024 * 1024:
+        raise SystemExit('driver module exceeds size bound')
+    expected = subprocess.check_output(git + ['cat-file', 'blob', oid], timeout=10)
+    parent = root / Path(name).parent
+    if not stat.S_ISDIR(parent.lstat().st_mode):
+        raise SystemExit('driver module parent must be a real directory')
+    fd = os.open(root / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size != size:
+            raise SystemExit('driver module is not the expected regular file: ' + name)
+        if bool(info.st_mode & 0o111) != (mode == '100755'):
+            raise SystemExit('driver module executable mode differs: ' + name)
+        with os.fdopen(fd, 'rb', closefd=False) as stream:
+            actual = stream.read(size + 1)
+        if actual != expected:
+            raise SystemExit('driver modules differ from the requested commit: ' + name)
+    finally:
+        os.close(fd)
+    destination = snapshot / name
+    destination.parent.mkdir(mode=0o700, exist_ok=True)
+    with destination.open('xb') as stream:
+        stream.write(expected)
+    destination.chmod(0o755 if mode == '100755' else 0o644)
+PYVERIFY
 installed="$(readlink -f -- "$installed")"
 PLEB_ROOT="$(cd "$(dirname "$installed")/.." && pwd -P)"
 [ "$installed" = "$PLEB_ROOT/bin/pleb" ] && [ -f "$PLEB_ROOT/lib/common.sh" ] \
@@ -34,6 +76,8 @@ PLEB_ROOT="$(cd "$(dirname "$installed")/.." && pwd -P)"
 [ "$driver_root" != "$PLEB_ROOT" ] || fail "bootstrap driver must be separate from the installed checkout"
 # Preserve the installed resolver, operator configuration, and checkout identity.
 # Only the release driver is taken from the explicit reviewed source commit.
-. "$PLEB_ROOT/lib/common.sh"
-. "$driver_root/lib/update.sh"
-do_update "$@"
+(
+    . "$PLEB_ROOT/lib/common.sh"
+    . "$snapshot/lib/update.sh"
+    do_update "$@"
+)

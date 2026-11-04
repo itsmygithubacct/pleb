@@ -617,8 +617,9 @@ instructions:
   update --to 0.2.3 --release-tag v0.2.3-rc1 --dry-run
 ```
 
-The driver checks its exact source commit and module bytes, then uses the
-installed configuration and checkout paths. It does not replace the installed
+The driver compares actual regular-file module bytes and executable modes
+with the requested Git blobs, independently of index flags, and runs a private
+verified snapshot using the installed configuration and checkout paths. It does not replace the installed
 CLI before selection. Repeat without `--dry-run` only after reviewing the
 reported closure. This is a distinct legacy migration entrypoint; it does not
 make the old CLI support the new option. Qualification reports identify the

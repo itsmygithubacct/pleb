@@ -218,11 +218,34 @@ class ReleaseHopTests(unittest.TestCase):
             self.assertEqual(subprocess.check_output(["git", "-C", str(installed), "rev-parse", "HEAD"], text=True).strip(), old_ref)
             self.assertEqual(subprocess.check_output(["git", "-C", str(installed), "status", "--porcelain"], text=True), "")
             (base / "selector.log").unlink()
-            with (driver / "lib/closure.sh").open("a") as stream:
-                stream.write("\n# changed fixture\n")
+            module = driver / "lib/closure.sh"
+            original = module.read_bytes()
+            for flag in ("assume-unchanged", "skip-worktree"):
+                subprocess.run(git + ["update-index", "--" + flag, "lib/closure.sh"], check=True)
+                module.write_bytes(original.replace(b"#!/usr/bin/env bash", b"#!/usr/bin/env sh  ", 1))
+                # Git's optimized index view misses this change; the bootstrap
+                # must compare actual file bytes with the requested Git blob.
+                self.assertEqual(subprocess.run(git + ["diff", "--quiet", "HEAD", "--", "lib/closure.sh"]).returncode, 0)
+                result = subprocess.run(command, env=env, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("driver modules differ", result.stderr)
+                self.assertFalse((base / "selector.log").exists())
+                self.assertFalse((Path(env["HOME"]) / "should-not-execute").exists())
+                module.write_bytes(original)
+                subprocess.run(git + ["update-index", "--no-" + flag, "lib/closure.sh"], check=True)
+            alternate = driver / "alternate-module"
+            alternate.write_bytes(original)
+            module.unlink()
+            module.symlink_to(alternate)
             result = subprocess.run(command, env=env, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("driver modules differ", result.stderr)
+            self.assertFalse((base / "selector.log").exists())
+            module.unlink()
+            module.write_bytes(original)
+            module.chmod(0o644)  # Fixture committed this module as executable.
+            result = subprocess.run(command, env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("executable mode differs", result.stderr)
             self.assertFalse((base / "selector.log").exists())
 
     def test_show_names_each_value_source_and_closure_path(self):
