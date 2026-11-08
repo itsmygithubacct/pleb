@@ -128,8 +128,10 @@ fi
 if [[ ! ${PLEB_CLOSURE_USER+x} ]]; then
     PLEB_CLOSURE_USER="$(dirname "$PLEB_ENV_USER")/closure.env"
 fi
+# Settings pages and the lock-policy reader use the same user directory.
+export PLEB_ENV_USER
 
-_pleb_release_vars="PLEBIAN_OS_VERSION PLEBIAN_OS_RELEASE PLEBIAN_OS_RELEASE_MODE PLEBIAN_OS_REPO PLEBIAN_OS_BRANCH PLEBIAN_OS_REF PLEB_REPO PLEB_BRANCH PLEB_REF KILIX_REPO KILIX_BRANCH KILIX_REF KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX_SYSTEM_MONITOR_REPO KILIX_SYSTEM_MONITOR_BRANCH KILIX_SYSTEM_MONITOR_REF KILIX_DESKTOP_SDK_REPO KILIX_DESKTOP_SDK_BRANCH KILIX_DESKTOP_SDK_REF KILIX_ICEWM_REPO KILIX_ICEWM_BRANCH KILIX_ICEWM_REF KILIX_MEDIA_SDK_REPO KILIX_MEDIA_SDK_BRANCH KILIX_MEDIA_SDK_REF KILIX_WAYDROID_REPO KILIX_WAYDROID_BRANCH KILIX_WAYDROID_REF PLEBIAN_OS_APT_SNAPSHOT PLEBIAN_OS_INSTALL_UV PLEBIAN_OS_UV_VERSION PLEBIAN_OS_UV_INSTALLER_SHA256 PLEBIAN_OS_UV_INSTALLER_MAX_BYTES KILIX_PREBUILT_VERSION KILIX_PREBUILT_SHA256 PLEBIAN_OS_BUILD_KILIX_FORK PLEBIAN_OS_KILIX_GO_MIN_VERSION PLEBIAN_OS_KILIX_GO_VERSION PLEBIAN_OS_KILIX_GO_SHA256_AMD64 PLEBIAN_OS_KILIX_GO_SHA256_ARM64 PLEBIAN_OS_INSTALL_VOICE_MODEL KILIX_VOICE_REF KILIX_VOICE_LIB_VERSION KILIX_VOICE_LIB_URL KILIX_VOICE_LIB_SHA256 KILIX_VOICE_MODEL_URL KILIX_VOICE_MODEL_SHA256 PLEBIAN_OS_INSTALL_WAYDROID PLEBIAN_OS_WAYDROID_CLOSURE_SHA256"
+_pleb_release_vars="PLEBIAN_OS_VERSION PLEBIAN_OS_RELEASE PLEBIAN_OS_RELEASE_MODE PLEBIAN_OS_REPO PLEBIAN_OS_BRANCH PLEBIAN_OS_REF PLEB_REPO PLEB_BRANCH PLEB_REF KILIX_REPO KILIX_BRANCH KILIX_REF KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX_SYSTEM_MONITOR_REPO KILIX_SYSTEM_MONITOR_BRANCH KILIX_SYSTEM_MONITOR_REF KILIX_DESKTOP_SDK_REPO KILIX_DESKTOP_SDK_BRANCH KILIX_DESKTOP_SDK_REF KILIX_ICEWM_REPO KILIX_ICEWM_BRANCH KILIX_ICEWM_REF KILIX_MEDIA_SDK_REPO KILIX_MEDIA_SDK_BRANCH KILIX_MEDIA_SDK_REF KILIX_WAYDROID_REPO KILIX_WAYDROID_BRANCH KILIX_WAYDROID_REF KILIX_SECRETS_REPO KILIX_SECRETS_BRANCH KILIX_SECRETS_REF PLEBIAN_OS_APT_SNAPSHOT PLEBIAN_OS_INSTALL_UV PLEBIAN_OS_UV_VERSION PLEBIAN_OS_UV_INSTALLER_SHA256 PLEBIAN_OS_UV_INSTALLER_MAX_BYTES KILIX_PREBUILT_VERSION KILIX_PREBUILT_SHA256 PLEBIAN_OS_BUILD_KILIX_FORK PLEBIAN_OS_KILIX_GO_MIN_VERSION PLEBIAN_OS_KILIX_GO_VERSION PLEBIAN_OS_KILIX_GO_SHA256_AMD64 PLEBIAN_OS_KILIX_GO_SHA256_ARM64 PLEBIAN_OS_INSTALL_VOICE_MODEL KILIX_VOICE_REF KILIX_VOICE_LIB_VERSION KILIX_VOICE_LIB_URL KILIX_VOICE_LIB_SHA256 KILIX_VOICE_MODEL_URL KILIX_VOICE_MODEL_SHA256 PLEBIAN_OS_INSTALL_WAYDROID PLEBIAN_OS_WAYDROID_CLOSURE_SHA256"
 _pleb_vars="$_pleb_release_vars PLEBIAN_OS_DIR PLEB_DIR GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_RECOVER_CRASHES PLEB_SESSION_SERVICES PLEB_IDLE_LOCK_SECONDS PLEB_AUTO_LOCK PLEB_INPUT_METHOD PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
 declare -A _pleb_had _pleb_saved
 for _pleb_v in $_pleb_vars; do
@@ -750,6 +752,7 @@ PLEB_LOCKER_ACTIVE=0
 _PLEB_LOCK_BIN=""
 _PLEB_IDLE_LOCK=""
 _PLEB_AUTO_LOCK=on
+_PLEB_LOCK_PREFERENCE=session
 PLEB_WM_START=""
 _pleb_launching=0
 _pleb_pending_signal=""
@@ -872,7 +875,7 @@ _pleb_cleanup() {
 }
 _pleb_recovery_terminal() {
     _pleb_require_process_cleanup
-    _pleb_launch_owned PLEB_KILIX_PID PLEB_KILIX_START xterm "$@"
+    _pleb_launch_owned PLEB_KILIX_PID PLEB_KILIX_START "${_PLEB_RECOVERY_XTERM:-xterm}" "$@"
     wait "$PLEB_KILIX_PID"
     local rc=$?
     PLEB_KILIX_PID=""
@@ -930,6 +933,20 @@ _pleb_auto_lock_policy() {
 # anything else starts, means every process launched by the session can see
 # the coordinator; outside a serviced Pleb login (for example Xfce running the
 # seeded LockCommand) the variable is absent and pleb-lock runs i3lock itself.
+_pleb_load_lock_settings() {
+    local settings_module settings_values settings_idle
+    settings_module="${1:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../lib/screenlock.py}"
+    [ -r "$settings_module" ] || settings_module=/usr/local/lib/pleb/screenlock.py
+    if [ -r "$settings_module" ]; then
+        settings_values="$(python3 "$settings_module" --session-values)" || return 1
+        read -r _PLEB_LOCK_PREFERENCE settings_idle <<<"$settings_values"
+        if [ "$_PLEB_LOCK_PREFERENCE" != session ]; then
+            PLEB_AUTO_LOCK="$_PLEB_LOCK_PREFERENCE"
+            PLEB_IDLE_LOCK_SECONDS="$settings_idle"
+        fi
+    fi
+}
+
 _pleb_start_locker() {
     local policy="${PLEB_SESSION_SERVICES:-auto}" lock_bin idle
     case "$policy" in
@@ -940,6 +957,9 @@ _pleb_start_locker() {
     esac
     [[ "${DISPLAY:-}" =~ ^:[0-9]+(\.[0-9]+)?$ ]] || return 1
     [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || return 1
+    # UI preferences are data, never sourced as shell code. With no explicit
+    # preference the existing system/user/launch environment remains in charge.
+    _pleb_load_lock_settings || return 1
     idle="${PLEB_IDLE_LOCK_SECONDS:-600}"
     [[ "$idle" =~ ^[0-9]{1,5}$ ]] && [ "$idle" -le 86400 ] || {
         echo 'FATAL: PLEB_IDLE_LOCK_SECONDS must be 0..86400' >&2; return 1;
@@ -1059,6 +1079,19 @@ _pleb_seed_lid_default() {
     return 0
 }
 
+_pleb_apply_power_lock_preference() {
+    if [ "${_PLEB_LOCK_PREFERENCE:-session}" != session ]; then
+        local sleep_lock=false
+        [ "$_PLEB_AUTO_LOCK" != on ] || sleep_lock=true
+        # An explicit choice on the Screen Lock page governs the power
+        # manager as well, including a previously saved Xfce sleep-lock value.
+        xfconf-query -c xfce4-power-manager \
+            -p /xfce4-power-manager/lock-screen-suspend-hibernate \
+            --create --type bool --set "$sleep_lock" || return 1
+    fi
+    return 0
+}
+
 _pleb_start_services() {
     local lock_bin="$_PLEB_LOCK_BIN" idle="$_PLEB_IDLE_LOCK" input
     [ "$PLEB_LOCKER_ACTIVE" = 1 ] || return 0
@@ -1070,6 +1103,7 @@ _pleb_start_services() {
             --create --type string --set "$lock_bin" || return 1
     fi
     _pleb_seed_lid_default
+    _pleb_apply_power_lock_preference || return 1
     _pleb_service_start power xfce4-power-manager || return 1
     _pleb_service_start bluetooth blueman-applet || return 1
     _pleb_service_start storage udiskie --no-tray --notify || return 1
@@ -1272,17 +1306,47 @@ else
 fi
 
 # --- GUI command policy ------------------------------------------------------
-# kilix's shell profile aliases installed graphical applications to
+# Session PATH launchers route installed graphical applications to
 # `kilix run <app>`, which renders each app on its own private Xvfb inside a
 # kilix tab. Keep that as the session default even though Openbox is available:
 # the desktop's primary window-management surface is Kilix's page/pane chrome.
 # Openbox remains a safety net for an explicit KILIX_RUN_ALIASES=0 opt-out and
 # for unavoidable native dialogs. An explicit value — from the environment or
 # session.env — always wins.
+# Retain launcher directories: persistent broker shells may outlive the session
+# and still have this PATH. Each login resolves the original executable afresh.
 if [ "$_PLEB_RUN_ALIASES_DEFAULT" = 1 ]; then
     KILIX_RUN_ALIASES=1
 fi
 export KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS
+# A nested/restarted session must not resolve its originals to older shims.
+if [ -n "${KILIX_GUI_ROUTE_BIN:-}" ]; then
+    _pleb_route_path=()
+    IFS=: read -r -a _pleb_path_parts <<< "$PATH"
+    for _pleb_path_part in "${_pleb_path_parts[@]}"; do
+        [ "$_pleb_path_part" = "$KILIX_GUI_ROUTE_BIN" ] || _pleb_route_path+=("$_pleb_path_part")
+    done
+    PATH="$(IFS=:; echo "${_pleb_route_path[*]}")"
+    unset _pleb_route_path _pleb_path_parts _pleb_path_part
+fi
+unset KILIX_GUI_ROUTE_BIN
+_PLEB_RECOVERY_XTERM="$(command -v xterm || true)"
+case "${KILIX_RUN_ALIASES:-}" in
+    0|no|false|off) ;;
+    *)
+        if [ -r "$KILIX_DIR/config/gui_route.py" ]; then
+            _PLEB_GUI_ROUTE_OWNED="$(/usr/bin/python3 -B "$KILIX_DIR/config/gui_route.py" \
+                prepare "$PLEB_SESSION_HOME" "$KILIX_DIR/kilix")" || exit 1
+            export KILIX_GUI_ROUTE_BIN="$_PLEB_GUI_ROUTE_OWNED"
+            export PATH="$KILIX_GUI_ROUTE_BIN:$PATH"
+            # Older PDF wrappers default to /usr/bin/evince rather than PATH.
+            # Supply the routed executable while preserving explicit choices.
+            if [ "${KILIX_PDF_VIEWER_EVINCE+x}" != x ] && \
+                    [ -x "$KILIX_GUI_ROUTE_BIN/evince" ]; then
+                export KILIX_PDF_VIEWER_EVINCE="$KILIX_GUI_ROUTE_BIN/evince"
+            fi
+        fi ;;
+esac
 case "${KILIX_RUN_ALIASES:-}" in
     0|no|false|off) _PLEB_GUI_MODE=native ;;
     *)              _PLEB_GUI_MODE='kilix run' ;;

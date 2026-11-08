@@ -7,7 +7,8 @@
 #   pleb autologin on|off   boot straight into Pleb (kiosk) / back to greeter
 #   pleb kiosk on|off       hard kiosk: respawn kilix if it exits / don't
 #   pleb update [--show|--to X.Y.Z|--latest|--rollback] [--dry-run]
-#               [-y] [--no-restart|--restart] [--preserve-only]
+#               [--release-tag vX.Y.Z-rcN] [-y] [--no-restart|--restart]
+#               [--preserve-only]
 #                           revalidate or move the coordinated release closure,
 #                           preserving local data and rolling back on failure
 #   pleb status             show install + engine state
@@ -17,6 +18,7 @@
 #   pleb settings           configure shared Kilix chrome in a terminal UI
 #   pleb displays ...      configure X11 monitors with timed preview rollback
 #   pleb lock              lock the whole desktop using the account password
+#   pleb screen-lock ...   automatic lock settings TUI, --show or --set on|off|session
 #   pleb devices TOOL      open power, bluetooth, storage, printers, audio,
 #                          input-method or accessibility settings
 #   pleb session            exec the session now (for the current $DISPLAY)
@@ -355,6 +357,7 @@ main() {
         settings)   cmd_settings "$@" ;;
         displays)   exec python3 "$PLEB_ROOT/lib/displays.py" "${@:-configure}" ;;
         lock)       exec "$PLEB_ROOT/bin/pleb-lock" "$@" ;;
+        screen-lock) exec python3 "$PLEB_ROOT/lib/screenlock.py" "$@" ;;
         devices)    exec python3 "$PLEB_ROOT/lib/devices.py" "$@" ;;
         session)    exec "$PLEB_BIN_SRC" ;;
         version|--version|-V)

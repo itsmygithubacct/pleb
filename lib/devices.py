@@ -5,7 +5,7 @@ import shutil
 import sys
 
 TOOLS = {
-    "power": ("xfce4-power-manager-settings",),
+    "power": ("kilix", "power-controls", "--native"),
     "bluetooth": ("blueman-manager",),
     "storage": ("gnome-disks",),
     "printers": ("system-config-printer",),

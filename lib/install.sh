@@ -5,7 +5,7 @@
 # Install, uninstall and Plebian-OS's root transactions all read this list;
 # a second hand-typed copy left the lock guard (capture_session.py) out of
 # uninstall and out of the distribution's rollback.
-PLEB_CAPTURE_MODULES="displays.py capture_registry.py capture_sources.py capture_session.py capture_worker.py capture_screenshot.py capture_portal.py"
+PLEB_CAPTURE_MODULES="displays.py displays_gui.py screenlock.py screenlock_gui.py capture_registry.py capture_sources.py capture_session.py capture_worker.py capture_screenshot.py capture_portal.py"
 
 _install_missing_apt_packages() {
     local label="$1"

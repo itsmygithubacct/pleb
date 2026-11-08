@@ -13,7 +13,7 @@ PLEB = ROOT / "bin/pleb"
 
 
 class ReleaseHopTests(unittest.TestCase):
-    def _release_remote(self, base: Path) -> Path:
+    def _release_remote(self, base: Path, versions=("0.2.0", "0.2.1", "0.2.2")) -> Path:
         remote = base / "plebian-os.git"
         work = base / "release-work"
         subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
@@ -42,7 +42,7 @@ class ReleaseHopTests(unittest.TestCase):
             }
             """
         )
-        for version in ("0.2.0", "0.2.1", "0.2.2"):
+        for version in versions:
             (work / "provision").mkdir(exist_ok=True)
             (work / "releases").mkdir(exist_ok=True)
             (work / "VERSION").write_text(version + "\n")
@@ -117,6 +117,137 @@ class ReleaseHopTests(unittest.TestCase):
             "PLEB_TEST_SELECTOR_LOG": str(selector_log),
         }
 
+    def _rc_remote(self, base):
+        remote = self._release_remote(base, ("0.2.0", "0.2.1"))
+        git = ["git", "-C", str(base / "release-work")]
+        subprocess.run(git + ["tag", "-d", "v0.2.1"], check=True, capture_output=True)
+        subprocess.run(git + ["tag", "-a", "v0.2.1-rc1", "-m", "candidate"], check=True)
+        subprocess.run(git + ["push", "-q", "origin", ":refs/tags/v0.2.1", "refs/tags/v0.2.1-rc1"], check=True)
+        return remote
+
+    def test_explicit_rc_online_offline_and_latest_stable_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env = self._env(base, self._rc_remote(base))
+            original = Path(env["PLEB_CLOSURE_USER"]).read_bytes()
+            args = [str(PLEB), "update", "--to", "0.2.1", "--release-tag", "v0.2.1-rc1", "--dry-run"]
+            for extra in ([], ["--offline"]):
+                result = subprocess.run(args + extra, env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("--release-tag v0.2.1-rc1", (base / "selector.log").read_text())
+                self.assertEqual(Path(env["PLEB_CLOSURE_USER"]).read_bytes(), original)
+            (base / "selector.log").unlink()
+            result = subprocess.run([str(PLEB), "update", "--latest", "--dry-run"], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("already the latest", result.stdout)
+            self.assertFalse((base / "selector.log").exists())
+            self.assertFalse((base / "updater.log").exists())
+            result = subprocess.run([str(PLEB), "update", "--to", "0.2.1", "--dry-run"], env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_rc_rollback_cancellation_keeps_exact_tag_and_revalidates(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env = self._env(base, self._rc_remote(base))
+            result = subprocess.run([str(PLEB), "update", "--to", "0.2.1", "--release-tag", "v0.2.1-rc1", "--no-restart"], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+            self.assertEqual((state / "active").read_text().splitlines()[-1], "v0.2.1-rc1")
+            env["PLEB_TEST_UPDATER_FAIL_ONCE"] = "1"
+            result = subprocess.run([str(PLEB), "update", "--rollback", "--no-restart"], env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("--release-tag v0.2.1-rc1", (base / "selector.log").read_text().splitlines()[-1])
+            self.assertTrue(all(x == "--revalidate-current" for x in (base / "updater.log").read_text().splitlines()))
+            (state / "phase").write_text("rolling-back\n")
+            result = subprocess.run([str(PLEB), "update", "--rollback", "--no-restart"], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = (base / "selector.log").read_text().splitlines()
+            self.assertIn("--release-tag v0.2.1-rc1", calls[-2])
+            self.assertEqual(calls[-1], "--rollback")
+
+    def test_legacy_four_line_stable_state_still_rolls_back(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env = self._env(base, self._release_remote(base))
+            result = subprocess.run([str(PLEB), "update", "--to", "0.2.1", "--no-restart"], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            active = Path(env["PLEB_STATE_HOME"]) / "release-hop/active"
+            active.write_text("\n".join(active.read_text().splitlines()[:4]) + "\n")
+            result = subprocess.run([str(PLEB), "update", "--rollback", "--no-restart"], env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(active.exists())
+
+    def test_invalid_rc_identity_refuses_before_lookup_or_selection(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env = self._env(base, self._release_remote(base))
+            for tag in ("v0.2.1-rc0", "v0.2.1-rc01", "v0.2.2-rc1", "v0.2.1-beta1", ""):
+                with self.subTest(tag=tag):
+                    result = subprocess.run([str(PLEB), "update", "--to", "0.2.1", "--release-tag", tag, "--dry-run"], env=env, capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse((base / "selector.log").exists())
+            self.assertFalse((Path(env["PLEB_CACHE_HOME"]) / "release-hop").exists())
+
+    def test_published_022_bootstrap_preserves_installed_checkout(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env = self._env(base, self._rc_remote(base))
+            installed = base / "installed-pleb"
+            subprocess.run(["git", "clone", "-q", "--no-local", "--no-hardlinks", str(ROOT), str(installed)], check=True)
+            old_ref = "2dd44b003b1d0d0ca4b06aa2721467590b5f71f7"
+            subprocess.run(["git", "-C", str(installed), "checkout", "-q", "--detach", old_ref], check=True)
+            driver = base / "driver"
+            for name in ("bin/pleb-release-hop", "lib/update.sh", "lib/closure.sh", "lib/preserve.sh"):
+                dst = driver / name
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_bytes((ROOT / name).read_bytes())
+                dst.chmod(0o755)
+            git = ["git", "-C", str(driver)]
+            subprocess.run(git + ["init", "-q"], check=True)
+            subprocess.run(git + ["add", "."], check=True)
+            subprocess.run(git + ["-c", "user.name=release test", "-c", "user.email=release-test@example.invalid", "commit", "-qm", "fixture driver"], check=True)
+            ref = subprocess.check_output(git + ["rev-parse", "HEAD"], text=True).strip()
+            hop = ["update", "--to", "0.2.1", "--release-tag", "v0.2.1-rc1", "--dry-run"]
+            old = subprocess.run([str(installed / "bin/pleb"), *hop], env=env, capture_output=True, text=True)
+            self.assertNotEqual(old.returncode, 0)
+            self.assertIn("unknown update option", old.stderr)
+            command = [str(driver / "bin/pleb-release-hop"), "--installed-pleb", str(installed / "bin/pleb"), "--driver-ref", ref, "--", *hop]
+            result = subprocess.run(command, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("--release-tag v0.2.1-rc1", (base / "selector.log").read_text())
+            self.assertEqual(subprocess.check_output(["git", "-C", str(installed), "rev-parse", "HEAD"], text=True).strip(), old_ref)
+            self.assertEqual(subprocess.check_output(["git", "-C", str(installed), "status", "--porcelain"], text=True), "")
+            (base / "selector.log").unlink()
+            module = driver / "lib/closure.sh"
+            original = module.read_bytes()
+            for flag in ("assume-unchanged", "skip-worktree"):
+                subprocess.run(git + ["update-index", "--" + flag, "lib/closure.sh"], check=True)
+                module.write_bytes(original.replace(b"#!/usr/bin/env bash", b"#!/usr/bin/env sh  ", 1))
+                # Git's optimized index view misses this change; the bootstrap
+                # must compare actual file bytes with the requested Git blob.
+                self.assertEqual(subprocess.run(git + ["diff", "--quiet", "HEAD", "--", "lib/closure.sh"]).returncode, 0)
+                result = subprocess.run(command, env=env, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("driver modules differ", result.stderr)
+                self.assertFalse((base / "selector.log").exists())
+                self.assertFalse((Path(env["HOME"]) / "should-not-execute").exists())
+                module.write_bytes(original)
+                subprocess.run(git + ["update-index", "--no-" + flag, "lib/closure.sh"], check=True)
+            alternate = driver / "alternate-module"
+            alternate.write_bytes(original)
+            module.unlink()
+            module.symlink_to(alternate)
+            result = subprocess.run(command, env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((base / "selector.log").exists())
+            module.unlink()
+            module.write_bytes(original)
+            module.chmod(0o644)  # Fixture committed this module as executable.
+            result = subprocess.run(command, env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("executable mode differs", result.stderr)
+            self.assertFalse((base / "selector.log").exists())
+
     def test_show_names_each_value_source_and_closure_path(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
@@ -170,6 +301,22 @@ class ReleaseHopTests(unittest.TestCase):
             )
             self.assertFalse((base / "selector.log").exists())
 
+    def test_maintenance_hop_uses_target_selector_and_preserves_dry_run(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            remote = self._release_remote(base, ('0.2.2', '0.2.2.1'))
+            env = self._env(base, remote)
+            closure = Path(env['PLEB_CLOSURE_USER'])
+            closure.write_text(closure.read_text().replace('0.2.0', '0.2.2'))
+            before = closure.read_bytes()
+            for arguments in (['--to', '0.2.2.1'], ['--latest']):
+                result = subprocess.run([str(PLEB), 'update', *arguments, '--dry-run'],
+                                        env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('0.2.2.1', (base / 'selector.log').read_text())
+                self.assertEqual(closure.read_bytes(), before)
+                self.assertFalse((base / 'updater.log').exists())
+
     def test_latest_refuses_a_skip_and_names_the_adjacent_hop(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
@@ -196,7 +343,7 @@ class ReleaseHopTests(unittest.TestCase):
             self.assertEqual(selected.returncode, 0, selected.stderr)
             active = Path(env["PLEB_STATE_HOME"]) / "release-hop/active"
             self.assertTrue(active.is_file())
-            self.assertEqual((base / "updater.log").read_text().splitlines(), [""])
+            self.assertEqual((base / "updater.log").read_text().splitlines(), ["--revalidate-current"])
 
             rolled_back = subprocess.run(
                 [str(PLEB), "update", "--rollback", "--no-restart"],

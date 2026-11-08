@@ -1,5 +1,11 @@
 # pleb — a kilix kiosk desktop session
 
+## 0.2.2.1 maintenance candidate
+
+Release updates recognize an optional positive maintenance number, such as `0.2.2.1`, and preserve adjacent-release and exact-tag checks.
+
+This source is a release candidate; installation-media and upgrade acceptance are pending.
+
 **Pleb** turns [`kilix`](https://github.com/itsmygithubacct/kilix) (a Tilix-styled
 [kitty](https://sw.kovidgoyal.net/kitty/) fork) into a **full desktop session**:
 you log in and get a single screen-filling Kilix as the entire "desktop" — its
@@ -138,10 +144,32 @@ That setting persists in the user's Xfce configuration; outside a serviced Pleb
 session `pleb-lock` runs i3lock directly rather than asking a coordinator that
 is not there.
 
+Display Settings and Kilix Power Controls both include a **Screen Lock** page. It
+controls automatic locking on idle, display power-off and suspend/hibernate.
+Choose **Disabled** to turn these automatic locks off; manual lock commands
+remain available. Settings are per user and apply at the next login.
+**Follow session defaults** keeps the existing session policy and idle timeout.
+An explicit Enabled or Disabled choice also sets the power manager's sleep-lock
+policy on login. The idle timeout is in seconds; 0 disables just the idle timer.
+
+The same preferences are available in the terminal:
+
+```sh
+kilix tui screen-lock       # interactive settings
+kilix tui screen-lock --show
+kilix tui screen-lock --set off
+kilix tui screen-lock --set on --idle-seconds 600
+kilix tui screen-lock --set session  # follow the existing session defaults
+```
+
+`pleb screen-lock` offers the same TUI and options. Preferences are stored as
+`screen-lock.json` in the user's Pleb configuration directory, alongside
+`session.env`.
+
 Kilix Settings → Tools and Kilix 95's Control Panel expose the same controls:
 
 ```sh
-pleb devices power          # lid, battery, brightness and sleep policy
+pleb devices power          # Kilix Power Controls: lid, battery, display and sleep policy
 pleb devices bluetooth      # pairing and connections
 pleb devices storage        # mount, unmount and eject
 pleb devices printers       # physical printer setup and queues
@@ -522,6 +550,29 @@ default. Set it to `0` for native Openbox windows, extend the catalogue with
 `KILIX_RUN_ALIAS_APPS="foo bar"`, or exempt commands with
 `KILIX_RUN_ALIAS_EXCLUDE_APPS="foo"`.
 
+At login Pleb prepends private command launchers to the session PATH, so scripts
+and non-interactive shells get the same tab routing as interactive terminals.
+This includes installed browsers, Evince, mpv, Kilix Amp, Cheese, GParted, XTerm,
+and graphical QEMU. The PDF viewer's absolute Evince fallback is pointed at
+the routed executable unless an explicit viewer override is set. Catalog GUI
+applications also route to tabs even when their executable path is absolute.
+Applications already inside a private Kilix display run
+there directly; help/version, headless browser, headless QEMU and terminal mpv
+modes retain their command-line behavior. Notifications, authentication agents
+and power daemons remain desktop services.
+
+Graphical QEMU `-daemonize` is converted to a foreground process owned by its
+new tab, with a message explaining the change. Closing the tab ends the VM.
+The launch command returns when the tab is created, not when the guest or its
+PID file is ready; scripts requiring guest readiness must check it separately.
+Headless QEMU retains its daemon flags.
+
+The launchers are created on login and retained for persistent broker shells.
+Newly installed applications enter the discovered catalogue on the next login.
+An absolute executable path bypasses PATH routing; use `kilix run /path/to/app`
+for such callers. Explicit native opt-outs remain supported. This policy does
+not move existing native windows into tabs.
+
 ### Choosing the window manager
 
 ```sh
@@ -597,6 +648,34 @@ pleb update --restart    # explicitly restart an active kiosk; never prompts
 pleb update --no-restart # update only; leave LightDM alone
 pleb update --preserve-only # verified snapshots only; move no checkout
 ```
+
+For an explicitly chosen release candidate, use
+`pleb update --to 0.2.3 --release-tag v0.2.3-rc1 --dry-run`, then repeat without
+`--dry-run` to apply it. The tag must match the numeric target exactly; only a
+stable tag or a positive numbered `-rcN` suffix is accepted. `--latest` remains
+stable-only. The exact tag identity is retained for rollback and interrupted
+operation recovery, and image updates revalidate the selected closure.
+
+Older installations, including 0.2.2, do not understand `--release-tag`. They
+need an explicit migration driver from a separately obtained, verified Pleb
+source commit containing `bin/pleb-release-hop`. Check the source provenance
+before executing it, and use the full commit SHA from that release's source
+instructions:
+
+```sh
+/path/to/verified-driver/bin/pleb-release-hop \
+  --installed-pleb "$(command -v pleb)" --driver-ref "$DRIVER_REF" -- \
+  update --to 0.2.3 --release-tag v0.2.3-rc1 --dry-run
+```
+
+The driver compares actual regular-file module bytes and executable modes
+with the requested Git blobs, independently of index flags, and runs a private
+verified snapshot using the installed configuration and checkout paths. It does not replace the installed
+CLI before selection. Repeat without `--dry-run` only after reviewing the
+reported closure. This is a distinct legacy migration entrypoint; it does not
+make the old CLI support the new option. Qualification reports identify the
+bootstrap source commit separately. Both routes require the target tag and its
+component sources to have actually been published.
 
 `--to` and `--latest` execute the selector extracted from the target's exact
 published Plebian-OS tag. They never read closure bytes from a branch or from a

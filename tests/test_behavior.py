@@ -240,6 +240,7 @@ exit "$VOICE_INSTALL_EXIT"
                     "PLEB_LINK": str(tmp / "missing/pleb"),
                     "AUTOLOGIN_CONF": str(tmp / "missing/autologin.conf"),
                     "OPENBOX_CONFIG_DST": str(tmp / "missing/openbox/rc.xml"),
+                    "NOTIFICATION_THEME_DST": str(tmp / "missing/theme/gtk.css"),
                     "PLEB_DISPLAYS_DST": str(tmp / "missing/displays.py"),
                     "LID_POLICY_DST": str(tmp / "missing/lid.conf"),
                 }

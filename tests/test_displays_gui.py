@@ -71,6 +71,21 @@ class GraphicalDisplaysTests(unittest.TestCase):
         worker.wait.side_effect = lambda timeout: thread.join(timeout)
         return parent, worker
 
+    def test_screen_lock_tab_saves_shared_policy_without_display_changes(self):
+        import screenlock
+        tabs = self.app.tabs
+        self.assertEqual([tabs.tab(tab, "text") for tab in tabs.tabs()], ["Displays", "Screen Lock"])
+        page = tabs.nametowidget(tabs.tabs()[1])
+        widgets = page.winfo_children()
+        next(w for w in widgets if isinstance(w, gui.ttk.Combobox)).set("Disabled")
+        idle = next(w for w in widgets if isinstance(w, gui.ttk.Spinbox))
+        idle.delete(0, "end")
+        idle.insert(0, "777")
+        next(w for w in widgets if isinstance(w, gui.ttk.Button)).invoke()
+        self.assertEqual(screenlock.load(), {"version": 1, "policy": "off", "idle_seconds": 777})
+        self.assertIsNone(self.app.channel)
+
+
     def close_root(self):
         if self.app.channel:
             self.app.channel.close()

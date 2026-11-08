@@ -235,7 +235,14 @@ _pleb_stop_owned "$control:$expected" || exit 83
         self.script('i3lock', '#!/bin/sh\nexit 0\n')
         self.script('xfconf-query', '#!/bin/sh\nexit 0\n')
         for name in ('xss-lock', 'screensaver', 'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie'):
-            self.script(name, (self.bin / 'wm').read_text())
+            # Publish a complete registration record before logind can observe it.
+            body = (self.bin / 'wm').read_text().replace(
+                "Path(os.environ['FIXTURE_ROOT'],name+'.pid').write_text(str(os.getpid()))",
+                "record = Path(os.environ['FIXTURE_ROOT'],name+'.pid')\n"
+                "pending = record.with_suffix('.pending')\n"
+                "pending.write_text(str(os.getpid()))\n"
+                "pending.replace(record)")
+            self.script(name, body)
         # The installed ScreenSaver replaced xssproxy. Keep the session's
         # service launch/readiness/supervision path and supply its private
         # daemon stand-in at the two installed paths this fixture relocates.
@@ -477,6 +484,38 @@ SystemBus.ListInhibitors=_inhibitors
         signal.pidfd_send_signal(fd, signal.SIGKILL)
         self.assertEqual(p.wait(timeout=7), 78, self.log())
         self.assert_stopped(*children)
+
+    def test_gui_route_is_exported_and_old_session_route_removed(self):
+        source = self.root / 'source'
+        (source / 'config').mkdir(parents=True)
+        (source / 'kilix').symlink_to(self.bin / 'kilix')
+        (source / 'config/gui_route.py').write_text(
+            'import pathlib,sys\n'
+            'assert sys.argv[1] == "prepare"\n'
+            'p=pathlib.Path(sys.argv[2])/"route"\n'
+            'p.mkdir(parents=True)\n'
+            '(p/"evince").write_text("#!/bin/sh\\nexit 0\\n")\n'
+            '(p/"evince").chmod(0o700)\n'
+            'print(p)\n')
+        old = self.root / 'old-route'
+        old.mkdir()
+        self.env.update(PLEB_WM='none', PLEB_SERVICES='off',
+                        KILIX_DIR=str(source), PLEB_SESSION_HOME=str(self.root/'session'),
+                        KILIX_GUI_ROUTE_BIN=str(old), PATH=str(old)+':'+self.env['PATH'])
+        self.script('kilix', '#!/usr/bin/python3\nimport os,json\n'
+                    'from pathlib import Path\n'
+                    'Path(os.environ["FIXTURE_ROOT"], "route-env.json").write_text('
+                    'json.dumps(dict(os.environ)))\n')
+        p = self.start()
+        self.assertEqual(p.wait(timeout=7), 0, self.log())
+        env = json.loads((self.root/'route-env.json').read_text())
+        route = self.root/'session/route'
+        self.assertEqual(env['KILIX_GUI_ROUTE_BIN'], str(route))
+        self.assertEqual(env['KILIX_PDF_VIEWER_EVINCE'], str(route/'evince'))
+        self.assertEqual(env['PATH'].split(':')[0], str(route))
+        self.assertNotIn(str(old), env['PATH'].split(':'))
+        # Persistent broker shells keep this PATH after frontend shutdown.
+        self.assertTrue(route.is_dir())
 
     def test_missing_locker_prevents_the_engine_from_starting(self):
         self.with_services()
