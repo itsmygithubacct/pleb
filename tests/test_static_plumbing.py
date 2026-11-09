@@ -5,6 +5,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _readme_and_docs():
+    """README.md plus the docs/*.md explainers it links to."""
+    paths = [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md"))]
+    return "\n".join(path.read_text() for path in paths)
+
+
 class PlebPlumbingTests(unittest.TestCase):
     def test_account_names_follow_debian_policy_before_autologin_rendering(self):
         valid = ("a", "a-b_c0", "a" + "b" * 31)
@@ -163,7 +169,7 @@ class PlebPlumbingTests(unittest.TestCase):
     def test_source_and_storage_roots_are_separate_and_session_logs_are_private(self):
         common = (ROOT / "lib" / "common.sh").read_text()
         session = (ROOT / "bin" / "pleb-session").read_text()
-        readme = (ROOT / "README.md").read_text()
+        readme = _readme_and_docs()
         for text in (common, session):
             self.assertIn('${GPU_TERMINAL_SOURCE_HOME:-$HOME/.local/gpu_terminal/sources}', text)
             self.assertIn('${GPU_TERMINAL_HOME:-$HOME/.local/gpu_terminal}', text)
@@ -234,7 +240,7 @@ class PlebPlumbingTests(unittest.TestCase):
     def test_update_moves_pleb_itself_last_and_reversibly(self):
         common = (ROOT / "lib" / "common.sh").read_text()
         update = (ROOT / "lib" / "update.sh").read_text()
-        readme = (ROOT / "README.md").read_text()
+        readme = _readme_and_docs()
         load_surface = (
             common.split("PLEB_RELEASE_CONTROLLED_KEYS=", 1)[1].split("\n", 1)[0]
             + common.split("vars=", 1)[1].split("\n", 1)[0]
@@ -380,7 +386,7 @@ class PlebPlumbingTests(unittest.TestCase):
     def test_preserve_only_flag_is_implemented_and_documented(self):
         cli = (ROOT / "bin" / "pleb").read_text()
         update = (ROOT / "lib" / "update.sh").read_text()
-        readme = (ROOT / "README.md").read_text()
+        readme = _readme_and_docs()
         recovery = (ROOT / "docs" / "RECOVERY.md").read_text()
         for text in (cli, update, readme, recovery):
             self.assertIn("--preserve-only", text)
@@ -393,7 +399,7 @@ class PlebPlumbingTests(unittest.TestCase):
         update = (ROOT / "lib/update.sh").read_text()
         closure = (ROOT / "lib/closure.sh").read_text()
         cli = (ROOT / "bin/pleb").read_text()
-        readme = (ROOT / "README.md").read_text()
+        readme = _readme_and_docs()
         recovery = (ROOT / "docs/RECOVERY.md").read_text()
         for flag in ("--show", "--to", "--latest", "--dry-run", "--rollback"):
             for text in (update, cli, readme):
@@ -427,7 +433,7 @@ class PlebPlumbingTests(unittest.TestCase):
     def test_update_refreshes_installed_voice_without_ever_installing_it(self):
         install = (ROOT / "lib" / "install.sh").read_text()
         update = (ROOT / "lib" / "update.sh").read_text()
-        readme = (ROOT / "README.md").read_text()
+        readme = _readme_and_docs()
         self.assertIn("refresh_kilix_voice()", install)
         self.assertIn("refresh_kilix_voice", update)
         # The laziness is the point: no installed tools, no installer run.
@@ -471,7 +477,7 @@ class PlebPlumbingTests(unittest.TestCase):
 
     def test_voice_defaults_to_the_available_read_aloud_closure(self):
         install = (ROOT / "lib" / "install.sh").read_text()
-        readme = (ROOT / "README.md").read_text()
+        readme = _readme_and_docs()
         changelog = (ROOT / "CHANGELOG.md").read_text()
         recovery = (ROOT / "docs" / "RECOVERY.md").read_text()
         self.assertIn('${PLEB_INSTALL_VOICE_MODEL:-0}', install)
@@ -514,7 +520,7 @@ ensure_system_deps
     def test_install_prepares_the_catalog_pinned_pdf_viewer(self):
         common = (ROOT / "lib" / "common.sh").read_text()
         install = (ROOT / "lib" / "install.sh").read_text()
-        readme = (ROOT / "README.md").read_text()
+        readme = _readme_and_docs()
         self.assertIn("KILIX_PDF_VIEWER_BIN=", common)
         self.assertIn("KILIX_PDF_CORE_BIN=", common)
         self.assertIn("install_kilix_pdf_viewer()", install)
@@ -563,7 +569,7 @@ ensure_system_deps
     def test_recovery_doc_has_stable_install_and_help_contract(self):
         common = (ROOT / "lib" / "common.sh").read_text()
         install = (ROOT / "lib" / "install.sh").read_text()
-        readme = (ROOT / "README.md").read_text()
+        readme = _readme_and_docs()
         recovery = (ROOT / "docs" / "RECOVERY.md").read_text()
         changelog = (ROOT / "CHANGELOG.md").read_text()
         stable = "/usr/local/share/doc/pleb/RECOVERY.md"
@@ -584,7 +590,7 @@ ensure_system_deps
     def test_screen_size_passthrough_and_new_env_knobs_are_documented(self):
         cli = (ROOT / "bin" / "pleb").read_text()
         common = (ROOT / "lib" / "common.sh").read_text()
-        readme = (ROOT / "README.md").read_text()
+        readme = _readme_and_docs()
         self.assertIn("screen-size|font-size)", cli)
         self.assertIn('"$KILIX_DEFAULT" screen-size "$@"', cli)
         self.assertIn("KILIX_PREBUILT_VERSION", common)
@@ -596,7 +602,7 @@ ensure_system_deps
         cli = (ROOT / "bin" / "pleb").read_text()
         common = (ROOT / "lib" / "common.sh").read_text()
         install = (ROOT / "lib" / "install.sh").read_text()
-        readme = (ROOT / "README.md").read_text()
+        readme = _readme_and_docs()
         self.assertIn("settings)   cmd_settings", cli)
         self.assertIn("$KILIX_DIR/kilix-settings", cli)
         self.assertIn("$GPU_TERMINAL_HOME/settings.conf", common)
@@ -639,7 +645,7 @@ ensure_system_deps
     def test_tb_shell_alias_is_guarded_and_resolves_the_sibling_checkout(self):
         common = (ROOT / "lib" / "common.sh").read_text()
         install = (ROOT / "lib" / "install.sh").read_text()
-        readme = (ROOT / "README.md").read_text()
+        readme = _readme_and_docs()
         # the sibling checkout and the aliases file are resolved the same way
         # as every other sibling checkout: overridable, rooted at the shared
         # source root, never a fixed home path
