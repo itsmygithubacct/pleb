@@ -50,6 +50,8 @@ Then **log out** of your current desktop, and at the LightDM greeter open the
 session menu (the little badge/gear near the password box), choose **Pleb**, and
 log in. To go back, log out and pick your usual session again.
 
+![The Plebian-OS greeter with its session menu open and Pleb selected; on this greeter the menu is the icon at the top right](docs/images/pleb-greeter-session-menu.jpg)
+
 > Add `~/.local/gpu_terminal/sources/pleb/bin` to your `PATH` (or alias
 > `pleb=~/.local/gpu_terminal/sources/pleb/bin/pleb`) to drop the
 > full path.
