@@ -1476,6 +1476,13 @@ EOF
 }
 
 _ensure_go_for_kilix_build() {
+    if [ -n "${PLEBIAN_OS_KILIX_GO_DEBIAN_VERSION:-}" ]; then
+        "$PLEB_ROOT/scripts/install-debian-go.sh" \
+            "${PLEBIAN_OS_KILIX_GO_VERSION:-}" "$PLEBIAN_OS_KILIX_GO_DEBIAN_VERSION" \
+            || die "Debian Go toolchain install failed"
+        export PATH="/usr/lib/go-1.27/bin:$PATH" GOROOT=/usr/lib/go-1.27 GOENV=off GOTOOLCHAIN=local
+        return 0
+    fi
     local min="${PLEBIAN_OS_KILIX_GO_MIN_VERSION:-1.26}"
     local version="${PLEBIAN_OS_KILIX_GO_VERSION:-}" arch sha=""
     local go_bin_dir="${GO_BIN_DIR:-/usr/local/bin}"
@@ -1890,6 +1897,10 @@ do_update() {
     refresh_kilix_voice
 
     if _kilix_fork_enabled; then
+        # Reconcile the package selection even when source-id avoids a rebuild.
+        if [ -n "${PLEBIAN_OS_KILIX_GO_DEBIAN_VERSION:-}" ]; then
+            _ensure_go_for_kilix_build
+        fi
         if _kilix_fork_needs_rebuild; then
             _rebuild_kilix_fork
         else
