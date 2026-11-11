@@ -53,7 +53,7 @@ SOURCES
     run_root env DEBIAN_FRONTEND=noninteractive apt-get "${apt_options[@]}" \
         -o APT::Get::AllowUnauthenticated=false \
         -o Acquire::AllowInsecureRepositories=false \
-        install -y --no-install-recommends --reinstall -t trixie-backports \
+        install -y --no-install-recommends --reinstall --allow-downgrades -t trixie-backports \
         "golang-1.27-go=$package_version" "golang-1.27-src=$package_version"
     ready || fail 'installed packages or compiler do not match the selected release'
 fi

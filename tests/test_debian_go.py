@@ -70,6 +70,15 @@ class DebianGoTests(unittest.TestCase):
         self.assertIn('AllowUnauthenticated=false', calls)
         self.assertEqual((self.links / 'go').resolve(), self.tool / 'bin/go')
 
+    def test_newer_install_can_restore_the_release_selection(self):
+        self.state.touch()
+        self.write(self.bin / 'dpkg-query', '#!/bin/sh\nif [ -f "$APT_LOG" ]; then printf "installed 1.27.3-1~bpo13+1"; else printf "installed 1.27.4-1~bpo13+1"; fi\n')
+        self.write(self.bin / 'apt-get', '#!/bin/sh\nprintf "%s\\n" "$*" >> "$APT_LOG"\ncase "$*" in *install*) case "$*" in *--allow-downgrades*) :;; *) exit 100;; esac;; esac\n')
+        result = self.run_install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--allow-downgrades', self.log.read_text())
+        self.assertEqual((self.links / 'go').resolve(), self.tool / 'bin/go')
+
     def test_matching_install_skips_apt_and_migrates_old_archive_links(self):
         self.state.touch()
         (self.links / 'go').symlink_to('/usr/local/go/bin/go')
