@@ -933,6 +933,8 @@ _pleb_auto_lock_policy() {
 # anything else starts, means every process launched by the session can see
 # the coordinator; outside a serviced Pleb login (for example Xfce running the
 # seeded LockCommand) the variable is absent and pleb-lock runs i3lock itself.
+# The optional module argument is used by isolated settings tests.
+# shellcheck disable=SC2120
 _pleb_load_lock_settings() {
     local settings_module settings_values settings_idle
     settings_module="${1:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../lib/screenlock.py}"

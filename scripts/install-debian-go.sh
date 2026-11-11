@@ -27,7 +27,7 @@ ready() {
         verification=$(dpkg --verify "$package" 2>/dev/null) || return 1
         [ -z "$verification" ] || return 1
     done
-    [ "$(GOENV=off GOROOT= GOFLAGS= GOTOOLCHAIN=local "$root/bin/go" version 2>/dev/null)" = "go version $version linux/$(dpkg --print-architecture)" ]
+    [ "$(GOENV=off GOROOT='' GOFLAGS='' GOTOOLCHAIN=local "$root/bin/go" version 2>/dev/null)" = "go version $version linux/$(dpkg --print-architecture)" ]
 }
 if ! ready; then
     # An older installation may still use its install snapshot. Use private,
