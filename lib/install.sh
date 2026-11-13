@@ -688,7 +688,7 @@ _pleb_desktop_state_dir() {
             else
                 return 1
             fi ;;
-        none|off|disabled|command|custom|cap|kilix-cap|mansion|tui|kilix-tui|land|kilix-land|kilix-land-desktop)
+        none|off|disabled|command|custom|cap|kilix-cap|mansion|tui|kilix-tui|land|kilix-land|kilix-land-desktop|icewm|kilix-icewm|zell|zell-neuronte|kilix-zell)
             return 1 ;;
         *)
             die "unknown KILIX_DESKTOP_PROVIDER=${KILIX_DESKTOP_PROVIDER:-}" ;;

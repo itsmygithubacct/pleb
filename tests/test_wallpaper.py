@@ -501,7 +501,7 @@ install_pleb_artwork_bundle
             )
 
     def test_non_wallpaper_provider_installs_artwork_without_state(self):
-        for provider in ("command", "cap", "none"):
+        for provider in ("command", "cap", "none", "icewm", "zell", "zell-neuronte", "kilix-zell"):
             with self.subTest(provider=provider), tempfile.TemporaryDirectory() as td:
                 tmp = Path(td)
                 env = self.artwork_env(tmp, provider)
@@ -509,6 +509,7 @@ install_pleb_artwork_bundle
                     env["KILIX_DESKTOP_COMMAND"] = "true"
                 result = self.run_helpers("install_standalone_pleb_wallpaper", env)
                 self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("unknown KILIX_DESKTOP_PROVIDER", result.stderr)
                 self.assertTrue(
                     (Path(env["PLEB_DATA_HOME"]) / "wallpapers/plebian-os.png").is_file()
                 )

@@ -546,7 +546,7 @@ exit "$VOICE_INSTALL_EXIT"
             )
             self.assertEqual(observed.read_text().splitlines(), ["1", "", ""])
 
-    def test_explicit_land_provider_env_wins_over_persisted_values(self):
+    def test_explicit_native_provider_env_wins_over_persisted_values(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             names = (
@@ -557,6 +557,8 @@ exit "$VOICE_INSTALL_EXIT"
                 "KILIX_LAND_DESKTOP_CONFIG_HOME",
                 "KILIX_LAND_DESKTOP_EXTERNAL_APPS",
                 "KILIX_LAND_DESKTOP_AUDIO",
+                "ZELL_NEURONTE_HOME",
+                "ZELL_NEURONTE_WEIGHTS",
             )
             config = tmp / "session.env"
             config.write_text(
@@ -591,6 +593,29 @@ exit "$VOICE_INSTALL_EXIT"
                 check=True,
             )
             self.assertEqual(result.stdout.splitlines(), expected)
+
+    def test_zell_session_forwards_runtime_paths_and_requests_saved_desktop(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            observed = tmp / "argv"
+            engine = tmp / "kilix"
+            write_executable(engine, "#!/bin/sh\n"
+                             f"printf '%s\\n' \"$@\" >{observed!s}\n")
+            config = tmp / "session.env"
+            config.write_text(
+                f"KILIX={engine!s}\nPLEB_NO_FILL=1\nPLEB_WM=none\n"
+                "PLEB_DESKTOP=1\nKILIX_DESKTOP_PROVIDER=zell\n"
+                "ZELL_NEURONTE_HOME='/custom RPG runtime'\n"
+                "ZELL_NEURONTE_WEIGHTS='/custom RPG runtime/selected.nrt'\n")
+            env = clean_env(tmp)
+            env["PLEB_ENV_USER"] = str(config)
+            result = subprocess.run([str(ROOT / "bin/pleb-session")], env=env,
+                                    capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            arguments = observed.read_text().splitlines()
+            self.assertEqual(arguments[-2:], ["desktop", "--session-start"])
+            self.assertIn("ZELL_NEURONTE_HOME=/custom RPG runtime", arguments)
+            self.assertIn("ZELL_NEURONTE_WEIGHTS=/custom RPG runtime/selected.nrt", arguments)
 
     def test_session_loads_and_exports_the_same_source_and_storage_contract(self):
         with tempfile.TemporaryDirectory() as td:
