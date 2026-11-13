@@ -234,7 +234,7 @@ _pleb_stop_owned "$control:$expected" || exit 83
         locker.chmod(0o700)
         self.script('i3lock', '#!/bin/sh\nexit 0\n')
         self.script('xfconf-query', '#!/bin/sh\nexit 0\n')
-        for name in ('xss-lock', 'screensaver', 'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie'):
+        for name in ('xss-lock', 'screensaver', 'notifications', 'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie'):
             # Publish a complete registration record before logind can observe it.
             body = (self.bin / 'wm').read_text().replace(
                 "Path(os.environ['FIXTURE_ROOT'],name+'.pid').write_text(str(os.getpid()))",
@@ -261,6 +261,10 @@ pending.write_text(str(os.getpid()))
 pending.replace(record)
 while True: time.sleep(.05)
 ''')
+        notifications = self.root / 'notification_center.py'
+        notifications.write_text(module.read_text().replace('screensaver.pid', 'notifications.pid'))
+        self.driver.write_text(self.driver.read_text().replace(
+            'notifications=/usr/local/lib/pleb/notification_center.py', 'notifications=' + str(notifications)))
         self.script('xdg-screensaver', '#!/bin/sh\nexit 0\n')
         self.driver.write_text(self.driver.read_text().replace(
             'module=/usr/local/lib/pleb/screensaver.py', 'module=' + str(module)).replace(
@@ -361,7 +365,7 @@ SystemBus.ListInhibitors=_inhibitors
     def test_owned_desktop_services_are_reaped_with_the_session(self):
         self.with_services()
         p = self.start()
-        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver', 'lxpolkit',
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver', 'notifications', 'lxpolkit',
                     'xfce4-power-manager', 'blueman-applet', 'udiskie', 'kilix')]
         p.terminate()
         self.assertEqual(p.wait(timeout=7), 143, self.log())
@@ -370,7 +374,7 @@ SystemBus.ListInhibitors=_inhibitors
     def test_default_login_recovers_killed_frontend_without_replacing_services(self):
         self.with_services()
         p = self.start()
-        names = ('wm', 'xss-lock', 'screensaver', 'lxpolkit',
+        names = ('wm', 'xss-lock', 'screensaver', 'notifications', 'lxpolkit',
                  'xfce4-power-manager', 'blueman-applet', 'udiskie')
         children = [self.child(name) for name in names]
         original = self.child('kilix')
@@ -390,7 +394,7 @@ SystemBus.ListInhibitors=_inhibitors
         self.with_services()
         self.engine_exits(0)
         p = self.start()
-        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver',
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver', 'notifications',
                     'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie')]
         self.assertEqual(p.wait(timeout=7), 0, self.log())
         self.assertEqual(len(self.engine_runs()), 1)
@@ -401,7 +405,7 @@ SystemBus.ListInhibitors=_inhibitors
         self.env['PLEB_RECOVER_CRASHES'] = 'off'
         self.engine_exits(17)
         p = self.start()
-        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver',
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver', 'notifications',
                     'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie')]
         self.assertEqual(p.wait(timeout=7), 17, self.log())
         self.assertEqual(len(self.engine_runs()), 1)
@@ -462,7 +466,7 @@ SystemBus.ListInhibitors=_inhibitors
         self.with_services()
         self.engine_exits(17, None)
         p = self.start()
-        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver',
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver', 'notifications',
                     'lxpolkit', 'xfce4-power-manager', 'blueman-applet', 'udiskie')]
         until = time.monotonic()+5
         while 'respawning in' not in self.log():
@@ -478,7 +482,7 @@ SystemBus.ListInhibitors=_inhibitors
     def test_locker_failure_ends_the_desktop_and_reaps_owned_children(self):
         self.with_services()
         p = self.start()
-        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver', 'lxpolkit',
+        children = [self.child(name) for name in ('wm', 'xss-lock', 'screensaver', 'notifications', 'lxpolkit',
                     'xfce4-power-manager', 'blueman-applet', 'udiskie', 'kilix')]
         fd = next(fd for pid, fd in self.handles if pid == children[1])
         signal.pidfd_send_signal(fd, signal.SIGKILL)

@@ -919,6 +919,14 @@ install_screensaver() {
         || die "Could not publish Pleb ScreenSaver command; rerun the install"
 }
 
+install_notifications() {
+    local dest=/usr/local/lib/pleb
+    run_root install -D -m 0644 "$PLEB_ROOT/lib/notification_center.py" "$dest/.notification_center.py.new" \
+        || die "Could not stage Pleb notifications"
+    run_root mv -fT -- "$dest/.notification_center.py.new" "$dest/notification_center.py" \
+        || die "Could not publish Pleb notifications; rerun the install"
+}
+
 do_install() {
     [ -f "$PLEB_BIN_SRC" ]    || die "missing $PLEB_BIN_SRC"
     [ -f "$PLEB_DESKTOP_IN" ] || die "missing $PLEB_DESKTOP_IN"
@@ -971,6 +979,7 @@ do_install() {
     install_capture_portal
     install_lid_policy
     install_screensaver
+    install_notifications
     run_root install -D -m 0755 "$PLEB_BIN_SRC" "$SESSION_BIN_DST"
 
     log "installing xsession entry -> $XSESSION_DST"
@@ -1043,6 +1052,7 @@ do_uninstall() {
     done
     for f in "$LID_POLICY_DST" /usr/local/lib/pleb/capture_transport.so \
             /usr/local/lib/pleb/screensaver.py /usr/local/lib/pleb/session-bin/xdg-screensaver \
+            /usr/local/lib/pleb/notification_center.py /usr/local/lib/pleb/.notification_center.py.new \
             /usr/local/share/xdg-desktop-portal/portals/pleb.portal \
             /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service; do
         if [ -e "$f" ] || [ -L "$f" ]; then

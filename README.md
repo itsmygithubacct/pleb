@@ -980,3 +980,16 @@ and focus changes include available executable, argv, cwd, parent processes,
 and WM_COMMAND so later versions can route those launch paths into Kilix.
 It does not reroute or close windows. See Kilix's native-window routing
 diagnostics documentation for capture limits and retention.
+
+### Desktop choice and notifications
+
+Pleb desktop logins use the saved `kilix default-desktop` choice. Plebian-OS
+requests the chooser on first login, with Kilix 95, IceWM, Kilix TUI, and
+**zell — RPG Desktop** first and the remaining desktops under **More desktops**.
+Use `kilix default-desktop choose` to change it later.
+
+Notifications share one window at the upper right. It expands downward as
+messages arrive, retracts when they close, and scrolls when the screen is full.
+Click a notification's cat to focus its originating Kilix pane; the × dismisses
+that message. The session owns the notification service and stops it on logout.
+An existing notification service on a shared desktop bus keeps ownership.
