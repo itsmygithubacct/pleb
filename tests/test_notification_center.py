@@ -161,6 +161,53 @@ def inner():
             pump()
             self.assertIn(persistent, self.center.items)
 
+        def test_managed_icon_links_render_the_same_pixels_as_their_target(self):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                icon = root / 'cat.png'
+                pixels = module.GdkPixbuf.Pixbuf.new(
+                    module.GdkPixbuf.Colorspace.RGB, True, 8, 48, 48)
+                pixels.fill(0xC08040FF)
+                pixels.savev(str(icon), 'png', [], [])
+                link = root / 'kitty.app.png'
+                link.symlink_to(icon)
+                relative = root / 'relative.png'
+                relative.symlink_to(link.name)
+                for name in (str(icon), str(link), str(relative), link.as_uri()):
+                    with self.subTest(name=name):
+                        image = module.load_icon(name, {})
+                        self.assertEqual(image.get_storage_type(), Gtk.ImageType.PIXBUF)
+                        self.assertEqual(image.get_pixbuf().get_pixels(), pixels.get_pixels())
+                number = self.notify(hints={'image-path': GLib.Variant('s', str(link))})
+                image = self.center.items[number]['default_button'].get_child()
+                self.assertEqual(image.get_storage_type(), Gtk.ImageType.PIXBUF)
+                self.center.items[number]['default_button'].clicked()
+                pump()
+                self.assertIn(('ActionInvoked', (number, 'default')), self.events[0])
+
+        def test_icon_links_to_invalid_targets_fall_back_without_blocking(self):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                fifo = root / 'fifo'
+                os.mkfifo(fifo)
+                invalid = root / 'invalid'
+                invalid.write_bytes(b'not an image')
+                large = root / 'large'
+                with large.open('wb') as stream:
+                    stream.truncate(4 * 1024 * 1024 + 1)
+                for target in (fifo, root, invalid, large, root / 'missing'):
+                    link = root / 'icon-link'
+                    link.symlink_to(target)
+                    try:
+                        image = module.load_icon(str(link), {})
+                        self.assertEqual(image.get_storage_type(), Gtk.ImageType.ICON_NAME)
+                    finally:
+                        link.unlink()
+                loop = root / 'loop'
+                loop.symlink_to(loop.name)
+                image = module.load_icon(str(loop), {})
+                self.assertEqual(image.get_storage_type(), Gtk.ImageType.ICON_NAME)
+
         def test_overflow_is_scrollable_and_plain_text_is_not_markup(self):
             for index in range(15):
                 self.notify(title='<b>literal title</b>', body='Message ' + str(index))

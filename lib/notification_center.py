@@ -55,7 +55,7 @@ def bus_call(bus, method, arguments, result_type):
 
 
 def load_icon(name, hints):
-    """Bound image decoding and never open a FIFO or follow a file link."""
+    """Resolve installed icon links, bound decoding, and read only regular files."""
     raw = hints.get('image-data', hints.get('image_data'))
     if isinstance(raw, (tuple, list)) and len(raw) == 7:
         width, height, stride, alpha, bits, channels, data = raw
@@ -77,6 +77,10 @@ def load_icon(name, hints):
     if name.startswith('/'):
         fd = None
         try:
+            # Kilix's managed config icons are symlinks into its source tree.
+            # Resolve those before opening, but reject a link substituted at the
+            # final path and keep non-regular targets from blocking or reading.
+            name = os.path.realpath(name, strict=True)
             fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
             info = os.fstat(fd)
             if stat.S_ISREG(info.st_mode) and info.st_size <= 4 * 1024 * 1024:
