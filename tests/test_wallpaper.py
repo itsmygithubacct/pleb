@@ -423,7 +423,7 @@ install_pleb_artwork_bundle
         (ROOT.parent / "kilix-desktops/kilix-95/main.py").is_file(),
         "Kilix-95 desktop checkout is unavailable",
     )
-    def test_direct_xp_provider_keeps_its_kittens_wallpaper_after_pleb_install(self):
+    def test_direct_xp_provider_keeps_its_packaged_wallpaper_after_pleb_install(self):
         state_library = kilix_state_library()
         if state_library is None:
             self.skipTest(
@@ -467,10 +467,9 @@ install_pleb_artwork_bundle
             self.assertEqual(direct.returncode, 0, direct.stderr)
             state = json.loads(direct.stdout)
             self.assertFalse(state["wall_custom"])
-            self.assertTrue(
-                state["wall_image"].endswith(
-                    "assets/wallpapers/kilix-xp-kittens-fire.png"
-                )
+            self.assertEqual(
+                Path(state["wall_image"]).resolve(),
+                (actual_kilix95 / "assets/wallpapers/plebian-os.png").resolve(),
             )
 
     def test_managed_install_skips_bundle_and_state_for_plebian_os(self):
