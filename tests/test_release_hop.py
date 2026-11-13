@@ -305,6 +305,26 @@ class ReleaseHopTests(unittest.TestCase):
             )
             self.assertFalse((base / "selector.log").exists())
 
+    def test_neuronte_pin_overrides_are_refused_like_every_other_pin(self):
+        # RC9 images install the pinned Neuronte tree; an environment value
+        # for it would let the child update apply a closure the selector did
+        # not commit.
+        for key, value in (("NEURONTE_REF", "5" * 40),
+                           ("NEURONTE_REPO", "https://example.invalid/neuronte.git")):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                remote = self._release_remote(base)
+                env = self._env(base, remote)
+                env[key] = value
+                result = subprocess.run(
+                    [str(PLEB), "update", "--to", "0.2.1", "--dry-run"],
+                    env=env, capture_output=True, text=True, check=False,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(f"{key} is overridden by the process environment",
+                              result.stderr)
+                self.assertFalse((base / "selector.log").exists())
+
     def test_maintenance_hop_uses_target_selector_and_preserves_dry_run(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)

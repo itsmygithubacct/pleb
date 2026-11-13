@@ -86,6 +86,18 @@ class PlebPlumbingTests(unittest.TestCase):
             with self.subTest(line=line.strip()):
                 self.assertIn("PLEB_SESSION_SERVICES=off", line)
 
+    def test_release_readers_name_the_neuronte_pin(self):
+        common = (ROOT / "lib" / "common.sh").read_text()
+        session = (ROOT / "bin" / "pleb-session").read_text()
+        controlled = common.split('PLEB_RELEASE_CONTROLLED_KEYS="', 1)[1].split('"', 1)[0].split()
+        reader = session.split('_pleb_release_vars="', 1)[1].split('"', 1)[0].split()
+        # The session reader may omit a build-only pin, never add one the
+        # release report and override guard do not know.
+        self.assertLessEqual(set(reader), set(controlled))
+        for name in ("NEURONTE_REPO", "NEURONTE_REF"):
+            self.assertIn(name, controlled)
+            self.assertIn(name, reader)
+
     def test_shell_scripts_parse(self):
         scripts = [
             "bin/pleb",
