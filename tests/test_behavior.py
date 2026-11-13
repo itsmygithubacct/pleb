@@ -3082,6 +3082,8 @@ touch {called!s}
                 GO_BIN_DIR={fake_bin!s}
                 PLEBIAN_OS_KILIX_GO_VERSION=go1.26.4
                 PLEBIAN_OS_KILIX_GO_SHA256_AMD64={expected}
+                # These cases exercise the retained archive installer.
+                PLEBIAN_OS_KILIX_GO_DEBIAN_VERSION=
                 _ensure_go_for_kilix_build
                 """
             )
@@ -3119,6 +3121,8 @@ touch {called!s}
                 GO_BIN_DIR={fake_bin!s}
                 PLEBIAN_OS_KILIX_GO_VERSION=go1.26.4
                 PLEBIAN_OS_KILIX_GO_SHA256_AMD64=not-a-sha
+                # These cases exercise the retained archive installer.
+                PLEBIAN_OS_KILIX_GO_DEBIAN_VERSION=
                 _ensure_go_for_kilix_build
                 """
             )
