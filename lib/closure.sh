@@ -243,6 +243,27 @@ _pleb_active_state_dir() {
     printf '%s\n' "$PLEB_STATE_HOME/release-hop"
 }
 
+# What the selector may replace, as it stands now. Recorded when a hop enters
+# its `selecting` phase and compared when an interrupted hop is recovered.
+_pleb_closure_fingerprint() {
+    local path
+    local -a paths
+    if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
+        paths=("$PLEB_ENV_SYSTEM" "$PLEB_CLOSURE_SYSTEM")
+    else
+        paths=("$PLEB_ENV_USER" "$PLEB_CLOSURE_USER")
+    fi
+    for path in "${paths[@]}"; do
+        if [ -f "$path" ] && [ ! -L "$path" ]; then
+            printf '%s\n' "$(sha256sum -- "$path" | awk '{print $1}')"
+        elif [ -e "$path" ] || [ -L "$path" ]; then
+            printf '%s\n' other
+        else
+            printf '%s\n' absent
+        fi
+    done
+}
+
 _pleb_record_active_selector() {
     local phase="${1:-selecting}" state tmp
     state="$(_pleb_active_state_dir)"
@@ -258,7 +279,22 @@ _pleb_record_active_selector() {
     } >"$tmp"
     chmod 0600 "$tmp"
     mv -fT -- "$tmp" "$state/active"
+    tmp="$(mktemp "$state/.baseline.XXXXXX")" || die "could not stage release-hop state"
+    _pleb_closure_fingerprint >"$tmp"
+    chmod 0600 "$tmp"
+    mv -fT -- "$tmp" "$state/baseline"
     _pleb_write_private_line "$state/phase" "$phase"
+}
+
+# True when this hop recorded a baseline and the closure still matches it: the
+# interrupted selector never replaced anything, so there is nothing of THIS hop
+# to roll back. Asking the selector to roll back anyway restores the newest
+# record on the machine, which an EARLIER hop wrote: a whole-release downgrade.
+_pleb_selection_changed_nothing() {
+    local baseline
+    baseline="$(_pleb_active_state_dir)/baseline"
+    [ -f "$baseline" ] && [ ! -L "$baseline" ] || return 1
+    [ "$(cat -- "$baseline")" = "$(_pleb_closure_fingerprint)" ]
 }
 
 _pleb_set_active_phase() {
@@ -309,7 +345,8 @@ _pleb_load_active_selector() {
 }
 
 _pleb_clear_active_selector() {
-    rm -f -- "$(_pleb_active_state_dir)/active" "$(_pleb_active_state_dir)/phase"
+    rm -f -- "$(_pleb_active_state_dir)/active" "$(_pleb_active_state_dir)/phase" \
+        "$(_pleb_active_state_dir)/baseline"
     _PLEB_HOP_PHASE=""
 }
 
@@ -328,6 +365,12 @@ pleb_recover_incomplete_release_hop() {
         _pleb_set_active_phase complete
         _PLEB_HOP_RECOVERY_RESULT=cancelled
         log "interrupted rollback was cancelled safely; release $_PLEB_HOP_TARGET remains selected"
+        return 0
+    fi
+    if [ "$_PLEB_HOP_PHASE" = selecting ] && _pleb_selection_changed_nothing; then
+        warn "the interrupted selection had not replaced the closure; nothing is rolled back"
+        _pleb_clear_active_selector
+        _PLEB_HOP_RECOVERY_RESULT=unchanged
         return 0
     fi
     _pleb_selector_env "$_PLEB_HOP_SELECTOR" --rollback || rc=$?
@@ -440,7 +483,11 @@ pleb_release_hop() {
     fi
     if [ "$mode" = rollback ]; then
         if [ "$recovered" = 1 ]; then
-            log "the interrupted release hop was rolled back"
+            if [ "$_PLEB_HOP_RECOVERY_RESULT" = unchanged ]; then
+                log "the interrupted release hop had changed nothing; the installed release is as it was"
+            else
+                log "the interrupted release hop was rolled back"
+            fi
             return 0
         fi
         _pleb_load_active_selector
