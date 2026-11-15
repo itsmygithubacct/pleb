@@ -1477,7 +1477,19 @@ EOF
 
 _ensure_go_for_kilix_build() {
     if [ -n "${PLEBIAN_OS_KILIX_GO_DEBIAN_VERSION:-}" ]; then
-        "$PLEB_ROOT/scripts/install-debian-go.sh" \
+        # Closure files are sourced, not exported. Pass the exact package file
+        # pins on, so the installer can fetch the same bytes from snapshot or
+        # the release mirror once trixie-backports has replaced the upload.
+        local -a debian_go_files=()
+        local debian_go_key
+        for debian_go_key in PLEBIAN_OS_KILIX_GO_DEB_AMD64_FILE \
+                PLEBIAN_OS_KILIX_GO_DEB_AMD64_BYTES PLEBIAN_OS_KILIX_GO_DEB_AMD64_SHA256 \
+                PLEBIAN_OS_KILIX_GO_DEB_SRC_FILE PLEBIAN_OS_KILIX_GO_DEB_SRC_BYTES \
+                PLEBIAN_OS_KILIX_GO_DEB_SRC_SHA256 PLEBIAN_OS_KILIX_GO_DEB_SNAPSHOT \
+                PLEBIAN_OS_KILIX_GO_DEB_MIRROR_URL; do
+            debian_go_files+=("$debian_go_key=${!debian_go_key:-}")
+        done
+        env "${debian_go_files[@]}" "$PLEB_ROOT/scripts/install-debian-go.sh" \
             "${PLEBIAN_OS_KILIX_GO_VERSION:-}" "$PLEBIAN_OS_KILIX_GO_DEBIAN_VERSION" \
             || die "Debian Go toolchain install failed"
         export PATH="/usr/lib/go-1.27/bin:$PATH" GOROOT=/usr/lib/go-1.27 GOENV=off GOTOOLCHAIN=local
