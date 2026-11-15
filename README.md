@@ -843,6 +843,10 @@ The session consumes the display/desktop values; `pleb install`, `update`, and
 | `PLEBIAN_OS_KILIX_GO_VERSION` | *(none)* | Exact Go release, such as `go1.26.4`; requires the matching architecture hash. |
 | `PLEBIAN_OS_KILIX_GO_SHA256_AMD64` | *(none)* | Trusted SHA-256 for the pinned Linux amd64 Go archive. |
 | `PLEBIAN_OS_KILIX_GO_SHA256_ARM64` | *(none)* | Trusted SHA-256 for the pinned Linux arm64 Go archive. |
+| `PLEBIAN_OS_KILIX_GO_DEBIAN_VERSION` | *(none)* | Exact trixie-backports `golang-1.27` package version; selects Debian Go instead of an archive. |
+| `PLEBIAN_OS_KILIX_GO_DEB_AMD64_FILE`, `_AMD64_BYTES`, `_AMD64_SHA256`, `_SRC_FILE`, `_SRC_BYTES`, `_SRC_SHA256` | *(none)* | Exact Debian Go package files: name, size and SHA-256 of `golang-1.27-go` (amd64) and `golang-1.27-src` (all). Every downloaded file must match before apt installs it. |
+| `PLEBIAN_OS_KILIX_GO_DEB_SNAPSHOT` | *(none)* | snapshot.debian.org timestamp holding those files, tried when the live backports archive no longer offers the version. |
+| `PLEBIAN_OS_KILIX_GO_DEB_MIRROR_URL` | *(none)* | HTTPS release-mirror base, tried last. Each asset is the file name with every character outside `[A-Za-z0-9._-]` replaced by `.`. |
 | `PLEB_SKIP_DEPS` | `0` | If `1`, skip package installation during `pleb install`/`update`; update still verifies and fails if prerequisites are missing. |
 | `PLEB_INSTALL_VOICE_MODEL` | `0` | `0` installs the pinned read-aloud-only closure; `1` requires the complete pinned dictation library and model and fails instead of degrading. |
 | `PLEB_KILIX_ARGS` | auto | Args passed to Kilix; unset means maximized with host decorations hidden when a WM is present, fixed screen-fill sizing without one. |
