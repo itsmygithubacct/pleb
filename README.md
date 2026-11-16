@@ -1,10 +1,30 @@
 # pleb — a kilix kiosk desktop session
 
-## 0.2.2.1 maintenance candidate
+## 0.2.3
 
-Release updates recognize an optional positive maintenance number, such as `0.2.2.1`, and preserve adjacent-release and exact-tag checks.
+Pleb 0.2.3 is part of the coordinated
+[Plebian-OS 0.2.3 release](https://github.com/itsmygithubacct/plebian-os/blob/v0.2.3/releases/0.2.3-notes.md),
+which records the exact stack closure, its qualification and its known
+issues. Since 0.2.2, Pleb:
 
-This source is a release candidate; installation-media and upgrade acceptance are pending.
+- records the selected release tag and tag object, so a later release
+  candidate moves to its published final on `pleb update --latest`;
+- makes a first closure selection on a standalone machine that never selected
+  one, and returns it to its previous checkouts on rollback;
+- installs the pinned Debian Go files from snapshot.debian.org or the release
+  mirror once trixie-backports has replaced the selected upload;
+- reports an interrupted same-version reselect as unchanged instead of rolling
+  it back;
+- stacks desktop notifications in one window and focuses a pane through its
+  notification icon.
+
+Release updates also recognize an optional positive maintenance number, such
+as `0.2.2.1`, and preserve adjacent-release and exact-tag checks.
+
+A machine on a 0.2.3 release candidate (RC1–RC9) moves to the final once with
+`pleb update --to 0.2.3`, not `--latest`. A standalone machine whose Pleb
+reports VERSION 0.2.1 runs a bare `pleb update` first, then
+`pleb update --to 0.2.3`.
 
 **Pleb** turns [`kilix`](https://github.com/itsmygithubacct/kilix) (a Tilix-styled
 [kitty](https://sw.kovidgoyal.net/kitty/) fork) into a **full desktop session**:
@@ -633,8 +653,8 @@ root-owned or is writable by group/other users.
 ```sh
 pleb update              # revalidate the selected closure; never drift to a newer release
 pleb update --show       # print every selected release value and the file that supplied it
-pleb update --to 0.2.1 --dry-run # validate and report the exact published target; write no installed state
-pleb update --to 0.2.1   # select and apply one named, supported release hop
+pleb update --to 0.2.3 --dry-run # validate and report the exact published target; write no installed state
+pleb update --to 0.2.3   # select and apply one named, supported release hop
 pleb update --latest     # select the newest release only when that is an accepted adjacent hop
 pleb update --rollback   # restore the immediately previous closure and stack (one generation)
 pleb update -y           # ...and restart an active Pleb kiosk without asking
@@ -644,11 +664,25 @@ pleb update --preserve-only # verified snapshots only; move no checkout
 ```
 
 For an explicitly chosen release candidate, use
-`pleb update --to 0.2.3 --release-tag v0.2.3-rc1 --dry-run`, then repeat without
+`pleb update --to 0.2.4 --release-tag v0.2.4-rc1 --dry-run`, then repeat without
 `--dry-run` to apply it. The tag must match the numeric target exactly; only a
 stable tag or a positive numbered `-rcN` suffix is accepted. `--latest` remains
 stable-only. The exact tag identity is retained for rollback and interrupted
 operation recovery, and image updates revalidate the selected closure.
+
+From 0.2.3, every selection records `PLEBIAN_OS_RELEASE_TAG` and
+`PLEBIAN_OS_RELEASE_TAG_OBJECT` in `closure.env`, and `pleb update --show`
+lists them. A machine on a recorded candidate (`vX.Y.Z-rcN`) therefore moves to
+the published `vX.Y.Z` on `pleb update --latest`, and the bare `pleb update`
+names that move. A final never moves to a candidate. Machines selected before
+0.2.3, including the 0.2.3 release candidates, record no tag: their `--latest`
+does not move them to the final 0.2.3 (before publication it names the older
+0.2.2), so move them once with `pleb update --to 0.2.3`.
+
+On a standalone machine that has never selected a release, the first `--to`
+records where each checkout stands; `--rollback` (or a failed apply) removes the
+closure again and returns pleb, Kilix and Kilix 95 to those commits and
+branches. Releases published before 0.2.3 cannot be a first selection.
 
 Older installations, including 0.2.2, do not understand `--release-tag`. They
 need an explicit migration driver from a separately obtained, verified Pleb
@@ -659,7 +693,7 @@ instructions:
 ```sh
 /path/to/verified-driver/bin/pleb-release-hop \
   --installed-pleb "$(command -v pleb)" --driver-ref "$DRIVER_REF" -- \
-  update --to 0.2.3 --release-tag v0.2.3-rc1 --dry-run
+  update --to 0.2.4 --release-tag v0.2.4-rc1 --dry-run
 ```
 
 The driver compares actual regular-file module bytes and executable modes
