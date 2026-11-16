@@ -400,10 +400,11 @@ therefore retain their kittens-fire wallpaper default.
   `pleb install` runs, so `pleb install` does not use the system apt: a
   package still missing is refused by name ("release package closure is
   incomplete; missing …"). A package held with `apt-mark hold`, or installed
-  for a second architecture, counts as installed. The message says to run
-  `pleb update`, or `plebian-os-update --recover-interrupted` after an
-  interrupted update, or to report the package. Outside release mode, or on another Debian machine, `pleb install`
-  uses apt as described.
+  for a second architecture, counts as installed. The message says what to
+  do ("run 'plebian-os-update --revalidate-current' to reinstall this release's
+  packages; if it is still missing, report it").
+  Outside release mode, or on another Debian machine, `pleb install` uses apt
+  as described.
   Before a fork build, `pleb update` runs Kilix's own complete cross-distro
   dependency verifier and installer (including the `libxxhash` pkg-config
   module). Set `PLEB_SKIP_DEPS=1` to prevent package-manager changes; an update
