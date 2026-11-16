@@ -36,8 +36,11 @@ _install_missing_apt_packages() {
     if command -v dpkg-query >/dev/null 2>&1; then
         local pkg status
         for pkg in "${deps[@]}"; do
-            status="$(dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null || true)"
-            if ! printf '%s\n' "$status" | grep -qx 'install ok installed'; then
+            # db:Status-Status is "installed" for both a normal install and an
+            # apt-mark hold. One line per architecture; any installed instance
+            # counts. The want flag (install vs hold) does not.
+            status="$(dpkg-query -W -f='${db:Status-Status}\n' "$pkg" 2>/dev/null || true)"
+            if ! printf '%s\n' "$status" | grep -qx 'installed'; then
                 missing+=("$pkg")
             fi
         done
@@ -52,6 +55,7 @@ _install_missing_apt_packages() {
     if _release_closure_refuses_system_apt; then
         warn "release package closure is incomplete; missing ${missing[*]}"
         warn "the system apt configuration was not used"
+        warn "run 'pleb update', or 'plebian-os-update --recover-interrupted', or report it"
         return 1
     fi
 
@@ -103,11 +107,16 @@ ensure_system_deps() {
     # cannot resolve them — and one unresolvable name fails the whole apt-get
     # transaction. Kept out of the required set and tolerated here, because
     # espeak-ng alone is the default engine and Kilix falls back to it when an
-    # mbrola voice is missing. `unzip` above extracts the checksum-pinned Vosk
-    # wheel and acoustic-model archive. Microphone capture needs no new package:
-    # pulseaudio-utils (parec/pacat) is already installed for the volume widget.
-    _install_missing_apt_packages "read-aloud mbrola voices" mbrola mbrola-us1 \
-        || warn "mbrola voices unavailable (enable Debian's contrib and non-free components to install them); read-aloud uses espeak-ng"
+    # mbrola voice is missing. The release closure does not carry mbrola-us1
+    # on purpose, so release mode must not call that an incomplete closure and
+    # must not call system apt for it. `unzip` above extracts the checksum-pinned
+    # Vosk wheel and acoustic-model archive. Microphone capture needs no new
+    # package: pulseaudio-utils (parec/pacat) is already installed for the volume
+    # widget.
+    if ! _release_closure_refuses_system_apt; then
+        _install_missing_apt_packages "read-aloud mbrola voices" mbrola mbrola-us1 \
+            || warn "mbrola voices unavailable (enable Debian's contrib and non-free components to install them); read-aloud uses espeak-ng"
+    fi
 }
 
 ensure_kilix_build_deps() {
