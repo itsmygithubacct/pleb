@@ -86,8 +86,11 @@ class ReleaseSystemAptTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stderr)
         self.assertIn("release package closure is incomplete; missing libdep-sim", result.stderr)
         self.assertIn("the system apt configuration was not used", result.stderr)
-        self.assertIn("plebian-os-update --recover-interrupted", result.stderr)
-        self.assertIn("pleb update", result.stderr)
+        self.assertIn(
+            "run 'plebian-os-update --revalidate-current' to reinstall this release's packages; if it is still missing, report it",
+            result.stderr)
+        self.assertNotIn("pleb update", result.stderr)
+        self.assertNotIn("--recover-interrupted", result.stderr)
         self.assertFalse(self.installed.exists(), result.stderr)
         self.assertNotIn("apt-get", self.record.read_text() if self.record.exists() else "")
         self.assertNotIn(THIRD, result.stdout + result.stderr)
