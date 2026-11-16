@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.3 — YYYY-MM-DD
+## 0.2.3 — 2026-11-16
 
 Released as part of the coordinated Plebian-OS 0.2.3 release. The exact stack
 closure, qualification and known issues are owned by Plebian-OS in
