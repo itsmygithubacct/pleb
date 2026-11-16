@@ -462,9 +462,19 @@ pleb_recover_incomplete_release_hop() {
         return 0
     fi
     if [ "$_PLEB_HOP_PHASE" = selecting ] && _pleb_selection_changed_nothing; then
-        warn "the interrupted selection had not replaced the closure; nothing is rolled back"
-        _pleb_clear_active_selector
-        _PLEB_HOP_RECOVERY_RESULT=unchanged
+        # A stale attempt would make a later same-tag --rollback look like this
+        # interrupted reselect. This path does not call the selector, so clear
+        # the marker here.
+        rm -f -- "$PLEB_STATE_HOME/selection-attempt"
+        if [ "$(_pleb_release_version)" = "$_PLEB_HOP_TARGET" ]; then
+            warn "interrupted reselect of $_PLEB_HOP_TARGET; the installed closure is unchanged and nothing was rolled back"
+            _pleb_clear_active_selector
+            _PLEB_HOP_RECOVERY_RESULT=reselect-interrupted
+        else
+            warn "the interrupted selection had not replaced the closure; nothing is rolled back"
+            _pleb_clear_active_selector
+            _PLEB_HOP_RECOVERY_RESULT=unchanged
+        fi
         return 0
     fi
     _pleb_selector_env "$_PLEB_HOP_SELECTOR" --rollback || rc=$?
@@ -602,6 +612,8 @@ pleb_release_hop() {
         if [ "$recovered" = 1 ]; then
             if [ "$_PLEB_HOP_RECOVERY_RESULT" = unchanged ]; then
                 log "the interrupted release hop had changed nothing; the installed release is as it was"
+            elif [ "$_PLEB_HOP_RECOVERY_RESULT" = reselect-interrupted ]; then
+                log "interrupted reselect of the installed release; the installed closure is unchanged"
             else
                 log "the interrupted release hop was rolled back"
             fi

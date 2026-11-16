@@ -482,6 +482,39 @@ class ReleaseHopTests(unittest.TestCase):
                 self.assertNotIn("--rollback", later)
                 self.assertFalse((base / "updater.log").exists())
 
+    def test_interrupted_same_version_reselect_is_not_a_rollback(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            remote = self._release_remote(base)
+            env = self._env(base, remote)
+            closure = Path(env["PLEB_CLOSURE_USER"])
+            closure.write_text(closure.read_text().replace(
+                "PLEBIAN_OS_VERSION=0.2.0\n", "PLEBIAN_OS_VERSION=0.2.1\n", 1))
+            state = self._interrupt_while_selecting(base, env)
+            attempt = Path(env["PLEB_STATE_HOME"]) / "selection-attempt"
+            attempt.parent.mkdir(parents=True, exist_ok=True)
+            attempt.write_text(
+                "format=1\n"
+                "tag=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+                "target=0.2.1\n")
+            self.assertTrue((state / "baseline").is_file())
+            log = base / "selector.log"
+            calls = len(log.read_text().splitlines())
+            recovered = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            combined = recovered.stdout + recovered.stderr
+            self.assertIn("interrupted reselect of 0.2.1", combined)
+            self.assertNotIn("was rolled back", recovered.stdout)
+            self.assertFalse((state / "baseline").exists())
+            self.assertFalse(attempt.exists())
+            self.assertIn("PLEBIAN_OS_VERSION=0.2.1\n", closure.read_text())
+            later = log.read_text().splitlines()[calls:]
+            self.assertNotIn("--rollback", later)
+            self.assertFalse((base / "updater.log").exists())
+
     def test_interrupted_selecting_phase_rolls_back_a_replaced_closure(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
