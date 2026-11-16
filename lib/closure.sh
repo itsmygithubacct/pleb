@@ -58,6 +58,43 @@ _pleb_valid_release_tag() {
     [ "$suffix" != "$tag" ] && [[ "$suffix" =~ ^[1-9][0-9]*$ ]]
 }
 
+# The exact release tag the selected closure records, or nothing. Selectors from
+# 0.2.3 on write PLEBIAN_OS_RELEASE_TAG and PLEBIAN_OS_RELEASE_TAG_OBJECT beside
+# the numeric version, so a candidate and its final are told apart. A closure
+# written earlier records neither and keeps the numeric-only behaviour.
+_pleb_recorded_release_tag() {
+    local version="$1" tag="${PLEBIAN_OS_RELEASE_TAG:-}"
+    local object="${PLEBIAN_OS_RELEASE_TAG_OBJECT:-}"
+    _pleb_release_selected && [ -n "$tag" ] || return 0
+    if ! _pleb_valid_release_tag "$version" "$tag" \
+            || [[ ! "$object" =~ ^[0-9a-f]{40}$ ]]; then
+        warn "ignoring recorded release tag '$tag': it does not identify a tag object of release $version"
+        return 0
+    fi
+    printf '%s\n' "$tag"
+}
+
+# True when the selected closure records a numbered candidate of VERSION.
+_pleb_recorded_candidate() {
+    local version="$1" tag
+    tag="$(_pleb_recorded_release_tag "$version")"
+    [ -n "$tag" ] && [ "$tag" != "v$version" ]
+}
+
+_pleb_version_older() {
+    [ "$1" != "$2" ] \
+        && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]
+}
+
+# True when the selected closure is exactly VERSION at TAG. A closure without
+# a recorded tag is judged by its version alone, as before 0.2.3.
+_pleb_selected_identity_is() {
+    local version="$1" tag="$2" recorded
+    [ "$(_pleb_release_version)" = "$version" ] || return 1
+    recorded="$(_pleb_recorded_release_tag "$version" 2>/dev/null)"
+    [ -z "$recorded" ] || [ "$recorded" = "$tag" ]
+}
+
 _pleb_remote_release_inventory() {
     local object ref version
     git ls-remote --refs --tags "$PLEBIAN_OS_REPO" 'refs/tags/v*' 2>/dev/null \
@@ -470,7 +507,7 @@ pleb_recover_incomplete_release_hop() {
     _pleb_selector_env "$_PLEB_HOP_SELECTOR" --rollback || rc=$?
     if [ "$rc" -ne 0 ]; then
         if [ "$_PLEB_HOP_PHASE" = selecting ] \
-                && [ "$(_pleb_release_version)" != "$_PLEB_HOP_TARGET" ]; then
+                && ! _pleb_selected_identity_is "$_PLEB_HOP_TARGET" "$_PLEB_HOP_TAG"; then
             warn "interrupted selector left no restorable selected closure; clearing its pre-selection marker"
             _pleb_clear_active_selector
             _PLEB_HOP_RECOVERY_RESULT=unchanged
@@ -591,8 +628,12 @@ pleb_release_show() {
 pleb_release_hop() {
     local mode="$1" requested="$2" dry_run="$3" offline="$4" yes="$5" restart="$6" requested_tag="${7:-}"
     local current inventory target latest selector_rc=0 apply_rc=0 recovered=0
+    local current_label recorded_tag
     _pleb_refuse_release_env_overrides
     current="$(_pleb_release_version)"
+    recorded_tag="$(_pleb_recorded_release_tag "$current")"
+    current_label="$current"
+    [ -z "$recorded_tag" ] || current_label="$recorded_tag"
     if [ -f "$(_pleb_active_state_dir)/active" ] \
             && [ "$(cat "$(_pleb_active_state_dir)/phase" 2>/dev/null || true)" != complete ]; then
         pleb_recover_incomplete_release_hop
@@ -662,7 +703,20 @@ pleb_release_hop() {
             # A never-selected machine is not "on" the release its Pleb
             # checkout declares; --latest selects that release for it.
             if [ "$latest" = "$current" ] && _pleb_release_selected; then
-                log "release $current is already the latest published release"
+                # A recorded candidate of the published final moves to that
+                # final by the ordinary hop: its tag selector, trust and
+                # rollback. A final, or an unrecorded closure, stays.
+                if _pleb_recorded_candidate "$current"; then
+                    log "release candidate $recorded_tag is installed and final release v$current is published; selecting it"
+                else
+                    log "release $current is already the latest published release"
+                    return 0
+                fi
+            elif _pleb_recorded_candidate "$current" \
+                    && _pleb_version_older "$latest" "$current"; then
+                # Stable inventory never lists candidates, so this candidate's
+                # final is not published. Another candidate needs --release-tag.
+                log "release candidate $recorded_tag is installed; no final release $current or later is published, so it stays selected"
                 return 0
             fi
             target="$latest"
@@ -698,7 +752,11 @@ pleb_release_hop() {
     if _pleb_apply_selected_stack "$yes" "$restart"; then
         _pleb_set_active_phase complete
         _PLEB_HOP_EMERGENCY_ROLLBACK=0
-        log "release hop $current -> $target completed"
+        if [ "$current_label" != "$current" ] || [ "$_PLEB_HOP_TAG" != "v$target" ]; then
+            log "release hop $current_label -> $_PLEB_HOP_TAG completed"
+        else
+            log "release hop $current -> $target completed"
+        fi
         return 0
     else
         apply_rc=$?
@@ -716,7 +774,7 @@ pleb_release_hop() {
 }
 
 pleb_report_newer_release() {
-    local current inventory latest
+    local current inventory latest tag
     current="$(_pleb_release_version)"
     if [ "${PLEB_RELEASE_OFFLINE:-0}" = 1 ]; then
         warn "could not check for a newer published release: PLEB_RELEASE_OFFLINE=1"
@@ -736,6 +794,14 @@ pleb_report_newer_release() {
             && [ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | head -n 1)" = "$current" ]; then
         warn "newer published release $latest is available; this bare update did not select it"
         warn "move by an accepted hop with: pleb update --latest"
+    elif _pleb_recorded_candidate "$current"; then
+        tag="$(_pleb_recorded_release_tag "$current")"
+        if [ "$latest" = "$current" ]; then
+            warn "final release v$current is published; this machine runs release candidate $tag and this bare update did not select it"
+            warn "move to the final with: pleb update --latest"
+        else
+            log "installed release candidate $tag; no final release $current is published yet"
+        fi
     else
         log "installed release $current is the newest published release"
     fi
