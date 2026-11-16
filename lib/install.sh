@@ -55,7 +55,7 @@ _install_missing_apt_packages() {
     if _release_closure_refuses_system_apt; then
         warn "release package closure is incomplete; missing ${missing[*]}"
         warn "the system apt configuration was not used"
-        warn "run 'pleb update', or 'plebian-os-update --recover-interrupted', or report it"
+        warn "run 'plebian-os-update --revalidate-current' to reinstall this release's packages; if it is still missing, report it"
         return 1
     fi
 
