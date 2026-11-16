@@ -21,6 +21,11 @@ closure, qualification and known issues are owned by Plebian-OS in
   trixie-backports has replaced the selected upload; nothing is installed
   unless every file matches. Release-selected Debian Go is installed on build
   and upgrade and reconciled when a newer Debian package is present.
+- **Release packages.** In release mode on an installed Plebian-OS,
+  `pleb install` refuses a missing runtime package by name ("release package
+  closure is incomplete; missing …") instead of installing it from the system
+  apt, so an operator apt source never supplies one. Outside release mode, or
+  on a machine that is not Plebian-OS, it uses the system apt as before.
 - **Interrupted updates.** An interrupted same-version reselect is reported as
   `reselect-interrupted` and leaves the closure unchanged. A hop whose
   interrupted selection replaced nothing is not rolled back.

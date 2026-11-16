@@ -16,7 +16,9 @@ issues. Since 0.2.2, Pleb:
 - reports an interrupted same-version reselect as unchanged instead of rolling
   it back;
 - stacks desktop notifications in one window and focuses a pane through its
-  notification icon.
+  notification icon;
+- in release mode on an installed Plebian-OS, refuses a missing runtime
+  package by name instead of installing it from the system apt.
 
 Release updates also recognize an optional positive maintenance number, such
 as `0.2.2.1`, and preserve adjacent-release and exact-tag checks.
@@ -393,7 +395,14 @@ therefore retain their kittens-fire wallpaper default.
   playback (the same runtime its headless backend decodes with). It installs
   `libfluidsynth3`, not the `fluidsynth` player package, whose per-user
   service Debian enables at every login and which then holds the sound card
-  that dictation needs.
+  that dictation needs. On an installed Plebian-OS in release mode, the
+  release's own Debian-only dependency step installs these packages before
+  `pleb install` runs, so `pleb install` does not use the system apt: a
+  package still missing is refused by name ("release package closure is
+  incomplete; missing …"). Run `plebian-os-update --revalidate-current` to
+  install the release packages again, and report the package if it is still
+  refused. Outside release mode, or on another Debian machine, `pleb install`
+  uses apt as described.
   Before a fork build, `pleb update` runs Kilix's own complete cross-distro
   dependency verifier and installer (including the `libxxhash` pkg-config
   module). Set `PLEB_SKIP_DEPS=1` to prevent package-manager changes; an update
