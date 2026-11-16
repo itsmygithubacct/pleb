@@ -7,6 +7,16 @@
 # uninstall and out of the distribution's rollback.
 PLEB_CAPTURE_MODULES="displays.py displays_gui.py screenlock.py screenlock_gui.py capture_registry.py capture_sources.py capture_session.py capture_worker.py capture_screenshot.py capture_portal.py"
 
+# Release mode on an installed Plebian OS. The release closure was already
+# installed through the private Debian configuration, so a package still
+# missing here means that closure is incomplete. Development, and pleb on a
+# machine that is not Plebian OS, keep the system apt configuration.
+_release_closure_refuses_system_apt() {
+    [ "${PLEBIAN_OS_RELEASE_MODE:-0}" = 1 ] || return 1
+    local marker="${PLEBIAN_OS_MACHINE_MARKER:-/etc/plebian-os/build-info.env}"
+    [ -f "$marker" ] && [ ! -L "$marker" ]
+}
+
 _install_missing_apt_packages() {
     local label="$1"
     shift
@@ -37,6 +47,12 @@ _install_missing_apt_packages() {
         fi
     else
         missing=("${deps[@]}")
+    fi
+
+    if _release_closure_refuses_system_apt; then
+        warn "release package closure is incomplete; missing ${missing[*]}"
+        warn "the system apt configuration was not used"
+        return 1
     fi
 
     log "installing missing $label via apt-get: ${missing[*]}"
