@@ -42,7 +42,10 @@ class ReleaseSystemAptTests(unittest.TestCase):
             case "$pkg" in
               libdep-sim|mbrola|mbrola-us1) exit 1 ;;
             esac
-            printf 'install ok installed\\n'
+            case "$*" in
+              *db:Status-Status*) printf 'installed\\n' ;;
+              *) printf 'install ok installed\\n' ;;
+            esac
             """))
 
     def tearDown(self):
@@ -83,12 +86,14 @@ class ReleaseSystemAptTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stderr)
         self.assertIn("release package closure is incomplete; missing libdep-sim", result.stderr)
         self.assertIn("the system apt configuration was not used", result.stderr)
+        self.assertIn("plebian-os-update --recover-interrupted", result.stderr)
+        self.assertIn("pleb update", result.stderr)
         self.assertFalse(self.installed.exists(), result.stderr)
         self.assertNotIn("apt-get", self.record.read_text() if self.record.exists() else "")
         self.assertNotIn(THIRD, result.stdout + result.stderr)
 
     def test_an_installed_package_is_left_at_its_current_version(self):
-        _write(self.stubs / "dpkg-query", "#!/bin/sh\nprintf 'install ok installed\\n'\n")
+        _write(self.stubs / "dpkg-query", "#!/bin/sh\nprintf 'installed\\n'\n")
         result = self.run_install(
             '_install_missing_apt_packages "fixture" libdep-sim',
             PLEBIAN_OS_RELEASE_MODE="1",
@@ -151,10 +156,34 @@ class ReleaseSystemAptTests(unittest.TestCase):
             PLEBIAN_OS_RELEASE_MODE="1",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("missing mbrola mbrola-us1", result.stderr)
-        self.assertIn("the system apt configuration was not used", result.stderr)
-        self.assertIn("mbrola voices unavailable", result.stderr)
+        self.assertNotIn("mbrola", result.stderr)
+        self.assertNotIn("closure is incomplete", result.stderr)
         self.assertFalse(self.installed.exists())
+
+    def test_a_held_package_counts_as_installed(self):
+        _write(self.stubs / "dpkg-query", textwrap.dedent("""\
+            #!/bin/sh
+            case "$*" in
+              *db:Status-Status*) printf 'installed\\n' ;;
+              *) printf 'hold ok installed\\n' ;;
+            esac
+            """))
+        result = self.run_install(
+            '_install_missing_apt_packages "fixture" pipewire',
+            PLEBIAN_OS_RELEASE_MODE="1",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("already installed", result.stdout)
+        self.assertNotIn("missing pipewire", result.stderr)
+
+    def test_development_mode_still_tries_the_optional_mbrola_voices(self):
+        result = self.run_install(
+            "ensure_system_deps",
+            PLEBIAN_OS_RELEASE_MODE="0",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("mbrola-us1", self.record.read_text())
+        self.assertNotIn("closure is incomplete", result.stderr)
 
     def test_kilix_installer_inherits_the_pinned_marker(self):
         kilix = self.base / "kilix"
