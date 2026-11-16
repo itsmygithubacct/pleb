@@ -24,8 +24,12 @@ closure, qualification and known issues are owned by Plebian-OS in
 - **Release packages.** In release mode on an installed Plebian-OS,
   `pleb install` refuses a missing runtime package by name ("release package
   closure is incomplete; missing …") instead of installing it from the system
-  apt, so an operator apt source never supplies one. Outside release mode, or
-  on a machine that is not Plebian-OS, it uses the system apt as before.
+  apt, so an operator apt source never supplies one. A package held with
+  `apt-mark hold`, or installed for a second architecture, counts as
+  installed. The refusal says to run `pleb update`, or
+  `plebian-os-update --recover-interrupted`, or to report it. Outside release
+  mode, or on a machine that is not Plebian-OS, it uses the system apt as
+  before.
 - **Interrupted updates.** An interrupted same-version reselect is reported as
   `reselect-interrupted` and leaves the closure unchanged. A hop whose
   interrupted selection replaced nothing is not rolled back.
