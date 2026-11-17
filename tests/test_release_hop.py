@@ -96,6 +96,9 @@ class ReleaseHopTests(unittest.TestCase):
         updater.write_text(
             "#!/usr/bin/env bash\n"
             f"printf '%s\\n' \"$*\" >>{str(updater_log)!r}\n"
+            f"printf '%s %s\\n' \"${{PLEB_UPDATE_LOCK_FD:-unset}}\" "
+            f"\"$(readlink \"/proc/$$/fd/${{PLEB_UPDATE_LOCK_FD:-0}}\" 2>/dev/null)\" "
+            f">>{str(base / 'updater.lock')!r}\n"
             f"if [ \"${{PLEB_TEST_UPDATER_FAIL_ONCE:-0}}\" = 1 ] "
             f"&& [ ! -e {str(updater_marker)!r} ]; then\n"
             f"  : >{str(updater_marker)!r}\n"
@@ -634,6 +637,11 @@ class ReleaseHopTests(unittest.TestCase):
             self.assertIn("recovering interrupted release-hop phase selected", plain.stderr)
             self.assertIn("nothing left to roll back", plain.stderr)
             self.assertFalse((state / "active").exists(), plain.stderr)
+            # The updater must be handed the update lock this process holds, or
+            # it collides with it ("another Pleb/Plebian-OS update is running").
+            fd, target = (base / "updater.lock").read_text().splitlines()[-1].split(" ", 1)
+            self.assertTrue(fd.isdigit(), fd)
+            self.assertTrue(target.endswith("/update.lock"), target)
             self.assertEqual((base / "updater.log").read_text().splitlines()[-1],
                              "--revalidate-current")
 

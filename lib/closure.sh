@@ -616,7 +616,17 @@ _pleb_restore_selected_stack() {
     local yes="$1"
     if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
         local updater="${PLEBIAN_OS_UPDATER_DST:-/usr/local/bin/plebian-os-update}"
-        [ -x "$updater" ] && "$updater" --revalidate-current
+        local -a lock=()
+        # A plain `pleb update` holds the update lock when it recovers a hop but
+        # does not export it (a hop mode does). The updater takes the same lock
+        # on its own descriptor and would collide with this process; hand it
+        # the one already held, as the hop modes do.
+        if [ -z "${PLEB_UPDATE_LOCK_FD:-}" ] && [ "${_UPDATE_LOCK_BORROWED:-0}" != 1 ] \
+                && [[ "${_UPDATE_LOCK_FD:-}" =~ ^[0-9]+$ ]] \
+                && [ -e "/proc/$$/fd/$_UPDATE_LOCK_FD" ]; then
+            lock=(env "PLEB_UPDATE_LOCK_FD=$_UPDATE_LOCK_FD")
+        fi
+        [ -x "$updater" ] && "${lock[@]}" "$updater" --revalidate-current
     else
         local -a args=(--no-restart) pins=()
         local record="" key commit branch
