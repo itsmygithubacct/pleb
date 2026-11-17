@@ -670,12 +670,29 @@ xset -dpms        2>/dev/null || true
 xset b off        2>/dev/null || xset -b 2>/dev/null || true
 xsetroot -solid "$PLEB_BG" 2>/dev/null || true
 
+# --- rescue terminals ---------------------------------------------------------
+# A rescue terminal has to take typing at once. Openbox does not focus new
+# windows (focusNew no in the shipped profile) and with no window manager X focus
+# is the pointer root, so a plain xterm gets no keys until the pointer is in it.
+# It is started with the class below, which the profile's one application rule
+# focuses, and _pleb_focus_recovery_terminal gives it the input focus itself once
+# it is mapped, which is what the no-window-manager cases need. Only -name and
+# -class are added to the callers' command line.
+_PLEB_RECOVERY_FLAGS=(-name pleb-recovery -class PlebRecovery)
+_pleb_focus_recovery_terminal() {
+    command -v xdotool >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1 || return 0
+    [ -n "${DISPLAY:-}" ] || return 0
+    ( timeout 20 xdotool search --sync --onlyvisible --class PlebRecovery \
+        windowfocus %1 >/dev/null 2>&1 || true ) &
+}
+
 # --- locate a runnable kilix -------------------------------------------------
 if [ ! -x "$KILIX" ]; then
     echo "FATAL: kilix not found/executable at: $KILIX" >&2
     # don't strand the user on a black screen — drop to a terminal if we can
     if command -v xterm >/dev/null 2>&1; then
-        exec xterm -geometry 100x30 -e sh -c \
+        _pleb_focus_recovery_terminal
+        exec xterm "${_PLEB_RECOVERY_FLAGS[@]}" -geometry 100x30 -e sh -c \
             'printf "%s\n\n" "pleb: kilix missing at: $1"; exec "${SHELL:-/bin/sh}"' sh "$KILIX"
     fi
     exit 1
@@ -875,7 +892,9 @@ _pleb_cleanup() {
 }
 _pleb_recovery_terminal() {
     _pleb_require_process_cleanup
-    _pleb_launch_owned PLEB_KILIX_PID PLEB_KILIX_START "${_PLEB_RECOVERY_XTERM:-xterm}" "$@"
+    _pleb_focus_recovery_terminal
+    _pleb_launch_owned PLEB_KILIX_PID PLEB_KILIX_START "${_PLEB_RECOVERY_XTERM:-xterm}" \
+        "${_PLEB_RECOVERY_FLAGS[@]}" "$@"
     wait "$PLEB_KILIX_PID"
     local rc=$?
     PLEB_KILIX_PID=""

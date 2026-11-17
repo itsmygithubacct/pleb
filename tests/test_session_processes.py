@@ -30,6 +30,9 @@ class SessionProcesses(unittest.TestCase):
         self.addCleanup(self.cleanup)
         for name in ('xset', 'xsetroot', 'xrandr', 'xterm'):
             self.script(name, '#!/bin/sh\nexit 0\n')
+        # Never the real xdotool: nothing here may reach a display. It records
+        # what it was asked, and does nothing.
+        self.script('xdotool', '#!/bin/sh\nprintf "%s\\n" "$@" >"$FIXTURE_ROOT/xdotool.argv"\nexit 0\n')
         self.script('xprop', '''#!/bin/sh
 if [ "$FIXTURE_MODE" = adopted ] || { [ "$FIXTURE_MODE" = ready ] && [ -f "$FIXTURE_ROOT/wm.pid" ]; }; then
     printf '_NET_SUPPORTING_WM_CHECK: window id # 0x123\n'
@@ -56,8 +59,11 @@ while True: time.sleep(.05)
                              PLEB_LOG=str(self.root/'session.log'),
                              KILIX=str(self.bin/'kilix'), KILIX_DIR=str(self.root/'absent'),
                              FIXTURE_ROOT=str(self.root), FIXTURE_MODE='starting')
-        lifecycle = (ROOT/'bin/pleb-session').read_text().split(
-            '# --- window manager ---', 1)[1]
+        source = (ROOT/'bin/pleb-session').read_text()
+        lifecycle = source.split('# --- window manager ---', 1)[1]
+        # the rescue-terminal definitions that precede the lifecycle section
+        self.rescue = '# --- rescue terminals' + source.split(
+            '# --- rescue terminals', 1)[1].split('# --- locate a runnable kilix', 1)[0]
         self.driver = self.root/'session-under-test'
         self.driver.write_text('''#!/bin/bash
 set -u
@@ -68,6 +74,7 @@ _PLEB_RUN_ALIASES_DEFAULT=1
 KILIX_RUN_ALIAS_APPS=
 KILIX_RUN_ALIAS_EXCLUDE_APPS=
 exec >>"$PLEB_LOG" 2>&1
+'''+self.rescue+'''
 # --- window manager ---'''+lifecycle)
         self.driver.chmod(0o700)
 
@@ -224,6 +231,69 @@ _pleb_stop_owned "$control:$expected" || exit 83
         p.terminate()
         self.assertEqual(p.wait(timeout=7), 143, self.log())
         self.assert_stopped(wm, terminal)
+
+    def recording_xterm(self):
+        self.script('xterm', '#!/bin/sh\nprintf "%s\\n" "$@" >"$FIXTURE_ROOT/xterm.argv"\nexit 0\n')
+
+    def wait_for(self, name):
+        path = self.root / name
+        until = time.monotonic() + 8
+        while not path.exists():
+            if time.monotonic() >= until:
+                self.fail(name + ' was not written: ' + self.log())
+            time.sleep(.02)
+        time.sleep(.05)
+        return path.read_text().splitlines()
+
+    def test_the_recovery_terminal_carries_the_rescue_class_and_the_callers_arguments(self):
+        # The window manager never comes up, so the session opens its rescue
+        # terminal through _pleb_recovery_terminal.
+        self.env['PLEB_WM_TIMEOUT'] = '1'
+        self.recording_xterm()
+        p = self.start()
+        argv = self.wait_for('xterm.argv')
+        p.wait(timeout=7)
+        self.assertEqual(argv[:6], ['-name', 'pleb-recovery', '-class', 'PlebRecovery',
+                                    '-geometry', '100x30'], argv)
+        self.assertEqual(argv[6:9], ['-e', 'sh', '-c'], argv)
+        self.assertEqual(argv[-1], str(self.root / 'session.log'))
+
+    def test_the_recovery_terminal_is_given_the_input_focus_without_a_pointer_action(self):
+        self.env.update(PLEB_WM_TIMEOUT='1', DISPLAY=':77')
+        self.recording_xterm()
+        p = self.start()
+        self.assertEqual(self.wait_for('xdotool.argv'),
+                         ['search', '--sync', '--onlyvisible', '--class', 'PlebRecovery',
+                          'windowfocus', '%1'])
+        p.wait(timeout=7)
+
+    def test_no_display_means_no_focus_attempt_and_the_terminal_still_opens(self):
+        self.env['PLEB_WM_TIMEOUT'] = '1'
+        self.recording_xterm()
+        p = self.start()                      # DISPLAY is empty
+        argv = self.wait_for('xterm.argv')
+        p.wait(timeout=7)
+        self.assertEqual(argv[:4], ['-name', 'pleb-recovery', '-class', 'PlebRecovery'])
+        self.assertFalse((self.root / 'xdotool.argv').exists())
+
+    def test_a_missing_kilix_opens_the_same_rescue_terminal(self):
+        """The pre-window-manager branch of pleb-session, run as written with a
+        recording xterm and xdotool and no display server."""
+        source = (ROOT / 'bin/pleb-session').read_text()
+        block = source.split('if [ ! -x "$KILIX" ]; then', 1)[1].split('\nfi\n', 1)[0]
+        self.recording_xterm()
+        script = self.root / 'missing-kilix'
+        script.write_text('#!/bin/bash\nset -u\n' + self.rescue +
+                          'KILIX=/nonexistent/kilix\nif [ ! -x "$KILIX" ]; then' + block + '\nfi\n')
+        script.chmod(0o700)
+        self.env['DISPLAY'] = ':77'
+        done = subprocess.run([str(script)], env=self.env, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        argv = self.wait_for('xterm.argv')
+        self.assertEqual(argv[:6], ['-name', 'pleb-recovery', '-class', 'PlebRecovery',
+                                    '-geometry', '100x30'], argv)
+        self.assertEqual(argv[-1], '/nonexistent/kilix')
+        self.assertEqual(self.wait_for('xdotool.argv')[-3:], ['PlebRecovery', 'windowfocus', '%1'])
 
     def with_services(self):
         self.env.update(PLEB_SESSION_SERVICES='on', PLEB_INPUT_METHOD='off',
