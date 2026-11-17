@@ -39,6 +39,11 @@ class ReleaseHopTests(unittest.TestCase):
                 kill -KILL "$PPID"
                 exit 9
             fi
+            if [ "${1:-}" = --rollback ] && [ -n "${PLEB_TEST_SELECTOR_SETTLES:-}" ]; then
+                # What the 0.2.3 selector does after a rollback that fully succeeded.
+                rm -f -- "$PLEB_TEST_SELECTOR_SETTLES/active" \
+                    "$PLEB_TEST_SELECTOR_SETTLES/phase" "$PLEB_TEST_SELECTOR_SETTLES/baseline"
+            fi
             if [ "${1:-}" = --rollback ] && [ -n "${PLEB_TEST_SELECTOR_ROLLBACK_STATUS:-}" ]; then
                 exit "$PLEB_TEST_SELECTOR_ROLLBACK_STATUS"
             fi
@@ -671,6 +676,65 @@ class ReleaseHopTests(unittest.TestCase):
                                    env=env, capture_output=True, text=True, check=False)
             self.assertNotEqual(again.returncode, 0)
             self.assertIn("no selected release closure is available to roll back", again.stderr)
+
+    def test_recovery_copes_with_a_selector_that_settled_the_marker_itself(self):
+        """The 0.2.3 selector removes active, phase and baseline after a rollback
+        that fully succeeded. The driver that asked must still see success, find
+        nothing missing afterwards, and reconcile the stack, in every mode."""
+        for argv in (["update", "--rollback", "--no-restart"],
+                     ["update", "--to", "0.2.1", "--no-restart"]):
+            with self.subTest(argv=argv), tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                env, state = self._selected_hop(base)
+                done = {**env, "PLEB_TEST_SELECTOR_SETTLES": str(state)}
+                result = subprocess.run([str(PLEB), *argv], env=done,
+                                        capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("cannot update release-hop phase", result.stderr)
+                self.assertIn("--revalidate-current",
+                              (base / "updater.log").read_text().splitlines())
+                if argv[1] == "--rollback":
+                    self.assertFalse((state / "active").exists())
+                else:
+                    self.assertEqual((state / "phase").read_text(), "complete\n")
+                # With the marker gone a following plain update has nothing to recover.
+                again = subprocess.run([str(PLEB), "update", "--rollback", "--no-restart"],
+                                       env=env, capture_output=True, text=True, check=False)
+                if argv[1] == "--rollback":
+                    self.assertIn("no selected release closure is available", again.stderr)
+
+    def test_the_fallback_belongs_to_the_selected_phase_and_a_missing_selector_is_not_the_targets(self):
+        for phase, message in (("selecting", "had changed nothing"),
+                               ("complete", None)):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                env, state = self._selected_hop(base)
+                (state / "phase").write_text(phase + "\n")
+                calls = len((base / "selector.log").read_text().splitlines())
+                result = subprocess.run(
+                    [str(PLEB), "update", "--rollback", "--no-restart"],
+                    env={**env, "PLEB_TEST_SELECTOR_ROLLBACK_STATUS": "1"},
+                    capture_output=True, text=True, check=False)
+                self.assertNotIn("nothing left to roll back", result.stderr)
+                if message:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn(message, result.stderr + result.stdout)
+                else:
+                    # A complete hop is rolled back by the selector itself, whose
+                    # failure is a failed rollback, not a settled one.
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("closure rollback failed with status 1", result.stderr)
+        # No selector installed at all (the fixture's default) is not the target's.
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env, state = self._selected_hop(base)
+            self.assertFalse(Path(env["PLEBIAN_OS_SELECTOR_DST"]).exists())
+            ok = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env={**env, "PLEB_TEST_SELECTOR_ROLLBACK_STATUS": "1"},
+                capture_output=True, text=True, check=False)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            self.assertIn("nothing left to roll back", ok.stderr)
 
     def test_recovery_stays_blocked_while_an_update_is_still_running(self):
         with tempfile.TemporaryDirectory() as td:
