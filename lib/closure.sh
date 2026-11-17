@@ -547,6 +547,8 @@ pleb_release_hop_exit_cleanup() {
             _pleb_clear_active_selector
         else
             err "emergency release-hop recovery is incomplete: closure status $rollback_rc; stack status $stack_rc; owner: F109 recovery operator"
+            [ "$rollback_rc" != 13 ] \
+                || warn "the update was still running; once it has finished, run: pleb update --rollback"
             rc=1
         fi
     elif [ "${_PLEB_HOP_EMERGENCY_ROLLBACK:-0}" = 2 ]; then
