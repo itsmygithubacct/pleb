@@ -515,6 +515,15 @@ pleb_recover_incomplete_release_hop() {
         return 0
     fi
     _pleb_selector_env "$_PLEB_HOP_SELECTOR" --rollback || rc=$?
+    if [ "$rc" -ne 0 ] && [ "$_PLEB_HOP_PHASE" = selected ] \
+            && _pleb_selection_changed_nothing; then
+        # A driver that died after the selector's rollback ran, before it
+        # cleared this marker, finds nothing left to roll back. The closure
+        # is exactly the one recorded before the hop, so only the stack and
+        # the marker are left to settle.
+        warn "the selector has nothing left to roll back and the closure is the one from before the hop; reconciling the stack"
+        rc=0
+    fi
     if [ "$rc" -ne 0 ]; then
         if [ "$_PLEB_HOP_PHASE" = selecting ] \
                 && ! _pleb_selected_identity_is "$_PLEB_HOP_TARGET" "$_PLEB_HOP_TAG"; then

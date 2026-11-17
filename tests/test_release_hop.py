@@ -547,6 +547,50 @@ class ReleaseHopTests(unittest.TestCase):
         # SIGHUP, and every later write to the hop's stdio fails with EIO.
         self._hop_interrupted(lambda hop, master: os.close(master), terminal=True)
 
+    def test_recovery_settles_a_hop_whose_closure_rollback_already_ran(self):
+        """The driver died after the selector's rollback stamped its record and
+        restored the closure, before the hop marker was cleared. The selector
+        now has nothing to roll back; recovery reconciles the stack and ends."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env = self._env(base, self._release_remote(base))
+            selected = subprocess.run(
+                [str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+                env=env, capture_output=True, text=True, check=False)
+            self.assertEqual(selected.returncode, 0, selected.stderr)
+            state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+            (state / "phase").write_text("selected\n")
+            nothing_left = {**env, "PLEB_TEST_SELECTOR_STATUS": "1"}
+            recovered = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env=nothing_left, capture_output=True, text=True, check=False)
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertIn("nothing left to roll back", recovered.stderr)
+            self.assertFalse((state / "active").exists())
+            self.assertEqual((base / "updater.log").read_text().splitlines()[-1],
+                             "--revalidate-current")
+
+    def test_recovery_stays_blocked_when_the_closure_is_not_the_one_before_the_hop(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env = self._env(base, self._release_remote(base))
+            selected = subprocess.run(
+                [str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+                env=env, capture_output=True, text=True, check=False)
+            self.assertEqual(selected.returncode, 0, selected.stderr)
+            state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+            (state / "phase").write_text("selected\n")
+            # The managed image fingerprints the system pair; the selector's
+            # write is what changes it.
+            Path(env["PLEB_CLOSURE_SYSTEM"]).write_text("PLEBIAN_OS_VERSION=0.2.1\n")
+            blocked = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env={**env, "PLEB_TEST_SELECTOR_STATUS": "1"},
+                capture_output=True, text=True, check=False)
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn("interrupted release hop is blocked", blocked.stderr)
+            self.assertTrue((state / "active").exists())
+
     def _interrupt_while_selecting(self, base, env):
         """Leave the state a Ctrl-C during the selector's fetch leaves: the
         hop marker says `selecting`, and the closure was never replaced."""
