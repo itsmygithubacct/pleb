@@ -12,6 +12,10 @@ closure, qualification and known issues are owned by Plebian-OS in
   `pleb update` names that move, and a final never moves to a candidate.
   Machines on the 0.2.3 release candidates record no tag and move once with
   `pleb update --to 0.2.3`.
+- **A hangup during a release hop rolls back in order.** The hop driver now
+  defers SIGHUP as it does Ctrl-C and SIGTERM, so its closure rollback runs
+  after the interrupted update has rolled back, and `/etc/pleb/session.env`
+  returns to its pre-hop contents.
 - **First standalone selection.** A standalone machine that never selected a
   closure can run `pleb update --to 0.2.3`. Its checkout positions are
   recorded first, and a rollback or failed apply returns Pleb, Kilix and Kilix

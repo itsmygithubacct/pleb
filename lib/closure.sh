@@ -534,7 +534,7 @@ pleb_recover_incomplete_release_hop() {
 
 pleb_release_hop_exit_cleanup() {
     local rc="$1" rollback_rc=0 stack_rc=0
-    trap - EXIT INT TERM
+    trap - EXIT INT TERM HUP
     set +e
     if [ "${_PLEB_HOP_EMERGENCY_ROLLBACK:-0}" = 1 ]; then
         warn "release hop exited before commit; restoring the previous closure and stack"
@@ -667,6 +667,7 @@ pleb_release_hop() {
         trap 'pleb_release_hop_exit_cleanup $?' EXIT
         trap 'exit 130' INT
         trap 'exit 143' TERM
+        trap 'exit 129' HUP
         _pleb_selector_env "$_PLEB_HOP_SELECTOR" --rollback || selector_rc=$?
         if [ "$selector_rc" != 0 ]; then
             _PLEB_HOP_EMERGENCY_ROLLBACK=0
@@ -761,6 +762,7 @@ pleb_release_hop() {
     trap 'pleb_release_hop_exit_cleanup $?' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
+    trap 'exit 129' HUP
     if _pleb_apply_selected_stack "$yes" "$restart"; then
         _pleb_set_active_phase complete
         _PLEB_HOP_EMERGENCY_ROLLBACK=0

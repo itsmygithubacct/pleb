@@ -1,9 +1,11 @@
 """Release-hop entrypoint, publication lookup, and split-closure reporting."""
 
 import os
+import signal
 import subprocess
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -442,6 +444,75 @@ class ReleaseHopTests(unittest.TestCase):
             self.assertIn(
                 "--rollback", (base / "selector.log").read_text().splitlines()[-1]
             )
+
+    # A running update keeps its own snapshot of session.env and restores it when
+    # an interrupt rolls it back. The closure rollback has to land after that.
+    _UPDATER_THAT_ROLLS_BACK_ON_A_SIGNAL = textwrap.dedent(
+        """\
+        #!/usr/bin/env python3
+        import os, signal, sys, time
+        base = {base!r}
+        with open(base + "/updater.log", "a") as log:
+            log.write(" ".join(sys.argv[1:]) + "\\n")
+        if os.path.exists(base + "/applied"):
+            sys.exit(0)  # the driver's own reconciliation after its rollback
+        open(base + "/applied", "w").close()
+        noted = []
+        for number in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+            signal.signal(number, lambda n, frame: noted.append(n))
+        open(base + "/updater-running", "w").close()
+        deadline = time.time() + 30
+        while not noted and time.time() < deadline:
+            time.sleep(0.02)
+        time.sleep(0.5)  # a shielded package step that outlives the signal
+        with open(base + "/selector.log") as log:
+            rolled_back_first = "--rollback" in log.read()
+        with open(base + "/updater-rollback-saw-closure-rollback", "w") as out:
+            out.write("yes\\n" if rolled_back_first else "no\\n")
+        sys.exit(128 + (noted[0] if noted else 1))
+        """
+    )
+
+    def test_a_terminal_signal_waits_for_the_update_before_rolling_back_the_closure(self):
+        for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=sig.name), tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                env = self._env(base, self._release_remote(base))
+                Path(env["PLEBIAN_OS_UPDATER_DST"]).write_text(
+                    self._UPDATER_THAT_ROLLS_BACK_ON_A_SIGNAL.format(base=str(base)))
+                hop = subprocess.Popen(
+                    [str(PLEB), "update", "--to", "0.2.1", "--no-restart"], env=env,
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self.addCleanup(hop.wait)
+                try:
+                    deadline = time.time() + 30
+                    while not (base / "updater-running").exists() and time.time() < deadline:
+                        time.sleep(0.02)
+                    self.assertTrue((base / "updater-running").exists())
+                    os.killpg(hop.pid, sig)
+                    hop.wait(timeout=30)
+                    marker = base / "updater-rollback-saw-closure-rollback"
+                    deadline = time.time() + 30
+                    while not marker.exists() and time.time() < deadline:
+                        time.sleep(0.02)
+                    self.assertEqual(marker.read_text(), "no\n",
+                                     "the closure rollback ran while the update was running")
+                    # The hop's cleanup outlives its leader; wait for it to finish.
+                    state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+                    deadline = time.time() + 30
+                    while (state / "active").exists() and time.time() < deadline:
+                        time.sleep(0.02)
+                    self.assertFalse((state / "active").exists())
+                    calls = (base / "selector.log").read_text().splitlines()
+                    self.assertEqual(calls[-1], "--rollback")
+                    self.assertEqual((base / "updater.log").read_text().splitlines(),
+                                     ["--revalidate-current", "--revalidate-current"])
+                finally:
+                    try:
+                        os.killpg(hop.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
 
     def _interrupt_while_selecting(self, base, env):
         """Leave the state a Ctrl-C during the selector's fetch leaves: the

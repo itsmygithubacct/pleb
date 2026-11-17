@@ -165,6 +165,7 @@ _acquire_update_lock() {
     trap _release_update_lock EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
+    trap 'exit 129' HUP
 }
 
 _snapshot_update_path() {
@@ -930,7 +931,7 @@ _update_transaction_rollback() {
 
 _update_cleanup() {
     local rc=$? rollback_ok=1
-    trap - EXIT INT TERM
+    trap - EXIT INT TERM HUP
     set +e
     if [ "${_UPDATE_TXN_ACTIVE:-0}" = 1 ] \
         && [ "${_UPDATE_TXN_COMMITTED:-0}" != 1 ]; then
@@ -980,6 +981,7 @@ _update_transaction_begin() {
     trap _update_cleanup EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
+    trap 'exit 129' HUP
     chmod 0700 "$_UPDATE_TXN_DIR"
 
     _write_kilix_submodule_map committed "$_UPDATE_TXN_DIR/submodules" \
@@ -1809,7 +1811,7 @@ do_update() {
         pleb_release_hop "$hop_mode" "$hop_target" "$dry_run" "$offline" \
             "$_UPDATE_YES" "$_UPDATE_RESTART" "$hop_tag"
         _release_update_lock
-        trap - EXIT INT TERM
+        trap - EXIT INT TERM HUP
         return 0
     fi
     [ "$dry_run" = 0 ] && [ "$offline" = 0 ] \
@@ -1825,7 +1827,7 @@ do_update() {
     if [ "$preserve_only" = 1 ]; then
         _preserve_only_update_checkouts
         _release_update_lock
-        trap - EXIT INT TERM
+        trap - EXIT INT TERM HUP
         return 0
     fi
     if [ "${PLEB_RELEASE_HOP_APPLY:-0}" != 1 ]; then
@@ -1936,5 +1938,5 @@ do_update() {
     _update_pleb_self
     _offer_restart
     _release_update_lock
-    trap - EXIT INT TERM
+    trap - EXIT INT TERM HUP
 }
