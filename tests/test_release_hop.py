@@ -39,6 +39,9 @@ class ReleaseHopTests(unittest.TestCase):
                 kill -KILL "$PPID"
                 exit 9
             fi
+            if [ "${1:-}" = --rollback ] && [ -n "${PLEB_TEST_SELECTOR_ROLLBACK_STATUS:-}" ]; then
+                exit "$PLEB_TEST_SELECTOR_ROLLBACK_STATUS"
+            fi
             exit "${PLEB_TEST_SELECTOR_STATUS:-0}"
             """
         )
@@ -574,11 +577,95 @@ class ReleaseHopTests(unittest.TestCase):
                     [str(PLEB), "update", "--rollback", "--no-restart"],
                     env=nothing_left, capture_output=True, text=True, check=False)
                 self.assertEqual(recovered.returncode, 0, recovered.stderr)
+                self.assertIn("selector exited with status 1", recovered.stderr)
                 self.assertIn("nothing left to roll back", recovered.stderr)
                 self.assertFalse((state / "active").exists())
                 self.assertEqual((base / "updater.log").read_text().splitlines()[-1],
                                  "--revalidate-current")
                 self.assertEqual(kept.exists(), retained)
+
+    def _selected_hop(self, base):
+        env = self._env(base, self._release_remote(base))
+        selected = subprocess.run(
+            [str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+            env=env, capture_output=True, text=True, check=False)
+        self.assertEqual(selected.returncode, 0, selected.stderr)
+        state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+        (state / "phase").write_text("selected\n")
+        return env, state
+
+    def test_recovery_then_carries_on_with_the_requested_hop(self):
+        """pleb update --to X after a dropped hop settles the old one first,
+        then makes the selection it was asked for."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env, state = self._selected_hop(base)
+            calls = len((base / "selector.log").read_text().splitlines())
+            again = subprocess.run(
+                [str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+                env={**env, "PLEB_TEST_SELECTOR_ROLLBACK_STATUS": "1"},
+                capture_output=True, text=True, check=False)
+            self.assertEqual(again.returncode, 0, again.stderr)
+            self.assertIn("nothing left to roll back", again.stderr)
+            later = (base / "selector.log").read_text().splitlines()[calls:]
+            self.assertEqual(later[0], "--rollback")
+            self.assertTrue(later[-1].startswith("0.2.1"), later)
+            self.assertEqual((state / "phase").read_text(), "complete\n")
+            self.assertEqual((base / "updater.log").read_text().splitlines()[-2:],
+                             ["--revalidate-current", "--revalidate-current"])
+
+    def test_a_plain_update_settles_the_dropped_hop_before_anything_else(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env, state = self._selected_hop(base)
+            # The plain update validates the Kilix checkouts before it recovers.
+            sources = Path(env["GPU_TERMINAL_SOURCE_HOME"])
+            for directory, origin in (
+                    (sources / "kilix", "https://github.com/itsmygithubacct/kilix.git"),
+                    (sources / "kilix-desktops/kilix-95",
+                     "https://github.com/itsmygithubacct/kilix-95.git")):
+                subprocess.run(["git", "init", "-q", str(directory)], check=True)
+                subprocess.run(["git", "-C", str(directory), "remote", "add", "origin", origin],
+                               check=True)
+            plain = subprocess.run(
+                [str(PLEB), "update", "--no-restart"],
+                env={**env, "PLEB_TEST_SELECTOR_ROLLBACK_STATUS": "1"},
+                capture_output=True, text=True, check=False)
+            self.assertIn("recovering interrupted release-hop phase selected", plain.stderr)
+            self.assertIn("nothing left to roll back", plain.stderr)
+            self.assertFalse((state / "active").exists(), plain.stderr)
+            self.assertEqual((base / "updater.log").read_text().splitlines()[-1],
+                             "--revalidate-current")
+
+    def test_recovery_stays_blocked_while_an_update_is_still_running(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env, state = self._selected_hop(base)
+            blocked = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env={**env, "PLEB_TEST_SELECTOR_ROLLBACK_STATUS": "13"},
+                capture_output=True, text=True, check=False)
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn("closure rollback failed with status 13", blocked.stderr)
+            self.assertTrue((state / "active").exists())
+
+    def test_recovery_stays_blocked_while_the_installed_selector_is_the_targets(self):
+        """A rollback that failed part-way keeps the selected tools. The session
+        and closure still match the baseline, but the selector installed on the
+        image is the target's, so that is not a finished rollback."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env, state = self._selected_hop(base)
+            target = state.parent.parent / "cache/release-hop/selectors"
+            cached = next(p for p in target.iterdir() if p.is_file())
+            Path(env["PLEBIAN_OS_SELECTOR_DST"]).write_bytes(cached.read_bytes())
+            blocked = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env={**env, "PLEB_TEST_SELECTOR_ROLLBACK_STATUS": "1"},
+                capture_output=True, text=True, check=False)
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn("interrupted release hop is blocked", blocked.stderr)
+            self.assertTrue((state / "active").exists())
 
     def test_recovery_stays_blocked_when_the_closure_is_not_the_one_before_the_hop(self):
         with tempfile.TemporaryDirectory() as td:

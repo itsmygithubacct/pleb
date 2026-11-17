@@ -427,6 +427,15 @@ _pleb_selection_changed_nothing() {
     [ "$(cat -- "$baseline")" = "$(_pleb_closure_fingerprint)" ]
 }
 
+# On an image the selector also installs itself. While the installed copy is
+# still the hop's target selector, its rollback has not restored the tools.
+_pleb_installed_selector_is_target() {
+    local dst="${PLEBIAN_OS_SELECTOR_DST:-/usr/local/bin/plebian-os-select-closure}"
+    [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ] || return 1
+    [ -f "$dst" ] && [ ! -L "$dst" ] || return 1
+    [ "$(sha256sum -- "$dst" | awk '{print $1}')" = "$_PLEB_HOP_SELECTOR_SHA" ]
+}
+
 _pleb_set_active_phase() {
     local phase="$1" state
     case "$phase" in selecting|selected|rolling-back|complete) ;; *) die "invalid release-hop phase: $phase" ;; esac
@@ -515,13 +524,19 @@ pleb_recover_incomplete_release_hop() {
         return 0
     fi
     _pleb_selector_env "$_PLEB_HOP_SELECTOR" --rollback || rc=$?
-    if [ "$rc" -ne 0 ] && [ "$_PLEB_HOP_PHASE" = selected ] \
-            && _pleb_selection_changed_nothing; then
+    # Status 13 is the selector saying an update is still running: its own
+    # rollback is not done, so nothing is settled.
+    if [ "$rc" -ne 0 ] && [ "$rc" != 13 ] && [ "$_PLEB_HOP_PHASE" = selected ] \
+            && _pleb_selection_changed_nothing \
+            && ! _pleb_installed_selector_is_target; then
         # A driver that died after the selector's rollback ran, before it
-        # cleared this marker, finds nothing left to roll back. The closure
-        # is exactly the one recorded before the hop, so only the stack and
-        # the marker are left to settle.
-        warn "the selector has nothing left to roll back and the closure is the one from before the hop; reconciling the stack"
+        # cleared this marker, finds nothing left to roll back. The selector
+        # reports every failure as status 1, so this does not rest on the
+        # status: the session and closure files are exactly what was recorded
+        # before the hop, and the selector installed on an image is no longer
+        # the target's (a rollback that failed part-way keeps the selected
+        # tools). Only the stack and the marker are left to settle.
+        warn "the selector exited with status $rc (its message is above); the closure is the one recorded before the hop, so there is nothing left to roll back; reconciling the stack"
         rc=0
     fi
     if [ "$rc" -ne 0 ]; then

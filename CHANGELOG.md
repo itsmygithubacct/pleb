@@ -18,9 +18,11 @@ closure, qualification and known issues are owned by Plebian-OS in
   `/etc/pleb/session.env` returns to its pre-hop contents. If the selector
   reports that the update is still running (status 13), the hop says to run
   `pleb update --rollback` once it has finished.
-  A hop whose closure rollback already ran, but whose marker was never
-  cleared, is settled by the next `pleb update`: the stack is reconciled and
-  the marker cleared instead of reporting the hop as blocked.
+  With this Pleb, a hop whose closure rollback already ran but whose marker
+  was never cleared is settled by the next `pleb update`: the stack is
+  reconciled with `plebian-os-update --revalidate-current` and the marker
+  cleared instead of reporting the hop as blocked. The 0.2.2 Pleb recovers
+  through the 0.2.2 updater, which moves to the latest published release.
 - **First standalone selection.** A standalone machine that never selected a
   closure can run `pleb update --to 0.2.3`. Its checkout positions are
   recorded first, and a rollback or failed apply returns Pleb, Kilix and Kilix
