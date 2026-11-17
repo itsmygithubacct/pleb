@@ -637,6 +637,33 @@ class ReleaseHopTests(unittest.TestCase):
             self.assertEqual((base / "updater.log").read_text().splitlines()[-1],
                              "--revalidate-current")
 
+    def test_rollback_keeps_one_generation_and_leaves_no_hop_record(self):
+        """A completed hop leaves its record (phase complete) so --rollback can
+        undo it, and is not mistaken for an interrupted hop. The rollback
+        consumes the record: there is no second generation to go back to, and
+        an earlier hop's record cannot be restored (a new hop had replaced it)."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env = self._env(base, self._release_remote(base))
+            state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+            hop = subprocess.run([str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+                                 env=env, capture_output=True, text=True, check=False)
+            self.assertEqual(hop.returncode, 0, hop.stderr)
+            self.assertEqual((state / "phase").read_text(), "complete\n")
+            self.assertTrue((state / "active").is_file() and (state / "baseline").is_file())
+            calls = (base / "selector.log").read_text().splitlines()
+            self.assertEqual(len([c for c in calls if c == "--rollback"]), 0)
+            back = subprocess.run([str(PLEB), "update", "--rollback", "--no-restart"],
+                                  env=env, capture_output=True, text=True, check=False)
+            self.assertEqual(back.returncode, 0, back.stderr)
+            self.assertNotIn("recovering interrupted", back.stderr)
+            for name in ("active", "phase", "baseline"):
+                self.assertFalse((state / name).exists(), name)
+            again = subprocess.run([str(PLEB), "update", "--rollback", "--no-restart"],
+                                   env=env, capture_output=True, text=True, check=False)
+            self.assertNotEqual(again.returncode, 0)
+            self.assertIn("no selected release closure is available to roll back", again.stderr)
+
     def test_recovery_stays_blocked_while_an_update_is_still_running(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
