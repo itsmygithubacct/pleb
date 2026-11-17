@@ -550,25 +550,35 @@ class ReleaseHopTests(unittest.TestCase):
     def test_recovery_settles_a_hop_whose_closure_rollback_already_ran(self):
         """The driver died after the selector's rollback stamped its record and
         restored the closure, before the hop marker was cleared. The selector
-        now has nothing to roll back; recovery reconciles the stack and ends."""
-        with tempfile.TemporaryDirectory() as td:
-            base = Path(td)
-            env = self._env(base, self._release_remote(base))
-            selected = subprocess.run(
-                [str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
-                env=env, capture_output=True, text=True, check=False)
-            self.assertEqual(selected.returncode, 0, selected.stderr)
-            state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
-            (state / "phase").write_text("selected\n")
-            nothing_left = {**env, "PLEB_TEST_SELECTOR_STATUS": "1"}
-            recovered = subprocess.run(
-                [str(PLEB), "update", "--rollback", "--no-restart"],
-                env=nothing_left, capture_output=True, text=True, check=False)
-            self.assertEqual(recovered.returncode, 0, recovered.stderr)
-            self.assertIn("nothing left to roll back", recovered.stderr)
-            self.assertFalse((state / "active").exists())
-            self.assertEqual((base / "updater.log").read_text().splitlines()[-1],
-                             "--revalidate-current")
+        now has nothing to roll back; recovery reconciles the stack and ends.
+        A dropped terminal leaves this state with the updater's rollback either
+        finished or stopped part-way, its transaction directory kept with a
+        failure note; recovery treats both alike and leaves that data alone."""
+        for retained in (False, True):
+            with self.subTest(retained_failed_rollback=retained), tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                env = self._env(base, self._release_remote(base))
+                selected = subprocess.run(
+                    [str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+                    env=env, capture_output=True, text=True, check=False)
+                self.assertEqual(selected.returncode, 0, selected.stderr)
+                state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+                (state / "phase").write_text("selected\n")
+                kept = Path(env["PLEB_STATE_HOME"]) / "stack-rollback.Kept01"
+                if retained:
+                    kept.mkdir(mode=0o700)
+                    (kept / "owner").write_text("pid=999999\nstart=1\nboot=gone\n")
+                    (kept / "failure-reason").write_text("rollback-complete: no\n")
+                nothing_left = {**env, "PLEB_TEST_SELECTOR_STATUS": "1"}
+                recovered = subprocess.run(
+                    [str(PLEB), "update", "--rollback", "--no-restart"],
+                    env=nothing_left, capture_output=True, text=True, check=False)
+                self.assertEqual(recovered.returncode, 0, recovered.stderr)
+                self.assertIn("nothing left to roll back", recovered.stderr)
+                self.assertFalse((state / "active").exists())
+                self.assertEqual((base / "updater.log").read_text().splitlines()[-1],
+                                 "--revalidate-current")
+                self.assertEqual(kept.exists(), retained)
 
     def test_recovery_stays_blocked_when_the_closure_is_not_the_one_before_the_hop(self):
         with tempfile.TemporaryDirectory() as td:
