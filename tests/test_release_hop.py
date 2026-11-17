@@ -2,6 +2,7 @@
 
 import fcntl
 import os
+import shutil
 import pty
 import signal
 import subprocess
@@ -735,6 +736,69 @@ class ReleaseHopTests(unittest.TestCase):
                 capture_output=True, text=True, check=False)
             self.assertEqual(ok.returncode, 0, ok.stderr)
             self.assertIn("nothing left to roll back", ok.stderr)
+
+    @staticmethod
+    def _private_pleb_root(base):
+        """A copy of the libraries under a private PLEB_ROOT: a test must not
+        point PLEB_ROOT at the live checkout (test_static_plumbing)."""
+        private = base / "pleb-copy"
+        shutil.copytree(ROOT / "lib", private / "lib")
+        (private / "bin").mkdir()
+        (private / "VERSION").write_text((ROOT / "VERSION").read_text())
+        return private
+
+    def test_the_standalone_reconcile_is_handed_the_update_lock_a_plain_update_holds(self):
+        """A standalone machine reconciles through a nested `pleb update`. Run
+        _pleb_restore_selected_stack as a plain update calls it, holding the
+        lock without having exported it: the nested Pleb must be given the
+        descriptor, or its own lock attempt collides with this process."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            fake = self._private_pleb_root(base)
+            record = base / "nested.txt"
+            (fake / "bin/pleb").write_text(
+                "#!/bin/bash\n"
+                f'printf "%s %s\\n" "${{PLEB_UPDATE_LOCK_FD:-unset}}" '
+                f'"$(readlink "/proc/$$/fd/${{PLEB_UPDATE_LOCK_FD:-0}}" 2>/dev/null)" >>{str(record)!r}\n')
+            (fake / "bin/pleb").chmod(0o755)
+            env = self._env(base, self._release_remote(base))
+            for key in ("PLEBIAN_OS_MANAGED_INSTALL",):
+                env.pop(key, None)            # standalone
+            lock = Path(env["PLEB_STATE_HOME"]) / "update.lock"
+            lock.parent.mkdir(parents=True, exist_ok=True)
+            def restore(export):
+                record.write_text("")
+                held = 'export PLEB_UPDATE_LOCK_FD="$_UPDATE_LOCK_FD"\n' if export else ""
+                return subprocess.run(
+                    ["bash", "-euo", "pipefail", "-c",
+                     f"PLEB_ROOT={fake}; . {fake}/lib/common.sh; . {fake}/lib/closure.sh\n"
+                     f'exec {{_UPDATE_LOCK_FD}}>>{str(lock)!r}\nflock -n "$_UPDATE_LOCK_FD"\n'
+                     + held + "_pleb_restore_selected_stack 1\n"],
+                    env=env, capture_output=True, text=True, check=False)
+            plain = restore(export=False)
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            fd, target = record.read_text().split(" ", 1)
+            self.assertTrue(fd.isdigit(), fd)
+            self.assertTrue(target.strip().endswith("/state/update.lock"), target)
+            # A hop mode exports it already; nothing is added or changed.
+            exported = restore(export=True)
+            self.assertEqual(exported.returncode, 0, exported.stderr)
+            self.assertEqual(record.read_text().split(" ", 1)[0], fd)
+
+    def test_a_failed_reconcile_names_the_next_step(self):
+        for managed, expected in (("1", "plebian-os-update --revalidate-current"), ("0", "pleb update")):
+            with self.subTest(managed=managed), tempfile.TemporaryDirectory() as td:
+                env = self._env(Path(td), self._release_remote(Path(td)))
+                env["PLEBIAN_OS_MANAGED_INSTALL"] = managed
+                private = self._private_pleb_root(Path(td))
+                result = subprocess.run(
+                    ["bash", "-euo", "pipefail", "-c",
+                     f"PLEB_ROOT={private}; . {private}/lib/common.sh; . {private}/lib/closure.sh\n_pleb_reconcile_hint"],
+                    env=env, capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(expected, result.stdout)
+        source = (ROOT / "lib/closure.sh").read_text()
+        self.assertEqual(source.count("$(_pleb_reconcile_hint)"), 3)
 
     def test_recovery_stays_blocked_while_an_update_is_still_running(self):
         with tempfile.TemporaryDirectory() as td:

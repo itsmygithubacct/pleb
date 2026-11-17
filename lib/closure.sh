@@ -550,7 +550,7 @@ pleb_recover_incomplete_release_hop() {
         die "interrupted release hop is blocked: closure rollback failed with status $rc; owner: F109 recovery operator"
     fi
     _pleb_restore_selected_stack 1 \
-        || die "interrupted release hop is blocked: previous-stack reconciliation failed; owner: F109 recovery operator"
+        || die "interrupted release hop is blocked: previous-stack reconciliation failed; $(_pleb_reconcile_hint); owner: F109 recovery operator"
     _pleb_clear_active_selector
     _PLEB_HOP_RECOVERY_RESULT=rolled-back
     log "interrupted release hop restored the previous closure and stack"
@@ -571,6 +571,8 @@ pleb_release_hop_exit_cleanup() {
             _pleb_clear_active_selector
         else
             err "emergency release-hop recovery is incomplete: closure status $rollback_rc; stack status $stack_rc; owner: F109 recovery operator"
+            [ "$rollback_rc" != 0 ] || [ "$stack_rc" = 0 ] \
+                || warn "$(_pleb_reconcile_hint)"
             [ "$rollback_rc" != 13 ] \
                 || warn "the update was still running; once it has finished, run: pleb update --rollback"
             rc=1
@@ -612,21 +614,37 @@ _pleb_apply_selected_stack() {
     fi
 }
 
+# A plain `pleb update` holds the update lock when it recovers a hop but does
+# not export it (a hop mode does). Whatever the reconcile runs, the updater on
+# an image or the nested `pleb update` on a standalone machine, takes the same
+# lock on a descriptor of its own and would collide with this process. Print
+# the assignment that hands it the descriptor already held, or nothing when
+# there is none to hand over or it is already exported.
+_pleb_held_lock_assignment() {
+    if [ -z "${PLEB_UPDATE_LOCK_FD:-}" ] && [ "${_UPDATE_LOCK_BORROWED:-0}" != 1 ] \
+            && [[ "${_UPDATE_LOCK_FD:-}" =~ ^[0-9]+$ ]] \
+            && [ -e "/proc/$$/fd/$_UPDATE_LOCK_FD" ]; then
+        printf 'PLEB_UPDATE_LOCK_FD=%s\n' "$_UPDATE_LOCK_FD"
+    fi
+}
+
+# What to run when the closure is back but the stack reconcile failed.
+_pleb_reconcile_hint() {
+    if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
+        printf '%s' "the closure is restored; finish the stack with: plebian-os-update --revalidate-current"
+    else
+        printf '%s' "the closure is restored; finish the stack with: pleb update"
+    fi
+}
+
 _pleb_restore_selected_stack() {
-    local yes="$1"
+    local yes="$1" held
+    local -a lock=()
+    held="$(_pleb_held_lock_assignment)"
+    [ -z "$held" ] || lock=("$held")
     if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
         local updater="${PLEBIAN_OS_UPDATER_DST:-/usr/local/bin/plebian-os-update}"
-        local -a lock=()
-        # A plain `pleb update` holds the update lock when it recovers a hop but
-        # does not export it (a hop mode does). The updater takes the same lock
-        # on its own descriptor and would collide with this process; hand it
-        # the one already held, as the hop modes do.
-        if [ -z "${PLEB_UPDATE_LOCK_FD:-}" ] && [ "${_UPDATE_LOCK_BORROWED:-0}" != 1 ] \
-                && [[ "${_UPDATE_LOCK_FD:-}" =~ ^[0-9]+$ ]] \
-                && [ -e "/proc/$$/fd/$_UPDATE_LOCK_FD" ]; then
-            lock=(env "PLEB_UPDATE_LOCK_FD=$_UPDATE_LOCK_FD")
-        fi
-        [ -x "$updater" ] && "${lock[@]}" "$updater" --revalidate-current
+        [ -x "$updater" ] && env "${lock[@]}" "$updater" --revalidate-current
     else
         local -a args=(--no-restart) pins=()
         local record="" key commit branch
@@ -651,7 +669,7 @@ _pleb_restore_selected_stack() {
             done <<<"$record"
             log "restoring the never-selected stack to its pre-selection commits"
         fi
-        env "${pins[@]}" PLEB_RELEASE_HOP_APPLY=1 "$PLEB_ROOT/bin/pleb" update "${args[@]}" \
+        env "${pins[@]}" "${lock[@]}" PLEB_RELEASE_HOP_APPLY=1 "$PLEB_ROOT/bin/pleb" update "${args[@]}" \
             || return
         [ -z "$record" ] || _pleb_reattach_unselected_branches "$record"
     fi
@@ -820,7 +838,7 @@ pleb_release_hop() {
         _pleb_clear_active_selector
         die "target stack apply failed with status $apply_rc; the previous closure and stack were restored"
     fi
-    die "target stack apply failed with status $apply_rc; closure rollback succeeded but previous-stack reconciliation failed"
+    die "target stack apply failed with status $apply_rc; closure rollback succeeded but previous-stack reconciliation failed; $(_pleb_reconcile_hint)"
 }
 
 pleb_report_newer_release() {
