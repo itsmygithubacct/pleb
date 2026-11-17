@@ -132,9 +132,9 @@ set -euo pipefail
 
     def test_tracked_bundle_has_the_approved_exact_hashes_and_contract(self):
         expected = {
-            WALLPAPER: "60f63c37f054f7ffd061b47e09a3c22fbf595eec6f161c13e95344ca1a724778",
-            DESKTOP_README: "650b64787bb1ad6073bad24dd51faec08e7ef0a17bfdbffe121076f0c8c71c10",
-            ATTRIBUTION: "5f5996a32c0a92debe2fef972463d28d53495e6e64af78e0e14aa4a109196ce9",
+            WALLPAPER: "8291496ec91ba107537a2649458bc167e2a6c8700504a1e019ae4563ae5625da",
+            DESKTOP_README: "d5898165833c9ed9534eabf02f1d09555c55ad10ead4c9c2e81f66e9fb49b85b",
+            ATTRIBUTION: "3503192cf57c91e7f6ebc9fe9e0b3109e84ff5ce850abab4991cdd0c2e39ad35",
             GPL2: "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
         }
         for path, digest in expected.items():

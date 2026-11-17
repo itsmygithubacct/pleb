@@ -1,19 +1,22 @@
 # Plebian-OS desktop artwork
 
-`plebian-os.png` is the approved 1920x1080 desktop treatment of the
+`plebian-os.png` is the 1920x1080 desktop treatment of the
 Plebian-OS angular-P geek identity. It is tracked as a stable product asset;
 Debian Installer does not consume it.
 
-The wallpaper uses the same Ceratopsian-derived background and
-GPL-2.0-or-later distribution choice documented in
-[`../installer/ATTRIBUTION.md`](../installer/ATTRIBUTION.md). The complete GPL
+From 0.2.4 the wallpaper is drawn by Plebian-OS's `build/draw-artwork.py`
+together with the installer splash and banner: the project's own mark and
+background, and the name drawn by the Neuronte large desktop face. Through
+0.2.3 its background derived from Debian's Ceratopsian artwork. The notices,
+the record of the earlier set and the GPL-2.0-or-later distribution choice are
+in [`../installer/ATTRIBUTION.md`](../installer/ATTRIBUTION.md). The complete GPL
 version 2 text is included at [`../COPYING.GPL-2`](../COPYING.GPL-2).
 
 Runtime contract:
 
 ```text
 1920x1080, 8-bit RGB PNG, no alpha, non-interlaced
-SHA-256: 60f63c37f054f7ffd061b47e09a3c22fbf595eec6f161c13e95344ca1a724778
+SHA-256: 8291496ec91ba107537a2649458bc167e2a6c8700504a1e019ae4563ae5625da
 ```
 
 Keep release versions out of the bitmap. The remaster installs it at:

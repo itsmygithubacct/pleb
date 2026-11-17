@@ -8,37 +8,60 @@ This notice applies to the artwork in this directory:
 - `banner.png`
 - `banner-dark.png`
 
-It also applies to the shared Ceratopsian-derived desktop treatment at
+It also applies to the matching desktop treatment at
 `../desktop/plebian-os.png`.
 
 The installer remains Debian-based. Plebian-OS and its artwork are not endorsed
 by Debian, the Debian Installer Team, or the upstream Ceratopsian artist.
 
-## License selected for this derivative set
+## What is whose, from 0.2.4
+
+From 0.2.4 every pixel of `splash.png`, `banner.png`, `banner-dark.png` and
+`../desktop/plebian-os.png` is drawn by [`build/draw-artwork.py`](../../build/draw-artwork.py)
+in this repository, from two inputs only:
+
+- the angular-P mark, read from `logo.svg` (drawn small in full colour, and
+  enlarged and cropped as the faint outline in the background), and
+- the lettering `Plebian-OS`, drawn by the Neuronte large desktop face
+  (`neuronte-ui-large-latin1-v1`), a neural-network typeface of this project
+  family, published under the MIT licence with Neuronte.
+
+These four files no longer contain or derive from Debian's Ceratopsian
+artwork or the `rootskel-gtk` banner. `logo.svg` and `logo.png` are unchanged.
+
+Through 0.2.3 the backgrounds of those four files derived from Debian 13's
+Ceratopsian installer artwork by Elise Couper, and the banner from Debian's
+`rootskel-gtk`. Those releases remain published, and the angular-P mark was
+first sketched as an edit of that artwork (see the editing record below), so
+the upstream notices are kept here in full. They are a credit and a record;
+the mark reproduces none of the Ceratopsian drawing or the Debian swirl.
+
+## License selected for this set
 
 The files listed above are distributed under the **GNU General Public License,
-version 2 or (at your option) any later version** (`GPL-2.0-or-later`). This
-selects the GPL-2.0+ option offered by the Ceratopsian copyright holder and is
-also compatible with the GPL-2+ terms recorded for the Debian `rootskel-gtk`
-source used by the graphical-installer banner.
+version 2 or (at your option) any later version** (`GPL-2.0-or-later`). For the
+releases through 0.2.3 this selected the GPL-2.0+ option offered by the
+Ceratopsian copyright holder, compatible with the GPL-2+ terms recorded for the
+Debian `rootskel-gtk` source used by the graphical-installer banner. The 0.2.4
+drawings keep the same licence, so the notices installed with the system and
+their checks are unchanged in kind.
 
 The upstream Ceratopsian work remains alternatively available from its
 copyright holder under CC-BY-SA-4.0. That alternative upstream grant does not
-change the GPL-2.0-or-later distribution choice for this Plebian-OS derivative
-set.
+change the GPL-2.0-or-later distribution choice for this Plebian-OS set.
 
-Plebian-OS-specific tracing, layout, wordmark, and other human-authored edits
-are offered under GPL-2.0-or-later to the extent copyright or related rights
-apply. Model-assisted steps do not remove or replace the upstream notices and
-license obligations below.
+Plebian-OS-specific drawing, tracing, layout, wordmark, and other
+human-authored edits are offered under GPL-2.0-or-later to the extent copyright
+or related rights apply. Model-assisted steps do not remove or replace the
+upstream notices and license obligations below.
 
 The complete GPL version 2 text is included in this repository at
 [`../COPYING.GPL-2`](../COPYING.GPL-2).
 
-## Debian 13 Ceratopsian source
+## Debian 13 Ceratopsian source (releases through 0.2.3)
 
-The layered blue backgrounds in `splash.png`, `banner.png`, and
-`banner-dark.png` derive from Debian 13's Ceratopsian installer artwork. The
+Through 0.2.3 the layered blue backgrounds in `splash.png`, `banner.png`, and
+`banner-dark.png` derived from Debian 13's Ceratopsian installer artwork. The
 standalone Plebian-OS angular-P mark is an original replacement identity; it
 does not reproduce the Debian swirl.
 
@@ -72,9 +95,9 @@ Steve: moved the swirl, added the debian13 text
 The Debian artwork page identified by the package metadata is
 <https://wiki.debian.org/DebianArt/Themes/Ceratopsian>.
 
-## Debian Installer `rootskel-gtk` source
+## Debian Installer `rootskel-gtk` source (releases through 0.2.3)
 
-The graphical-installer banner lineage includes Debian `rootskel-gtk` 13.0.4,
+Through 0.2.3 the graphical-installer banner lineage included Debian `rootskel-gtk` 13.0.4,
 as extracted from the pinned Debian 13.5 netinst source. The saved Debian
 machine-readable copyright record says:
 
@@ -118,7 +141,10 @@ On Debian systems, the complete GPL version 2 text is available at
 ## Plebian-OS generation and editing record
 
 The Plebian-OS identity was prepared on 2026-07-13 through a
-reference-guided, model-assisted editing workflow:
+reference-guided, model-assisted editing workflow. Steps 1 to 3 are the
+record of the mark, which stays. The banner and splash that step 4 made
+shipped through 0.2.3 and were replaced in 0.2.4 by the drawings described
+at the top of this notice:
 
 1. The pinned Debian Ceratopsian splash and `rootskel-gtk` banner were edited
    to remove Debian's product mark and introduce an angular terminal-P concept.
@@ -147,3 +173,7 @@ The retained record does not identify a model version, seed, or an exact
 SVG-to-PNG renderer command. Consequently, the prompts are provenance records,
 not a claim that model generation or every export is bit-for-bit reproducible.
 Future artwork revisions must record those details when the tools expose them.
+
+The 0.2.4 splash, banner and wallpaper have no such gap: `build/draw-artwork.py`
+is their whole source, it uses no random numbers, and `--check` redraws them
+and compares the bytes with the tracked files.
