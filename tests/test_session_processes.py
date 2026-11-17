@@ -253,9 +253,9 @@ _pleb_stop_owned "$control:$expected" || exit 83
         p = self.start()
         argv = self.wait_for('xterm.argv')
         p.wait(timeout=7)
-        self.assertEqual(argv[:6], ['-name', 'pleb-recovery', '-class', 'PlebRecovery',
-                                    '-geometry', '100x30'], argv)
-        self.assertEqual(argv[6:9], ['-e', 'sh', '-c'], argv)
+        self.assertEqual(argv[:4], ['-name', 'pleb-recovery', '-geometry', '100x30'], argv)
+        self.assertNotIn('-class', argv)        # the class stays XTerm: app-defaults
+        self.assertEqual(argv[4:7], ['-e', 'sh', '-c'], argv)
         self.assertEqual(argv[-1], str(self.root / 'session.log'))
 
     def test_the_recovery_terminal_is_given_the_input_focus_without_a_pointer_action(self):
@@ -263,7 +263,7 @@ _pleb_stop_owned "$control:$expected" || exit 83
         self.recording_xterm()
         p = self.start()
         self.assertEqual(self.wait_for('xdotool.argv'),
-                         ['search', '--sync', '--onlyvisible', '--class', 'PlebRecovery',
+                         ['search', '--sync', '--onlyvisible', '--classname', 'pleb-recovery',
                           'windowfocus', '%1'])
         p.wait(timeout=7)
 
@@ -273,7 +273,7 @@ _pleb_stop_owned "$control:$expected" || exit 83
         p = self.start()                      # DISPLAY is empty
         argv = self.wait_for('xterm.argv')
         p.wait(timeout=7)
-        self.assertEqual(argv[:4], ['-name', 'pleb-recovery', '-class', 'PlebRecovery'])
+        self.assertEqual(argv[:2], ['-name', 'pleb-recovery'])
         self.assertFalse((self.root / 'xdotool.argv').exists())
 
     def test_a_missing_kilix_opens_the_same_rescue_terminal(self):
@@ -290,10 +290,9 @@ _pleb_stop_owned "$control:$expected" || exit 83
         done = subprocess.run([str(script)], env=self.env, capture_output=True, text=True)
         self.assertEqual(done.returncode, 0, done.stderr)
         argv = self.wait_for('xterm.argv')
-        self.assertEqual(argv[:6], ['-name', 'pleb-recovery', '-class', 'PlebRecovery',
-                                    '-geometry', '100x30'], argv)
+        self.assertEqual(argv[:4], ['-name', 'pleb-recovery', '-geometry', '100x30'], argv)
         self.assertEqual(argv[-1], '/nonexistent/kilix')
-        self.assertEqual(self.wait_for('xdotool.argv')[-3:], ['PlebRecovery', 'windowfocus', '%1'])
+        self.assertEqual(self.wait_for('xdotool.argv')[-3:], ['pleb-recovery', 'windowfocus', '%1'])
 
     def with_services(self):
         self.env.update(PLEB_SESSION_SERVICES='on', PLEB_INPUT_METHOD='off',

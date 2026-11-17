@@ -674,15 +674,16 @@ xsetroot -solid "$PLEB_BG" 2>/dev/null || true
 # A rescue terminal has to take typing at once. Openbox does not focus new
 # windows (focusNew no in the shipped profile) and with no window manager X focus
 # is the pointer root, so a plain xterm gets no keys until the pointer is in it.
-# It is started with the class below, which the profile's one application rule
-# focuses, and _pleb_focus_recovery_terminal gives it the input focus itself once
-# it is mapped, which is what the no-window-manager cases need. Only -name and
-# -class are added to the callers' command line.
-_PLEB_RECOVERY_FLAGS=(-name pleb-recovery -class PlebRecovery)
+# It is started with the instance name below, which the profile's one application
+# rule focuses, and _pleb_focus_recovery_terminal gives it the input focus itself
+# once it is mapped, which is what the no-window-manager cases need. Only -name is
+# added to the callers' command line, and the class stays XTerm: xterm reads its
+# app-defaults (the colours among them) by class, so -class would have lost them.
+_PLEB_RECOVERY_FLAGS=(-name pleb-recovery)
 _pleb_focus_recovery_terminal() {
     command -v xdotool >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1 || return 0
     [ -n "${DISPLAY:-}" ] || return 0
-    ( timeout 20 xdotool search --sync --onlyvisible --class PlebRecovery \
+    ( timeout 20 xdotool search --sync --onlyvisible --classname pleb-recovery \
         windowfocus %1 >/dev/null 2>&1 || true ) &
 }
 

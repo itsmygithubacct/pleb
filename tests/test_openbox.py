@@ -101,7 +101,7 @@ class OpenboxProfileTests(unittest.TestCase):
         rules = self.tree.findall(".//o:applications/o:application", NS)
         # Exactly one rule, for the rescue terminal. Everything else keeps
         # focusNew off (test_focus_and_placement_policy), and no rule pins a layer.
-        self.assertEqual([r.attrib for r in rules], [{"class": "PlebRecovery"}])
+        self.assertEqual([r.attrib for r in rules], [{"name": "pleb-recovery"}])
         self.assertEqual([c.tag.split("}")[1] + "=" + (c.text or "").strip() for c in rules[0]],
                          ["focus=yes"])
         # parsed elements only — the header comment discusses the 'above' layer

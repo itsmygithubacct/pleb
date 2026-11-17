@@ -19,15 +19,24 @@ closure, qualification and known issues are owned by Plebian-OS in
   reports that the update is still running (status 13), the hop says to run
   `pleb update --rollback` once it has finished.
   With this Pleb, a hop whose closure rollback already ran but whose marker
-  was never cleared is settled by the next `pleb update`: on an image the stack
-  is reconciled with `plebian-os-update --revalidate-current` (a standalone
-  machine with a `pleb update` pinned to its closure), and the marker is
-  cleared instead of reporting the hop as blocked. A plain `pleb update` hands
-  its update lock to that updater. The 0.2.2 Pleb recovers through the 0.2.2
-  updater, which moves to the latest published release, and its plain
-  `pleb update` cannot finish a recovery (it holds the lock the updater needs);
-  the 0.2.3 selector settles the marker after a successful rollback so that
-  case needs none.
+  was never cleared is settled by the next `pleb update`. On an image the stack
+  is reconciled with `plebian-os-update --revalidate-current`; on a standalone
+  machine it is reconciled with a nested `pleb update` pinned to the closure
+  (or to the checkout positions recorded before the first selection). A plain
+  `pleb update` hands the update lock it holds to either, so they no longer
+  collide with it. The marker is then cleared instead of reporting the hop as
+  blocked, and if the reconcile fails the message names the command to run.
+  The 0.2.2 Pleb recovers through the 0.2.2 updater, which moves to the latest
+  published release, and its plain `pleb update` cannot finish a recovery (it
+  holds the lock the updater needs); the 0.2.3 selector therefore settles the
+  marker after a successful rollback, so that case needs none.
+- **The rescue terminal takes typing at once.** The xterm opened when Kilix is
+  missing or crash-loops, or a required window manager fails, no longer waits
+  for a click. It starts with a distinct instance name (`xterm -name
+  pleb-recovery`; the class stays XTerm, so it keeps its X resources and
+  colours). One Openbox application rule focuses that name (`focusNew` stays
+  off for every other window), and `xdotool` focuses it when no window manager
+  runs; `pleb install` now lists `xdotool`.
 - **First standalone selection.** A standalone machine that never selected a
   closure can run `pleb update --to 0.2.3`. Its checkout positions are
   recorded first, and a rollback or failed apply returns Pleb, Kilix and Kilix
