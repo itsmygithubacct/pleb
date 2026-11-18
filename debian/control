@@ -1,0 +1,29 @@
+Source: pleb
+Section: x11
+Priority: optional
+Maintainer: itsmygithubacct <itsmygithubacct@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13), libpipewire-0.3-dev, pkgconf
+Standards-Version: 4.7.2
+Homepage: https://github.com/itsmygithubacct/pleb
+Rules-Requires-Root: no
+
+Package: pleb
+Architecture: any
+Depends: kilix,
+ python3, python3-xlib, python3-dbus, python3-gi, python3-gi-cairo, python3-tk,
+ gir1.2-gtk-3.0, gir1.2-gst-plugins-base-1.0,
+ x11-xserver-utils, x11-utils, xterm, openbox, autocutsel,
+ i3lock, xss-lock, lxpolkit, xfce4-power-manager, xfconf, blueman, udiskie,
+ ibus, libnotify-bin, dbus-x11, dbus-user-session, xdg-user-dirs,
+ xdg-desktop-portal, xdg-desktop-portal-gtk, pipewire, gstreamer1.0-pipewire,
+ gstreamer1.0-plugins-base, gstreamer1.0-plugins-good,
+ systemd, libpam-systemd,
+ ${shlibs:Depends}, ${misc:Depends}
+Recommends: kilix-95, ibus-gtk3, pulseaudio-utils, zenity, pavucontrol, orca
+Description: Pleb, a Kilix desktop session
+ Pleb is an X session whose desktop is one screen-filling Kilix window,
+ managed by Openbox, with a screen locker, notifications, display settings,
+ power, storage and Bluetooth helpers and a screen-capture portal backend.
+ .
+ This package adds "Pleb" to the display manager's session list. Each user's
+ settings and state stay in their home.

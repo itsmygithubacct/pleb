@@ -138,12 +138,18 @@ class OpenboxWiringTests(unittest.TestCase):
 
     def test_profile_default_path_matches_install_destination(self):
         # The launcher is self-contained and cannot read common.sh, so these two
-        # literals are a sync pair with nothing else enforcing them.
+        # literals are a sync pair with nothing else enforcing them. A packaged
+        # install maps the same literal onto the package's tree (share/ under
+        # /usr/lib/pleb), which is where common.sh points a packaged install.
         session = SESSION.read_text()
         common = COMMON.read_text()
-        self.assertIn(f'PLEB_OPENBOX_CONFIG="{INSTALLED_PROFILE}"', session)
+        self.assertIn(f'PLEB_OPENBOX_CONFIG="$(_pleb_installed {INSTALLED_PROFILE})"', session)
         self.assertIn(f'OPENBOX_CONFIG_DST="${{OPENBOX_CONFIG_DST:-{INSTALLED_PROFILE}}}"',
                       common)
+        self.assertIn('OPENBOX_CONFIG_DST="${OPENBOX_CONFIG_DST:-$PLEB_ROOT/share/openbox/rc.xml}"',
+                      common)
+        self.assertIn('/usr/local/share/pleb/*) path="$_PLEB_PACKAGED_TREE/share/'
+                      '${path#/usr/local/share/pleb/}" ;;', session)
 
     def test_session_starts_bare_openbox_with_the_managed_profile(self):
         text = SESSION.read_text()

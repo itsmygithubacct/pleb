@@ -2,7 +2,8 @@
 # pleb-session — the "Pleb" desktop: screen-filling kilix as the main X client.
 #
 # This is the X session entrypoint. It is run by:
-#   - LightDM, via /usr/share/xsessions/pleb.desktop  (Exec=/usr/local/bin/pleb-session)
+#   - LightDM, via /usr/share/xsessions/pleb.desktop  (Exec=/usr/bin/pleb-session
+#     from the pleb Debian package, /usr/local/bin/pleb-session from `pleb install`)
 #   - startx / .xinitrc, for testing on a spare VT
 #   - `pleb test`, nested inside Xephyr
 #
@@ -386,6 +387,29 @@ unset -f _pleb_storage_fail _pleb_storage_normalized _pleb_storage_no_links \
     _pleb_storage_safe_parents _pleb_storage_input _pleb_storage_private_dir \
     _pleb_ensure_private_storage
 
+# Installed from Debian packages, the pleb package keeps its whole tree in
+# /usr/lib/pleb with a PACKAGED marker, and the files `pleb install` copies to
+# /usr/local are found there instead. _pleb_installed maps such a fixed
+# /usr/local path to the package's file when the marker is present and leaves
+# it alone otherwise. Only the three /usr/local prefixes below are mapped.
+_PLEB_PACKAGED_TREE=/usr/lib/pleb
+_pleb_installed() {
+    local path="$1"
+    if [ -f "$_PLEB_PACKAGED_TREE/PACKAGED" ] && [ ! -L "$_PLEB_PACKAGED_TREE/PACKAGED" ]; then
+        case "$path" in
+            /usr/local/lib/pleb/*) path="$_PLEB_PACKAGED_TREE/lib/${path#/usr/local/lib/pleb/}" ;;
+            /usr/local/share/pleb/*) path="$_PLEB_PACKAGED_TREE/share/${path#/usr/local/share/pleb/}" ;;
+            /usr/local/bin/*) path="/usr/bin/${path#/usr/local/bin/}" ;;
+        esac
+    fi
+    printf '%s\n' "$path"
+}
+
+# No Kilix checkout, but Kilix installed from Debian packages: run that one.
+if [[ ! ${KILIX_DIR+x} ]] && [ ! -e "$GPU_TERMINAL_SOURCE_HOME/kilix/kilix" ] \
+        && [ -f /usr/share/kilix/PACKAGED ] && [ ! -L /usr/share/kilix/PACKAGED ]; then
+    KILIX_DIR=/usr/share/kilix
+fi
 KILIX_DIR="${KILIX_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix}"
 KILIX="${KILIX:-$KILIX_DIR/kilix}"
 KILIX_REF="${KILIX_REF:-}"
@@ -400,7 +424,7 @@ PLEB_WM="${PLEB_WM:-auto}"
 if [[ ${PLEB_OPENBOX_CONFIG+x} ]]; then
     _PLEB_OPENBOX_CONFIG_DEFAULT=0
 else
-    PLEB_OPENBOX_CONFIG="/usr/local/share/pleb/openbox/rc.xml"
+    PLEB_OPENBOX_CONFIG="$(_pleb_installed /usr/local/share/pleb/openbox/rc.xml)"
     _PLEB_OPENBOX_CONFIG_DEFAULT=1
 fi
 PLEB_WM_TIMEOUT="${PLEB_WM_TIMEOUT:-5}"
@@ -938,7 +962,7 @@ _pleb_auto_lock_policy() {
 _pleb_load_lock_settings() {
     local settings_module settings_values settings_idle
     settings_module="${1:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../lib/screenlock.py}"
-    [ -r "$settings_module" ] || settings_module=/usr/local/lib/pleb/screenlock.py
+    [ -r "$settings_module" ] || settings_module="$(_pleb_installed /usr/local/lib/pleb/screenlock.py)"
     if [ -r "$settings_module" ]; then
         settings_values="$(python3 "$settings_module" --session-values)" || return 1
         read -r _PLEB_LOCK_PREFERENCE settings_idle <<<"$settings_values"
@@ -969,7 +993,7 @@ _pleb_start_locker() {
     _pleb_auto_lock_policy "$idle" || return 1
     # With automatic locking off the idle timer is off too, whatever the number.
     [ "$_PLEB_AUTO_LOCK" = on ] || idle=0
-    lock_bin=/usr/local/bin/pleb-lock
+    lock_bin="$(_pleb_installed /usr/local/bin/pleb-lock)"
     if [ ! -x "$lock_bin" ]; then
         lock_bin="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/pleb-lock"
     fi
@@ -1026,6 +1050,8 @@ _pleb_start_screensaver() {
     [ "$PLEB_LOCKER_ACTIVE" = 1 ] || return 0
     local module=/usr/local/lib/pleb/screensaver.py
     local session_bin=/usr/local/lib/pleb/session-bin
+    module="$(_pleb_installed "$module")"
+    session_bin="$(_pleb_installed "$session_bin")"
     [ -r "$module" ] && [ -x "$session_bin/xdg-screensaver" ] || {
         echo 'FATAL: Pleb ScreenSaver service is missing; run pleb install' >&2
         return 1
@@ -1098,6 +1124,7 @@ _pleb_start_services() {
     local lock_bin="$_PLEB_LOCK_BIN" idle="$_PLEB_IDLE_LOCK" input
     [ "$PLEB_LOCKER_ACTIVE" = 1 ] || return 0
     local notifications=/usr/local/lib/pleb/notification_center.py
+    notifications="$(_pleb_installed "$notifications")"
     if [ -r "$notifications" ]; then
         _pleb_service_start notifications /usr/bin/python3 "$notifications" || return 1
         /usr/bin/python3 "$notifications" --wait-ready "${PLEB_SERVICE_PIDS[notifications]}" || return 1
@@ -1277,11 +1304,13 @@ fi
 # The installed helper follows this process identity (also across exec) and its
 # original X connection, and exits when either ends. No helper is started on
 # installations without saved layouts. It does not modify Kilix windows.
-if [ -r /usr/local/lib/pleb/displays.py ] \
+_pleb_displays="$(_pleb_installed /usr/local/lib/pleb/displays.py)"
+if [ -r "$_pleb_displays" ] \
         && compgen -G "$PLEB_CONFIG_HOME/displays/*.json" >/dev/null; then
-    python3 /usr/local/lib/pleb/displays.py restore || true
-    python3 /usr/local/lib/pleb/displays.py watch --parent-pid "$$" &
+    python3 "$_pleb_displays" restore || true
+    python3 "$_pleb_displays" watch --parent-pid "$$" &
 fi
+unset _pleb_displays
 
 # Decided only now that the WM state is final: maximize without host
 # decorations when a window manager is present, fixed screen-fill geometry

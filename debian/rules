@@ -1,0 +1,56 @@
+#!/usr/bin/make -f
+# pleb: the whole tree in /usr/lib/pleb (as a checkout lays it out, with a
+# PACKAGED marker), the screen-capture transport compiled into its lib/, and
+# the files `pleb install` writes under /usr/local placed where a package
+# keeps them.
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+include /usr/share/dpkg/buildflags.mk
+
+P := debian/pleb
+T := $(P)/usr/lib/pleb
+B := $(CURDIR)/debian/build
+SERVICE := org.freedesktop.impl.portal.desktop.pleb.service
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	mkdir -p $(B)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -shared -fPIC -Wall -Wextra -Wno-unused-parameter \
+	  -o $(B)/capture_transport.so lib/capture_transport.c \
+	  $$(pkg-config --cflags --libs libpipewire-0.3) $(LDFLAGS)
+
+# The tests need a display, Kilix checkouts and the build host's tools; they
+# run in the pleb repository's own suite, not in the package build.
+override_dh_auto_test:
+
+override_dh_auto_install:
+	install -d $(T)/scripts $(T)/lib/session-bin $(P)/usr/bin
+	cp -a bin lib share assets docs VERSION $(T)/
+	rm -f $(T)/lib/capture_transport.c
+	install -m 0644 $(B)/capture_transport.so $(T)/lib/capture_transport.so
+	install -m 0755 bin/xdg-screensaver $(T)/lib/session-bin/xdg-screensaver
+	install -m 0755 scripts/validate-artwork.py $(T)/scripts/validate-artwork.py
+	find $(T) -depth -name __pycache__ -type d -exec rm -r {} +
+	echo deb > $(T)/PACKAGED
+	for command in pleb pleb-session pleb-lock; do \
+	  ln -s ../lib/pleb/bin/$$command $(P)/usr/bin/$$command; \
+	done
+	install -d $(P)/usr/share/xsessions $(P)/usr/share/dbus-1/services
+	sed 's#@SESSION_BIN@#/usr/bin/pleb-session#g' share/pleb.desktop.in \
+	  > $(P)/usr/share/xsessions/pleb.desktop
+	install -D -m 0644 share/portals/pleb.portal \
+	  $(P)/usr/share/xdg-desktop-portal/portals/pleb.portal
+	sed 's#/usr/local/lib/pleb/capture_portal.py#/usr/lib/pleb/lib/capture_portal.py#' \
+	  share/portals/$(SERVICE) > $(P)/usr/share/dbus-1/services/$(SERVICE)
+	grep -qx 'Exec=/usr/bin/python3 /usr/lib/pleb/lib/capture_portal.py' \
+	  $(P)/usr/share/dbus-1/services/$(SERVICE)
+	install -D -m 0644 share/logind/50-pleb-lid.conf \
+	  $(P)/usr/lib/systemd/logind.conf.d/50-pleb-lid.conf
+	install -D -m 0644 share/notifications/gtk.css \
+	  $(P)/usr/share/themes/Smoke/xfce-notify-4.0/gtk.css
+	install -D -m 0644 docs/RECOVERY.md $(P)/usr/share/pleb/RECOVERY.md
+
+override_dh_auto_clean:
+	rm -f $(B)/capture_transport.so

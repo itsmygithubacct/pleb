@@ -134,7 +134,7 @@ cmd_status() {
     else
         info "desktop  : plain kilix shell"
     fi
-    if [ -d "$KILIX95_DIR/.git" ] && [ -f "$KILIX95_DIR/main.py" ]; then
+    if { [ -d "$KILIX95_DIR/.git" ] || [ -f "$KILIX95_DIR/PACKAGED" ]; } && [ -f "$KILIX95_DIR/main.py" ]; then
         info "kilix 95 : installed at $KILIX95_DIR"
     else
         info "kilix 95 : optional desktop not installed"
@@ -349,7 +349,10 @@ main() {
                         off) kiosk_off ;;
                         *)   die "usage: pleb kiosk on | off" ;;
                     esac ;;
-        update)     do_update "$@" ;;
+        update)     if [ "$PLEB_PACKAGED" = 1 ]; then
+                        die "Pleb is installed from Debian packages; update with: sudo apt update && sudo apt upgrade"
+                    fi
+                    do_update "$@" ;;
         status)     cmd_status ;;
         doctor)     cmd_doctor ;;
         screen-size|font-size)

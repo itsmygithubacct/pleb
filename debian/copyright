@@ -1,0 +1,53 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Pleb
+Source: https://github.com/itsmygithubacct/pleb
+
+Files: *
+Copyright: 2026 itsmygithubacct
+License: Expat
+
+Files: assets/desktop/plebian-os.png
+Copyright: 2024 Elise Couper
+           2005-2024 Debian Installer Team
+           2005 Frans Pop
+           2026 itsmygithubacct
+License: GPL-2+
+Comment: Derived from Debian 13's Ceratopsian theme and the rootskel-gtk
+ installer banner. assets/installer/ATTRIBUTION.md, installed in
+ /usr/lib/pleb/assets with assets/README.md and assets/desktop/README.md,
+ carries the full record; the artwork validator checks their digests, so they
+ are kept uncompressed there.
+
+Files: assets/COPYING.GPL-2
+Copyright: 1989, 1991 Free Software Foundation, Inc.
+License: GPL-2-text
+ Everyone is permitted to copy and distribute verbatim copies of this
+ license document, but changing it is not allowed.
+
+License: Expat
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+
+License: GPL-2+
+ This program is free software; you can redistribute it and/or modify it under
+ the terms of the GNU General Public License as published by the Free Software
+ Foundation; either version 2 of the License, or (at your option) any later
+ version.
+ .
+ On Debian systems the full text of the GNU General Public License version 2
+ can be found in /usr/share/common-licenses/GPL-2.

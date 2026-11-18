@@ -952,7 +952,27 @@ install_notifications() {
         || die "Could not publish Pleb notifications; rerun the install"
 }
 
+# do_install_packaged — `pleb install` on a system installed from the pleb
+# Debian package. The packages own the session launcher, the xsession entry,
+# the portal, the commands on PATH and Kilix itself, so nothing here runs as
+# root, clones or builds: only this user's storage, shared settings and
+# artwork are prepared.
+do_install_packaged() {
+    ensure_pleb_private_storage
+    [ -f "$KILIX_DIR/kilix-settings" ] && [ ! -L "$KILIX_DIR/kilix-settings" ] \
+        || die "missing or unsafe Kilix settings TUI: $KILIX_DIR/kilix-settings (install the kilix package)"
+    python3 "$KILIX_DIR/kilix-settings" --ensure \
+        || die "could not initialize $GPU_TERMINAL_SETTINGS_FILE"
+    install_standalone_pleb_wallpaper
+    log "done. Pleb is installed from Debian packages; at the LightDM greeter"
+    info "pick the \"Pleb\" session and log in."
+}
+
 do_install() {
+    if [ "$PLEB_PACKAGED" = 1 ]; then
+        do_install_packaged
+        return
+    fi
     [ -f "$PLEB_BIN_SRC" ]    || die "missing $PLEB_BIN_SRC"
     [ -f "$PLEB_DESKTOP_IN" ] || die "missing $PLEB_DESKTOP_IN"
     validate_recovery_document
@@ -1057,6 +1077,9 @@ do_install() {
 # do_uninstall — remove the system session files and command links. Checkouts,
 # caches/state, and packages installed as dependencies are intentionally kept.
 do_uninstall() {
+    if [ "$PLEB_PACKAGED" = 1 ]; then
+        die "Pleb is installed from Debian packages; remove it with: sudo apt remove pleb"
+    fi
     local removed=0
     for f in "$XSESSION_DST" "$SESSION_BIN_DST" "$PLEB_RECOVERY_DOC_DST" \
             "$OPENBOX_CONFIG_DST" "$NOTIFICATION_THEME_DST" "$PLEB_DISPLAYS_DST" "$PLEB_LOCK_DST"; do

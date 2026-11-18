@@ -1,0 +1,11 @@
+pleb (0.2.3+packaging1) UNRELEASED; urgency=medium
+
+  * Add the pleb package: the tree in /usr/lib/pleb with a PACKAGED marker,
+    the session entry, the capture portal, the lid drop-in, the notification
+    theme and the recovery guide where a package keeps them.
+  * Packaged mode: pleb-session finds its files in the package, `pleb
+    install` does the per-user steps only, and `pleb update` and `pleb
+    uninstall` defer to apt. A packaged Kilix and Kilix 95 are used when no
+    checkout is present.
+
+ -- itsmygithubacct <itsmygithubacct@users.noreply.github.com>  Wed, 18 Nov 2026 08:15:00 +0000

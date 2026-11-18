@@ -56,8 +56,15 @@ while True: time.sleep(.05)
                              PLEB_LOG=str(self.root/'session.log'),
                              KILIX=str(self.bin/'kilix'), KILIX_DIR=str(self.root/'absent'),
                              FIXTURE_ROOT=str(self.root), FIXTURE_MODE='starting')
-        lifecycle = (ROOT/'bin/pleb-session').read_text().split(
-            '# --- window manager ---', 1)[1]
+        source = (ROOT/'bin/pleb-session').read_text()
+        lifecycle = source.split('# --- window manager ---', 1)[1]
+        # The lifecycle calls _pleb_installed, which the real session defines
+        # earlier. Take it verbatim, its package tree relocated to an empty
+        # fixture path so an installed pleb package cannot reach this test.
+        start = source.index('_PLEB_PACKAGED_TREE=/usr/lib/pleb\n')
+        mapping = source[start:source.index('\n}\n', start) + 3].replace(
+            '_PLEB_PACKAGED_TREE=/usr/lib/pleb',
+            '_PLEB_PACKAGED_TREE=' + str(self.root/'no-package'))
         self.driver = self.root/'session-under-test'
         self.driver.write_text('''#!/bin/bash
 set -u
@@ -68,6 +75,7 @@ _PLEB_RUN_ALIASES_DEFAULT=1
 KILIX_RUN_ALIAS_APPS=
 KILIX_RUN_ALIAS_EXCLUDE_APPS=
 exec >>"$PLEB_LOG" 2>&1
+'''+mapping+'''
 # --- window manager ---'''+lifecycle)
         self.driver.chmod(0o700)
 

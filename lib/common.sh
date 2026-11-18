@@ -10,6 +10,15 @@
 # is configured differently.
 PLEB_ROOT="${PLEB_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
+# Installed from the pleb Debian package: the tree (/usr/lib/pleb) carries a
+# PACKAGED marker and is not a checkout. apt owns every system file then;
+# `pleb install` does only the per-user steps and `pleb update` defers to apt.
+PLEB_PACKAGED=0
+if [ -f "$PLEB_ROOT/PACKAGED" ] && [ ! -L "$PLEB_ROOT/PACKAGED" ] \
+        && [ ! -e "$PLEB_ROOT/.git" ] && [ ! -L "$PLEB_ROOT/.git" ]; then
+    PLEB_PACKAGED=1
+fi
+
 # Load the same persistent session defaults as bin/pleb-session before deriving
 # any paths below.  Explicit values in the caller's environment win, matching
 # the session launcher's behaviour.  These files have always been shell env
@@ -216,7 +225,20 @@ PLEB_RECOVERY_DOC_SRC="$PLEB_ROOT/docs/RECOVERY.md"
 OPENBOX_CONFIG_SRC="$PLEB_ROOT/share/openbox/rc.xml"
 NOTIFICATION_THEME_SRC="$PLEB_ROOT/share/notifications/gtk.css"
 
-# install destinations (system-wide, so LightDM/other users can see them)
+# install destinations (system-wide, so LightDM/other users can see them).
+# A packaged install has them where the package puts them; status and doctor
+# read the same names either way.
+if [ "$PLEB_PACKAGED" = 1 ]; then
+    SESSION_BIN_DST="${SESSION_BIN_DST:-/usr/bin/pleb-session}"
+    PLEB_LOCK_DST="${PLEB_LOCK_DST:-/usr/bin/pleb-lock}"
+    LID_POLICY_DST="${LID_POLICY_DST:-/usr/lib/systemd/logind.conf.d/50-pleb-lid.conf}"
+    PLEB_DISPLAYS_DST="${PLEB_DISPLAYS_DST:-$PLEB_ROOT/lib/displays.py}"
+    KILIX_LINK="${KILIX_LINK:-/usr/bin/kilix}"
+    PLEB_LINK="${PLEB_LINK:-/usr/bin/pleb}"
+    PLEB_RECOVERY_DOC_DST="${PLEB_RECOVERY_DOC_DST:-/usr/share/pleb/RECOVERY.md}"
+    OPENBOX_CONFIG_DST="${OPENBOX_CONFIG_DST:-$PLEB_ROOT/share/openbox/rc.xml}"
+    NOTIFICATION_THEME_DST="${NOTIFICATION_THEME_DST:-/usr/share/themes/Smoke/xfce-notify-4.0/gtk.css}"
+fi
 SESSION_BIN_DST="${SESSION_BIN_DST:-/usr/local/bin/pleb-session}"
 PLEB_LOCK_DST="${PLEB_LOCK_DST:-/usr/local/bin/pleb-lock}"
 LID_POLICY_DST="${LID_POLICY_DST:-/etc/systemd/logind.conf.d/50-pleb-lid.conf}"
@@ -297,6 +319,11 @@ PLEB_SELF_UPDATE="${PLEB_SELF_UPDATE:-1}"
 export PLEB_DIR
 
 # kilix engine: where it lives, how to fetch it, and the launcher path.
+# No Kilix checkout, but Kilix installed from Debian packages: use that one.
+if [[ ! ${KILIX_DIR+x} ]] && [ ! -e "$GPU_TERMINAL_SOURCE_HOME/kilix/kilix" ] \
+        && [ -f /usr/share/kilix/PACKAGED ] && [ ! -L /usr/share/kilix/PACKAGED ]; then
+    KILIX_DIR=/usr/share/kilix
+fi
 KILIX_DIR="${KILIX_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix}"
 KILIX_DEFAULT="${KILIX:-$KILIX_DIR/kilix}"
 KILIX_REPO="${KILIX_REPO:-https://github.com/itsmygithubacct/kilix.git}"
@@ -347,6 +374,11 @@ KILIX_LAND_DESKTOP_AUDIO="${KILIX_LAND_DESKTOP_AUDIO:-}"
 # Optional Kilix 95 desktop checkout. Plain Pleb shell sessions and custom
 # desktop commands do not require it; install/update touch it only when the
 # selected provider needs it or PLEB_INSTALL_KILIX95=1.
+# No Kilix 95 checkout, but the kilix-95 package: report and pass that one.
+if [[ ! ${KILIX95_DIR+x} ]] && [ ! -e "$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-95/main.py" ] \
+        && [ -f /usr/share/kilix-95/PACKAGED ] && [ ! -L /usr/share/kilix-95/PACKAGED ]; then
+    KILIX95_DIR=/usr/share/kilix-95
+fi
 KILIX95_DIR="${KILIX95_DIR:-$GPU_TERMINAL_SOURCE_HOME/kilix-desktops/kilix-95}"
 KILIX95_REPO="${KILIX95_REPO:-https://github.com/itsmygithubacct/kilix-95.git}"
 KILIX95_BRANCH="${KILIX95_BRANCH:-}"   # empty = the repo's default branch
