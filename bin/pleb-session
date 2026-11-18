@@ -69,7 +69,7 @@
 #                     a bare shell; default off
 #   KILIX_REF         optional full Kilix commit SHA for update/install flows
 #   KILIX_ALLOW_MUTABLE_REF allow a tag/branch KILIX_REF only when explicitly 1
-#   KILIX_DESKTOP_PROVIDER auto | builtin | external | xp | cap | tui | land | command | none
+#   KILIX_DESKTOP_PROVIDER auto | builtin | external | xp | cap | tui | land | icewm | zell | command | none
 #   KILIX_DESKTOP_COMMAND  shell command used when provider=command
 #   KILIX_DESKTOP_NAME     label/title for a custom desktop provider
 #   KILIX_DESKTOP_FLAVOR   first-launch desktop flavor (95 or xp)
@@ -131,8 +131,8 @@ fi
 # Settings pages and the lock-policy reader use the same user directory.
 export PLEB_ENV_USER
 
-_pleb_release_vars="PLEBIAN_OS_VERSION PLEBIAN_OS_RELEASE PLEBIAN_OS_RELEASE_MODE PLEBIAN_OS_REPO PLEBIAN_OS_BRANCH PLEBIAN_OS_REF PLEB_REPO PLEB_BRANCH PLEB_REF KILIX_REPO KILIX_BRANCH KILIX_REF KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX_SYSTEM_MONITOR_REPO KILIX_SYSTEM_MONITOR_BRANCH KILIX_SYSTEM_MONITOR_REF KILIX_DESKTOP_SDK_REPO KILIX_DESKTOP_SDK_BRANCH KILIX_DESKTOP_SDK_REF KILIX_ICEWM_REPO KILIX_ICEWM_BRANCH KILIX_ICEWM_REF KILIX_MEDIA_SDK_REPO KILIX_MEDIA_SDK_BRANCH KILIX_MEDIA_SDK_REF KILIX_WAYDROID_REPO KILIX_WAYDROID_BRANCH KILIX_WAYDROID_REF KILIX_SECRETS_REPO KILIX_SECRETS_BRANCH KILIX_SECRETS_REF PLEBIAN_OS_APT_SNAPSHOT PLEBIAN_OS_INSTALL_UV PLEBIAN_OS_UV_VERSION PLEBIAN_OS_UV_INSTALLER_SHA256 PLEBIAN_OS_UV_INSTALLER_MAX_BYTES KILIX_PREBUILT_VERSION KILIX_PREBUILT_SHA256 PLEBIAN_OS_BUILD_KILIX_FORK PLEBIAN_OS_KILIX_GO_MIN_VERSION PLEBIAN_OS_KILIX_GO_VERSION PLEBIAN_OS_KILIX_GO_SHA256_AMD64 PLEBIAN_OS_KILIX_GO_SHA256_ARM64 PLEBIAN_OS_INSTALL_VOICE_MODEL KILIX_VOICE_REF KILIX_VOICE_LIB_VERSION KILIX_VOICE_LIB_URL KILIX_VOICE_LIB_SHA256 KILIX_VOICE_MODEL_URL KILIX_VOICE_MODEL_SHA256 PLEBIAN_OS_INSTALL_WAYDROID PLEBIAN_OS_WAYDROID_CLOSURE_SHA256"
-_pleb_vars="$_pleb_release_vars PLEBIAN_OS_DIR PLEB_DIR GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_RECOVER_CRASHES PLEB_SESSION_SERVICES PLEB_IDLE_LOCK_SECONDS PLEB_AUTO_LOCK PLEB_INPUT_METHOD PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
+_pleb_release_vars="PLEBIAN_OS_VERSION PLEBIAN_OS_RELEASE PLEBIAN_OS_RELEASE_MODE PLEBIAN_OS_REPO PLEBIAN_OS_BRANCH PLEBIAN_OS_REF PLEB_REPO PLEB_BRANCH PLEB_REF KILIX_REPO KILIX_BRANCH KILIX_REF KILIX95_REPO KILIX95_BRANCH KILIX95_REF KILIX_SYSTEM_MONITOR_REPO KILIX_SYSTEM_MONITOR_BRANCH KILIX_SYSTEM_MONITOR_REF KILIX_DESKTOP_SDK_REPO KILIX_DESKTOP_SDK_BRANCH KILIX_DESKTOP_SDK_REF KILIX_ICEWM_REPO KILIX_ICEWM_BRANCH KILIX_ICEWM_REF KILIX_MEDIA_SDK_REPO KILIX_MEDIA_SDK_BRANCH KILIX_MEDIA_SDK_REF KILIX_WAYDROID_REPO KILIX_WAYDROID_BRANCH KILIX_WAYDROID_REF KILIX_SECRETS_REPO KILIX_SECRETS_BRANCH KILIX_SECRETS_REF NEURONTE_REPO NEURONTE_REF PLEBIAN_OS_APT_SNAPSHOT PLEBIAN_OS_INSTALL_UV PLEBIAN_OS_UV_VERSION PLEBIAN_OS_UV_INSTALLER_SHA256 PLEBIAN_OS_UV_INSTALLER_MAX_BYTES KILIX_PREBUILT_VERSION KILIX_PREBUILT_SHA256 PLEBIAN_OS_BUILD_KILIX_FORK PLEBIAN_OS_KILIX_GO_MIN_VERSION PLEBIAN_OS_KILIX_GO_VERSION PLEBIAN_OS_KILIX_GO_SHA256_AMD64 PLEBIAN_OS_KILIX_GO_SHA256_ARM64 PLEBIAN_OS_INSTALL_VOICE_MODEL KILIX_VOICE_REF KILIX_VOICE_LIB_VERSION KILIX_VOICE_LIB_URL KILIX_VOICE_LIB_SHA256 KILIX_VOICE_MODEL_URL KILIX_VOICE_MODEL_SHA256 PLEBIAN_OS_INSTALL_WAYDROID PLEBIAN_OS_WAYDROID_CLOSURE_SHA256"
+_pleb_vars="$_pleb_release_vars PLEBIAN_OS_DIR PLEB_DIR GPU_TERMINAL_SOURCE_HOME GPU_TERMINAL_HOME GPU_TERMINAL_SETTINGS_FILE PLEB_STORAGE_HOME PLEB_CONFIG_HOME PLEB_STATE_HOME PLEB_CACHE_HOME PLEB_SESSION_HOME PLEB_DATA_HOME KILIX_STORAGE_HOME KILIX_CONFIG_HOME KILIX_STATE_DIRECTORY KILIX_CACHE_HOME KILIX_SESSION_HOME KILIX_DATA_HOME KILIX_BUILD_DIRECTORY KILIX_PREBUILT_HOME KILIX95_STORAGE_HOME KILIX95_CONFIG_HOME KILIX95_STATE_HOME KILIX95_CACHE_HOME KILIX95_SESSION_HOME KILIX95_DATA_HOME KILIX_DESKTOP_DIR KILIX_DIR KILIX KILIX_ALLOW_MUTABLE_REF PLEB_KILIX_ARGS PLEB_WM PLEB_OPENBOX_CONFIG PLEB_WM_TIMEOUT KILIX_RUN_ALIASES KILIX_RUN_ALIAS_APPS KILIX_RUN_ALIAS_EXCLUDE_APPS PLEB_NO_FILL PLEB_BG PLEB_LOG PLEB_RESPAWN PLEB_RECOVER_CRASHES PLEB_SESSION_SERVICES PLEB_IDLE_LOCK_SECONDS PLEB_AUTO_LOCK PLEB_INPUT_METHOD PLEB_DESKTOP KILIX_DESKTOP_PROVIDER KILIX_DESKTOP_COMMAND KILIX_DESKTOP_NAME KILIX_DESKTOP_FLAVOR ZELL_NEURONTE_HOME ZELL_NEURONTE_WEIGHTS KILIX_CAP_AUTO_INSTALL KILIX_CAP_DIR KILIX_CAP_REPO KILIX_CAP_REF KILIX_CAP_TRUST_EXISTING_CHECKOUT KILIX_CAP_ALLOW_MUTABLE_REF KILIX_TUI_UTILS_AUTO_INSTALL KILIX_TUI_UTILS_DIR KILIX_TUI_UTILS_REPO KILIX_TUI_UTILS_REF KILIX_TUI_UTILS_TRUST_EXISTING_CHECKOUT KILIX_TUI_UTILS_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_AUTO_INSTALL KILIX_LAND_DESKTOP_DIR KILIX_LAND_DESKTOP_REPO KILIX_LAND_DESKTOP_REF KILIX_LAND_DESKTOP_TRUST_EXISTING_CHECKOUT KILIX_LAND_DESKTOP_ALLOW_MUTABLE_REF KILIX_LAND_DESKTOP_ASSETS KILIX_LAND_DESKTOP_CONFIG_HOME KILIX_LAND_DESKTOP_EXTERNAL_APPS KILIX_LAND_DESKTOP_AUDIO KILIX95_AUTO_INSTALL KILIX95_DIR KILIX95_ALLOW_MUTABLE_REF KILIX95_ALLOW_UNPINNED_INSTALL"
 declare -A _pleb_had _pleb_saved
 for _pleb_v in $_pleb_vars; do
     if [[ ${!_pleb_v+x} ]]; then
@@ -670,12 +670,30 @@ xset -dpms        2>/dev/null || true
 xset b off        2>/dev/null || xset -b 2>/dev/null || true
 xsetroot -solid "$PLEB_BG" 2>/dev/null || true
 
+# --- rescue terminals ---------------------------------------------------------
+# A rescue terminal has to take typing at once. Openbox does not focus new
+# windows (focusNew no in the shipped profile) and with no window manager X focus
+# is the pointer root, so a plain xterm gets no keys until the pointer is in it.
+# It is started with the instance name below, which the profile's one application
+# rule focuses, and _pleb_focus_recovery_terminal gives it the input focus itself
+# once it is mapped, which is what the no-window-manager cases need. Only -name is
+# added to the callers' command line, and the class stays XTerm: xterm reads its
+# app-defaults (the colours among them) by class, so -class would have lost them.
+_PLEB_RECOVERY_FLAGS=(-name pleb-recovery)
+_pleb_focus_recovery_terminal() {
+    command -v xdotool >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1 || return 0
+    [ -n "${DISPLAY:-}" ] || return 0
+    ( timeout 20 xdotool search --sync --onlyvisible --classname pleb-recovery \
+        windowfocus %1 >/dev/null 2>&1 || true ) &
+}
+
 # --- locate a runnable kilix -------------------------------------------------
 if [ ! -x "$KILIX" ]; then
     echo "FATAL: kilix not found/executable at: $KILIX" >&2
     # don't strand the user on a black screen — drop to a terminal if we can
     if command -v xterm >/dev/null 2>&1; then
-        exec xterm -geometry 100x30 -e sh -c \
+        _pleb_focus_recovery_terminal
+        exec xterm "${_PLEB_RECOVERY_FLAGS[@]}" -geometry 100x30 -e sh -c \
             'printf "%s\n\n" "pleb: kilix missing at: $1"; exec "${SHELL:-/bin/sh}"' sh "$KILIX"
     fi
     exit 1
@@ -875,7 +893,9 @@ _pleb_cleanup() {
 }
 _pleb_recovery_terminal() {
     _pleb_require_process_cleanup
-    _pleb_launch_owned PLEB_KILIX_PID PLEB_KILIX_START "${_PLEB_RECOVERY_XTERM:-xterm}" "$@"
+    _pleb_focus_recovery_terminal
+    _pleb_launch_owned PLEB_KILIX_PID PLEB_KILIX_START "${_PLEB_RECOVERY_XTERM:-xterm}" \
+        "${_PLEB_RECOVERY_FLAGS[@]}" "$@"
     wait "$PLEB_KILIX_PID"
     local rc=$?
     PLEB_KILIX_PID=""
@@ -933,6 +953,8 @@ _pleb_auto_lock_policy() {
 # anything else starts, means every process launched by the session can see
 # the coordinator; outside a serviced Pleb login (for example Xfce running the
 # seeded LockCommand) the variable is absent and pleb-lock runs i3lock itself.
+# The optional module argument is used by isolated settings tests.
+# shellcheck disable=SC2120
 _pleb_load_lock_settings() {
     local settings_module settings_values settings_idle
     settings_module="${1:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../lib/screenlock.py}"
@@ -1095,6 +1117,14 @@ _pleb_apply_power_lock_preference() {
 _pleb_start_services() {
     local lock_bin="$_PLEB_LOCK_BIN" idle="$_PLEB_IDLE_LOCK" input
     [ "$PLEB_LOCKER_ACTIVE" = 1 ] || return 0
+    local notifications=/usr/local/lib/pleb/notification_center.py
+    if [ -r "$notifications" ]; then
+        _pleb_service_start notifications /usr/bin/python3 "$notifications" || return 1
+        /usr/bin/python3 "$notifications" --wait-ready "${PLEB_SERVICE_PIDS[notifications]}" || return 1
+    else
+        echo 'FATAL: Pleb notifications are missing; run pleb install' >&2
+        return 1
+    fi
     _pleb_service_start polkit lxpolkit || return 1
     # libxfce4ui checks this command before its screensaver D-Bus fallbacks.
     # Seed it only when absent so an operator's chosen locker is preserved.
@@ -1407,6 +1437,8 @@ if _pleb_desktop_enabled; then
                   "KILIX_DESKTOP_COMMAND=$KILIX_DESKTOP_COMMAND"
                   "KILIX_DESKTOP_NAME=$KILIX_DESKTOP_NAME"
                   "KILIX_DESKTOP_FLAVOR=$KILIX_DESKTOP_FLAVOR"
+                  "ZELL_NEURONTE_HOME=${ZELL_NEURONTE_HOME:-}"
+                  "ZELL_NEURONTE_WEIGHTS=${ZELL_NEURONTE_WEIGHTS:-}"
                   "KILIX_CAP_AUTO_INSTALL=$KILIX_CAP_AUTO_INSTALL"
                   "KILIX_CAP_DIR=$KILIX_CAP_DIR"
                   "KILIX_CAP_REPO=$KILIX_CAP_REPO"
@@ -1439,7 +1471,7 @@ if _pleb_desktop_enabled; then
                   "KILIX_RUN_ALIASES=$KILIX_RUN_ALIASES"
                   "KILIX_RUN_ALIAS_APPS=$KILIX_RUN_ALIAS_APPS"
                   "KILIX_RUN_ALIAS_EXCLUDE_APPS=$KILIX_RUN_ALIAS_EXCLUDE_APPS"
-                  "$KILIX" desktop)
+                  "$KILIX" desktop --session-start)
 fi
 
 # --- hand off to kilix -------------------------------------------------------

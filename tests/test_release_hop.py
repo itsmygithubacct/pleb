@@ -1,9 +1,15 @@
 """Release-hop entrypoint, publication lookup, and split-closure reporting."""
 
+import fcntl
 import os
+import shutil
+import pty
+import signal
 import subprocess
 import tempfile
+import termios
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -30,6 +36,18 @@ class ReleaseHopTests(unittest.TestCase):
             #!/usr/bin/env bash
             set -euo pipefail
             printf '%s\n' "$*" >>"$PLEB_TEST_SELECTOR_LOG"
+            if [ "${PLEB_TEST_SELECTOR_KILL:-0}" = 1 ] && [ "${1:-}" != --rollback ]; then
+                kill -KILL "$PPID"
+                exit 9
+            fi
+            if [ "${1:-}" = --rollback ] && [ -n "${PLEB_TEST_SELECTOR_SETTLES:-}" ]; then
+                # What the 0.2.3 selector does after a rollback that fully succeeded.
+                rm -f -- "$PLEB_TEST_SELECTOR_SETTLES/active" \
+                    "$PLEB_TEST_SELECTOR_SETTLES/phase" "$PLEB_TEST_SELECTOR_SETTLES/baseline"
+            fi
+            if [ "${1:-}" = --rollback ] && [ -n "${PLEB_TEST_SELECTOR_ROLLBACK_STATUS:-}" ]; then
+                exit "$PLEB_TEST_SELECTOR_ROLLBACK_STATUS"
+            fi
             exit "${PLEB_TEST_SELECTOR_STATUS:-0}"
             """
         )
@@ -84,6 +102,9 @@ class ReleaseHopTests(unittest.TestCase):
         updater.write_text(
             "#!/usr/bin/env bash\n"
             f"printf '%s\\n' \"$*\" >>{str(updater_log)!r}\n"
+            f"printf '%s %s\\n' \"${{PLEB_UPDATE_LOCK_FD:-unset}}\" "
+            f"\"$(readlink \"/proc/$$/fd/${{PLEB_UPDATE_LOCK_FD:-0}}\" 2>/dev/null)\" "
+            f">>{str(base / 'updater.lock')!r}\n"
             f"if [ \"${{PLEB_TEST_UPDATER_FAIL_ONCE:-0}}\" = 1 ] "
             f"&& [ ! -e {str(updater_marker)!r} ]; then\n"
             f"  : >{str(updater_marker)!r}\n"
@@ -301,6 +322,26 @@ class ReleaseHopTests(unittest.TestCase):
             )
             self.assertFalse((base / "selector.log").exists())
 
+    def test_neuronte_pin_overrides_are_refused_like_every_other_pin(self):
+        # RC9 images install the pinned Neuronte tree; an environment value
+        # for it would let the child update apply a closure the selector did
+        # not commit.
+        for key, value in (("NEURONTE_REF", "5" * 40),
+                           ("NEURONTE_REPO", "https://example.invalid/neuronte.git")):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                remote = self._release_remote(base)
+                env = self._env(base, remote)
+                env[key] = value
+                result = subprocess.run(
+                    [str(PLEB), "update", "--to", "0.2.1", "--dry-run"],
+                    env=env, capture_output=True, text=True, check=False,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(f"{key} is overridden by the process environment",
+                              result.stderr)
+                self.assertFalse((base / "selector.log").exists())
+
     def test_maintenance_hop_uses_target_selector_and_preserves_dry_run(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
@@ -418,6 +459,505 @@ class ReleaseHopTests(unittest.TestCase):
             self.assertIn(
                 "--rollback", (base / "selector.log").read_text().splitlines()[-1]
             )
+
+    # A running update keeps its own snapshot of session.env and restores it when
+    # an interrupt rolls it back. The closure rollback has to land after that.
+    _UPDATER_THAT_ROLLS_BACK_ON_A_SIGNAL = textwrap.dedent(
+        """\
+        #!/usr/bin/env python3
+        import os, signal, sys, time
+        base = {base!r}
+        with open(base + "/updater.log", "a") as log:
+            log.write(" ".join(sys.argv[1:]) + "\\n")
+        if os.path.exists(base + "/applied"):
+            sys.exit(0)  # the driver's own reconciliation after its rollback
+        open(base + "/applied", "w").close()
+        noted = []
+        for number in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+            signal.signal(number, lambda n, frame: noted.append(n))
+        open(base + "/updater-running", "w").close()
+        deadline = time.time() + 30
+        while not noted and time.time() < deadline:
+            time.sleep(0.02)
+        time.sleep(0.5)  # a shielded package step that outlives the signal
+        with open(base + "/selector.log") as log:
+            rolled_back_first = "--rollback" in log.read()
+        with open(base + "/updater-rollback-saw-closure-rollback", "w") as out:
+            out.write("yes\\n" if rolled_back_first else "no\\n")
+        sys.exit(128 + (noted[0] if noted else 1))
+        """
+    )
+
+    def _hop_interrupted(self, interrupt, terminal=False):
+        """Start a hop whose update is running, interrupt it, and check that the
+        closure rollback ran after the update's own rollback, then the stack
+        was reconciled, and the hop marker was cleared. With terminal=True the
+        hop runs under a shell whose stdio is a pseudo-terminal that is its
+        controlling terminal; interrupt(hop, master) closes the master side to
+        hang it up."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env = self._env(base, self._release_remote(base))
+            Path(env["PLEBIAN_OS_UPDATER_DST"]).write_text(
+                self._UPDATER_THAT_ROLLS_BACK_ON_A_SIGNAL.format(base=str(base)))
+            argv = [str(PLEB), "update", "--to", "0.2.1", "--no-restart"]
+            master = None
+            if terminal:
+                # Like a login shell: it owns the terminal and dies of the hangup,
+                # and its death is what hangs up the rest of the foreground group.
+                master, slave = pty.openpty()
+                hop = subprocess.Popen(
+                    ["bash", "-c", '"$@"; exit $?', "login-shell", *argv],
+                    env=env, start_new_session=True,
+                    stdin=slave, stdout=slave, stderr=slave,
+                    preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
+                os.close(slave)
+            else:
+                hop = subprocess.Popen(
+                    argv, env=env, start_new_session=True,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.addCleanup(hop.wait)
+            try:
+                deadline = time.time() + 30
+                while not (base / "updater-running").exists() and time.time() < deadline:
+                    time.sleep(0.02)
+                self.assertTrue((base / "updater-running").exists())
+                interrupt(hop, master)
+                master = None
+                hop.wait(timeout=30)
+                marker = base / "updater-rollback-saw-closure-rollback"
+                deadline = time.time() + 30
+                while not marker.exists() and time.time() < deadline:
+                    time.sleep(0.02)
+                self.assertEqual(marker.read_text(), "no\n",
+                                 "the closure rollback ran while the update was running")
+                # The hop's cleanup outlives its leader; wait for it to finish.
+                state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+                deadline = time.time() + 30
+                while (state / "active").exists() and time.time() < deadline:
+                    time.sleep(0.02)
+                self.assertFalse((state / "active").exists())
+                calls = (base / "selector.log").read_text().splitlines()
+                self.assertEqual(calls[-1], "--rollback")
+                self.assertEqual((base / "updater.log").read_text().splitlines(),
+                                 ["--revalidate-current", "--revalidate-current"])
+            finally:
+                if master is not None:
+                    os.close(master)
+                try:
+                    os.killpg(hop.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def test_a_terminal_signal_waits_for_the_update_before_rolling_back_the_closure(self):
+        for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=sig.name):
+                self._hop_interrupted(lambda hop, master, sig=sig: os.killpg(hop.pid, sig))
+
+    def test_a_hung_up_terminal_does_not_stop_the_hop_cleanup(self):
+        # Closing the master hangs the terminal up: the foreground group gets
+        # SIGHUP, and every later write to the hop's stdio fails with EIO.
+        self._hop_interrupted(lambda hop, master: os.close(master), terminal=True)
+
+    def test_recovery_settles_a_hop_whose_closure_rollback_already_ran(self):
+        """The driver died after the selector's rollback stamped its record and
+        restored the closure, before the hop marker was cleared. The selector
+        now has nothing to roll back; recovery reconciles the stack and ends.
+        A dropped terminal leaves this state with the updater's rollback either
+        finished or stopped part-way, its transaction directory kept with a
+        failure note; recovery treats both alike and leaves that data alone."""
+        for retained in (False, True):
+            with self.subTest(retained_failed_rollback=retained), tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                env = self._env(base, self._release_remote(base))
+                selected = subprocess.run(
+                    [str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+                    env=env, capture_output=True, text=True, check=False)
+                self.assertEqual(selected.returncode, 0, selected.stderr)
+                state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+                (state / "phase").write_text("selected\n")
+                kept = Path(env["PLEB_STATE_HOME"]) / "stack-rollback.Kept01"
+                if retained:
+                    kept.mkdir(mode=0o700)
+                    (kept / "owner").write_text("pid=999999\nstart=1\nboot=gone\n")
+                    (kept / "failure-reason").write_text("rollback-complete: no\n")
+                nothing_left = {**env, "PLEB_TEST_SELECTOR_STATUS": "1"}
+                recovered = subprocess.run(
+                    [str(PLEB), "update", "--rollback", "--no-restart"],
+                    env=nothing_left, capture_output=True, text=True, check=False)
+                self.assertEqual(recovered.returncode, 0, recovered.stderr)
+                self.assertIn("selector exited with status 1", recovered.stderr)
+                self.assertIn("nothing left to roll back", recovered.stderr)
+                self.assertFalse((state / "active").exists())
+                self.assertEqual((base / "updater.log").read_text().splitlines()[-1],
+                                 "--revalidate-current")
+                self.assertEqual(kept.exists(), retained)
+
+    def _selected_hop(self, base):
+        env = self._env(base, self._release_remote(base))
+        selected = subprocess.run(
+            [str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+            env=env, capture_output=True, text=True, check=False)
+        self.assertEqual(selected.returncode, 0, selected.stderr)
+        state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+        (state / "phase").write_text("selected\n")
+        return env, state
+
+    def test_recovery_then_carries_on_with_the_requested_hop(self):
+        """pleb update --to X after a dropped hop settles the old one first,
+        then makes the selection it was asked for."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env, state = self._selected_hop(base)
+            calls = len((base / "selector.log").read_text().splitlines())
+            again = subprocess.run(
+                [str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+                env={**env, "PLEB_TEST_SELECTOR_ROLLBACK_STATUS": "1"},
+                capture_output=True, text=True, check=False)
+            self.assertEqual(again.returncode, 0, again.stderr)
+            self.assertIn("nothing left to roll back", again.stderr)
+            later = (base / "selector.log").read_text().splitlines()[calls:]
+            self.assertEqual(later[0], "--rollback")
+            self.assertTrue(later[-1].startswith("0.2.1"), later)
+            self.assertEqual((state / "phase").read_text(), "complete\n")
+            self.assertEqual((base / "updater.log").read_text().splitlines()[-2:],
+                             ["--revalidate-current", "--revalidate-current"])
+
+    def test_a_plain_update_settles_the_dropped_hop_before_anything_else(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env, state = self._selected_hop(base)
+            # The plain update validates the Kilix checkouts before it recovers.
+            sources = Path(env["GPU_TERMINAL_SOURCE_HOME"])
+            for directory, origin in (
+                    (sources / "kilix", "https://github.com/itsmygithubacct/kilix.git"),
+                    (sources / "kilix-desktops/kilix-95",
+                     "https://github.com/itsmygithubacct/kilix-95.git")):
+                subprocess.run(["git", "init", "-q", str(directory)], check=True)
+                subprocess.run(["git", "-C", str(directory), "remote", "add", "origin", origin],
+                               check=True)
+            plain = subprocess.run(
+                [str(PLEB), "update", "--no-restart"],
+                env={**env, "PLEB_TEST_SELECTOR_ROLLBACK_STATUS": "1"},
+                capture_output=True, text=True, check=False)
+            self.assertIn("recovering interrupted release-hop phase selected", plain.stderr)
+            self.assertIn("nothing left to roll back", plain.stderr)
+            self.assertFalse((state / "active").exists(), plain.stderr)
+            # The updater must be handed the update lock this process holds, or
+            # it collides with it ("another Pleb/Plebian-OS update is running").
+            fd, target = (base / "updater.lock").read_text().splitlines()[-1].split(" ", 1)
+            self.assertTrue(fd.isdigit(), fd)
+            self.assertTrue(target.endswith("/update.lock"), target)
+            self.assertEqual((base / "updater.log").read_text().splitlines()[-1],
+                             "--revalidate-current")
+
+    def test_rollback_keeps_one_generation_and_leaves_no_hop_record(self):
+        """A completed hop leaves its record (phase complete) so --rollback can
+        undo it, and is not mistaken for an interrupted hop. The rollback
+        consumes the record: there is no second generation to go back to, and
+        an earlier hop's record cannot be restored (a new hop had replaced it)."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env = self._env(base, self._release_remote(base))
+            state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+            hop = subprocess.run([str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+                                 env=env, capture_output=True, text=True, check=False)
+            self.assertEqual(hop.returncode, 0, hop.stderr)
+            self.assertEqual((state / "phase").read_text(), "complete\n")
+            self.assertTrue((state / "active").is_file() and (state / "baseline").is_file())
+            calls = (base / "selector.log").read_text().splitlines()
+            self.assertEqual(len([c for c in calls if c == "--rollback"]), 0)
+            back = subprocess.run([str(PLEB), "update", "--rollback", "--no-restart"],
+                                  env=env, capture_output=True, text=True, check=False)
+            self.assertEqual(back.returncode, 0, back.stderr)
+            self.assertNotIn("recovering interrupted", back.stderr)
+            for name in ("active", "phase", "baseline"):
+                self.assertFalse((state / name).exists(), name)
+            again = subprocess.run([str(PLEB), "update", "--rollback", "--no-restart"],
+                                   env=env, capture_output=True, text=True, check=False)
+            self.assertNotEqual(again.returncode, 0)
+            self.assertIn("no selected release closure is available to roll back", again.stderr)
+
+    def test_recovery_copes_with_a_selector_that_settled_the_marker_itself(self):
+        """The 0.2.3 selector removes active, phase and baseline after a rollback
+        that fully succeeded. The driver that asked must still see success, find
+        nothing missing afterwards, and reconcile the stack, in every mode."""
+        for argv in (["update", "--rollback", "--no-restart"],
+                     ["update", "--to", "0.2.1", "--no-restart"]):
+            with self.subTest(argv=argv), tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                env, state = self._selected_hop(base)
+                done = {**env, "PLEB_TEST_SELECTOR_SETTLES": str(state)}
+                result = subprocess.run([str(PLEB), *argv], env=done,
+                                        capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("cannot update release-hop phase", result.stderr)
+                self.assertIn("--revalidate-current",
+                              (base / "updater.log").read_text().splitlines())
+                if argv[1] == "--rollback":
+                    self.assertFalse((state / "active").exists())
+                else:
+                    self.assertEqual((state / "phase").read_text(), "complete\n")
+                # With the marker gone a following plain update has nothing to recover.
+                again = subprocess.run([str(PLEB), "update", "--rollback", "--no-restart"],
+                                       env=env, capture_output=True, text=True, check=False)
+                if argv[1] == "--rollback":
+                    self.assertIn("no selected release closure is available", again.stderr)
+
+    def test_the_fallback_belongs_to_the_selected_phase_and_a_missing_selector_is_not_the_targets(self):
+        for phase, message in (("selecting", "had changed nothing"),
+                               ("complete", None)):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                env, state = self._selected_hop(base)
+                (state / "phase").write_text(phase + "\n")
+                calls = len((base / "selector.log").read_text().splitlines())
+                result = subprocess.run(
+                    [str(PLEB), "update", "--rollback", "--no-restart"],
+                    env={**env, "PLEB_TEST_SELECTOR_ROLLBACK_STATUS": "1"},
+                    capture_output=True, text=True, check=False)
+                self.assertNotIn("nothing left to roll back", result.stderr)
+                if message:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn(message, result.stderr + result.stdout)
+                else:
+                    # A complete hop is rolled back by the selector itself, whose
+                    # failure is a failed rollback, not a settled one.
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("closure rollback failed with status 1", result.stderr)
+        # No selector installed at all (the fixture's default) is not the target's.
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env, state = self._selected_hop(base)
+            self.assertFalse(Path(env["PLEBIAN_OS_SELECTOR_DST"]).exists())
+            ok = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env={**env, "PLEB_TEST_SELECTOR_ROLLBACK_STATUS": "1"},
+                capture_output=True, text=True, check=False)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            self.assertIn("nothing left to roll back", ok.stderr)
+
+    @staticmethod
+    def _private_pleb_root(base):
+        """A copy of the libraries under a private PLEB_ROOT: a test must not
+        point PLEB_ROOT at the live checkout (test_static_plumbing)."""
+        private = base / "pleb-copy"
+        shutil.copytree(ROOT / "lib", private / "lib")
+        (private / "bin").mkdir()
+        (private / "VERSION").write_text((ROOT / "VERSION").read_text())
+        return private
+
+    def test_the_standalone_reconcile_is_handed_the_update_lock_a_plain_update_holds(self):
+        """A standalone machine reconciles through a nested `pleb update`. Run
+        _pleb_restore_selected_stack as a plain update calls it, holding the
+        lock without having exported it: the nested Pleb must be given the
+        descriptor, or its own lock attempt collides with this process."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            fake = self._private_pleb_root(base)
+            record = base / "nested.txt"
+            (fake / "bin/pleb").write_text(
+                "#!/bin/bash\n"
+                f'printf "%s %s\\n" "${{PLEB_UPDATE_LOCK_FD:-unset}}" '
+                f'"$(readlink "/proc/$$/fd/${{PLEB_UPDATE_LOCK_FD:-0}}" 2>/dev/null)" >>{str(record)!r}\n')
+            (fake / "bin/pleb").chmod(0o755)
+            env = self._env(base, self._release_remote(base))
+            for key in ("PLEBIAN_OS_MANAGED_INSTALL",):
+                env.pop(key, None)            # standalone
+            lock = Path(env["PLEB_STATE_HOME"]) / "update.lock"
+            lock.parent.mkdir(parents=True, exist_ok=True)
+            def restore(export):
+                record.write_text("")
+                held = 'export PLEB_UPDATE_LOCK_FD="$_UPDATE_LOCK_FD"\n' if export else ""
+                return subprocess.run(
+                    ["bash", "-euo", "pipefail", "-c",
+                     f"PLEB_ROOT={fake}; . {fake}/lib/common.sh; . {fake}/lib/closure.sh\n"
+                     f'exec {{_UPDATE_LOCK_FD}}>>{str(lock)!r}\nflock -n "$_UPDATE_LOCK_FD"\n'
+                     + held + "_pleb_restore_selected_stack 1\n"],
+                    env=env, capture_output=True, text=True, check=False)
+            plain = restore(export=False)
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            fd, target = record.read_text().split(" ", 1)
+            self.assertTrue(fd.isdigit(), fd)
+            self.assertTrue(target.strip().endswith("/state/update.lock"), target)
+            # A hop mode exports it already; nothing is added or changed.
+            exported = restore(export=True)
+            self.assertEqual(exported.returncode, 0, exported.stderr)
+            self.assertEqual(record.read_text().split(" ", 1)[0], fd)
+
+    def test_a_failed_reconcile_names_the_next_step(self):
+        for managed, expected in (("1", "plebian-os-update --revalidate-current"), ("0", "pleb update")):
+            with self.subTest(managed=managed), tempfile.TemporaryDirectory() as td:
+                env = self._env(Path(td), self._release_remote(Path(td)))
+                env["PLEBIAN_OS_MANAGED_INSTALL"] = managed
+                private = self._private_pleb_root(Path(td))
+                result = subprocess.run(
+                    ["bash", "-euo", "pipefail", "-c",
+                     f"PLEB_ROOT={private}; . {private}/lib/common.sh; . {private}/lib/closure.sh\n_pleb_reconcile_hint"],
+                    env=env, capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(expected, result.stdout)
+        source = (ROOT / "lib/closure.sh").read_text()
+        self.assertEqual(source.count("$(_pleb_reconcile_hint)"), 3)
+
+    def test_recovery_stays_blocked_while_an_update_is_still_running(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env, state = self._selected_hop(base)
+            blocked = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env={**env, "PLEB_TEST_SELECTOR_ROLLBACK_STATUS": "13"},
+                capture_output=True, text=True, check=False)
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn("closure rollback failed with status 13", blocked.stderr)
+            self.assertTrue((state / "active").exists())
+
+    def test_recovery_stays_blocked_while_the_installed_selector_is_the_targets(self):
+        """A rollback that failed part-way keeps the selected tools. The session
+        and closure still match the baseline, but the selector installed on the
+        image is the target's, so that is not a finished rollback."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env, state = self._selected_hop(base)
+            target = state.parent.parent / "cache/release-hop/selectors"
+            cached = next(p for p in target.iterdir() if p.is_file())
+            Path(env["PLEBIAN_OS_SELECTOR_DST"]).write_bytes(cached.read_bytes())
+            blocked = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env={**env, "PLEB_TEST_SELECTOR_ROLLBACK_STATUS": "1"},
+                capture_output=True, text=True, check=False)
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn("interrupted release hop is blocked", blocked.stderr)
+            self.assertTrue((state / "active").exists())
+
+    def test_recovery_stays_blocked_when_the_closure_is_not_the_one_before_the_hop(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            env = self._env(base, self._release_remote(base))
+            selected = subprocess.run(
+                [str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+                env=env, capture_output=True, text=True, check=False)
+            self.assertEqual(selected.returncode, 0, selected.stderr)
+            state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+            (state / "phase").write_text("selected\n")
+            # The managed image fingerprints the system pair; the selector's
+            # write is what changes it.
+            Path(env["PLEB_CLOSURE_SYSTEM"]).write_text("PLEBIAN_OS_VERSION=0.2.1\n")
+            blocked = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env={**env, "PLEB_TEST_SELECTOR_STATUS": "1"},
+                capture_output=True, text=True, check=False)
+            self.assertNotEqual(blocked.returncode, 0)
+            self.assertIn("interrupted release hop is blocked", blocked.stderr)
+            self.assertTrue((state / "active").exists())
+
+    def _interrupt_while_selecting(self, base, env):
+        """Leave the state a Ctrl-C during the selector's fetch leaves: the
+        hop marker says `selecting`, and the closure was never replaced."""
+        killed = subprocess.run(
+            [str(PLEB), "update", "--to", "0.2.1", "--no-restart"],
+            env={**env, "PLEB_TEST_SELECTOR_KILL": "1"},
+            capture_output=True, text=True, check=False,
+        )
+        self.assertNotEqual(killed.returncode, 0)
+        state = Path(env["PLEB_STATE_HOME"]) / "release-hop"
+        self.assertEqual((state / "phase").read_text(), "selecting\n")
+        return state
+
+    def test_interrupted_selecting_phase_never_asks_for_a_rollback(self):
+        for command, expected in (
+                (["update", "--rollback", "--no-restart"], "had changed nothing"),
+                (["update", "--to", "0.2.1", "--dry-run"], "nothing is rolled back")):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as td:
+                base = Path(td)
+                remote = self._release_remote(base)
+                env = self._env(base, remote)
+                closure = Path(env["PLEB_CLOSURE_SYSTEM"])
+                closure.write_text("PLEBIAN_OS_VERSION=0.2.0\n")
+                state = self._interrupt_while_selecting(base, env)
+                self.assertTrue((state / "baseline").is_file())
+                log = base / "selector.log"
+                calls = len(log.read_text().splitlines())
+                recovered = subprocess.run(
+                    [str(PLEB), *command], env=env,
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(recovered.returncode, 0, recovered.stderr)
+                self.assertIn(expected, recovered.stderr + recovered.stdout)
+                self.assertFalse((state / "baseline").exists())
+                self.assertEqual(closure.read_text(), "PLEBIAN_OS_VERSION=0.2.0\n")
+                later = log.read_text().splitlines()[calls:]
+                self.assertNotIn("--rollback", later)
+                self.assertFalse((base / "updater.log").exists())
+
+    def test_interrupted_same_version_reselect_is_not_a_rollback(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            remote = self._release_remote(base)
+            env = self._env(base, remote)
+            closure = Path(env["PLEB_CLOSURE_USER"])
+            closure.write_text(closure.read_text().replace(
+                "PLEBIAN_OS_VERSION=0.2.0\n", "PLEBIAN_OS_VERSION=0.2.1\n", 1))
+            state = self._interrupt_while_selecting(base, env)
+            attempt = Path(env["PLEB_STATE_HOME"]) / "selection-attempt"
+            attempt.parent.mkdir(parents=True, exist_ok=True)
+            attempt.write_text(
+                "format=1\n"
+                "tag=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+                "target=0.2.1\n")
+            self.assertTrue((state / "baseline").is_file())
+            log = base / "selector.log"
+            calls = len(log.read_text().splitlines())
+            recovered = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            combined = recovered.stdout + recovered.stderr
+            self.assertIn("interrupted reselect of 0.2.1", combined)
+            self.assertNotIn("was rolled back", recovered.stdout)
+            self.assertFalse((state / "baseline").exists())
+            self.assertFalse(attempt.exists())
+            self.assertIn("PLEBIAN_OS_VERSION=0.2.1\n", closure.read_text())
+            later = log.read_text().splitlines()[calls:]
+            self.assertNotIn("--rollback", later)
+            self.assertFalse((base / "updater.log").exists())
+
+    def test_interrupted_selecting_phase_rolls_back_a_replaced_closure(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            remote = self._release_remote(base)
+            env = self._env(base, remote)
+            closure = Path(env["PLEB_CLOSURE_SYSTEM"])
+            closure.write_text("PLEBIAN_OS_VERSION=0.2.0\n")
+            state = self._interrupt_while_selecting(base, env)
+            # The selector did write before it died: its own record exists.
+            closure.write_text("PLEBIAN_OS_VERSION=0.2.1\n")
+            recovered = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertIn("interrupted release hop restored", recovered.stdout)
+            self.assertIn("was rolled back", recovered.stdout)
+            self.assertEqual(
+                (base / "selector.log").read_text().splitlines()[-1], "--rollback")
+            self.assertFalse((state / "baseline").exists())
+
+    def test_selecting_state_without_a_baseline_keeps_the_old_recovery(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            remote = self._release_remote(base)
+            env = self._env(base, remote)
+            state = self._interrupt_while_selecting(base, env)
+            (state / "baseline").unlink()
+            recovered = subprocess.run(
+                [str(PLEB), "update", "--rollback", "--no-restart"],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertEqual(
+                (base / "selector.log").read_text().splitlines()[-1], "--rollback")
 
     def test_newer_release_reporting_is_explicit_online_and_offline(self):
         with tempfile.TemporaryDirectory() as td:

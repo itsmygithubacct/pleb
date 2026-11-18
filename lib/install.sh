@@ -7,6 +7,16 @@
 # uninstall and out of the distribution's rollback.
 PLEB_CAPTURE_MODULES="displays.py displays_gui.py screenlock.py screenlock_gui.py capture_registry.py capture_sources.py capture_session.py capture_worker.py capture_screenshot.py capture_portal.py"
 
+# Release mode on an installed Plebian OS. The release closure was already
+# installed through the private Debian configuration, so a package still
+# missing here means that closure is incomplete. Development, and pleb on a
+# machine that is not Plebian OS, keep the system apt configuration.
+_release_closure_refuses_system_apt() {
+    [ "${PLEBIAN_OS_RELEASE_MODE:-0}" = 1 ] || return 1
+    local marker="${PLEBIAN_OS_MACHINE_MARKER:-/etc/plebian-os/build-info.env}"
+    [ -f "$marker" ] && [ ! -L "$marker" ]
+}
+
 _install_missing_apt_packages() {
     local label="$1"
     shift
@@ -26,8 +36,11 @@ _install_missing_apt_packages() {
     if command -v dpkg-query >/dev/null 2>&1; then
         local pkg status
         for pkg in "${deps[@]}"; do
-            status="$(dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null || true)"
-            if ! printf '%s\n' "$status" | grep -qx 'install ok installed'; then
+            # db:Status-Status is "installed" for both a normal install and an
+            # apt-mark hold. One line per architecture; any installed instance
+            # counts. The want flag (install vs hold) does not.
+            status="$(dpkg-query -W -f='${db:Status-Status}\n' "$pkg" 2>/dev/null || true)"
+            if ! printf '%s\n' "$status" | grep -qx 'installed'; then
                 missing+=("$pkg")
             fi
         done
@@ -37,6 +50,13 @@ _install_missing_apt_packages() {
         fi
     else
         missing=("${deps[@]}")
+    fi
+
+    if _release_closure_refuses_system_apt; then
+        warn "release package closure is incomplete; missing ${missing[*]}"
+        warn "the system apt configuration was not used"
+        warn "run 'plebian-os-update --revalidate-current' to reinstall this release's packages; if it is still missing, report it"
+        return 1
     fi
 
     log "installing missing $label via apt-get: ${missing[*]}"
@@ -54,7 +74,7 @@ ensure_system_deps() {
     local -a deps
     deps=(
         git curl tar unzip sudo tmux network-manager build-essential cmake zlib1g-dev
-        lightdm xserver-xorg xinit x11-xserver-utils x11-utils xterm openbox
+        lightdm xserver-xorg xinit x11-xserver-utils x11-utils xterm xdotool openbox
         libgl1 libegl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1
         fontconfig fonts-dejavu-core xfonts-base
         python3-pil python3-xlib python3-websockets python3-venv python3-tk
@@ -87,11 +107,16 @@ ensure_system_deps() {
     # cannot resolve them — and one unresolvable name fails the whole apt-get
     # transaction. Kept out of the required set and tolerated here, because
     # espeak-ng alone is the default engine and Kilix falls back to it when an
-    # mbrola voice is missing. `unzip` above extracts the checksum-pinned Vosk
-    # wheel and acoustic-model archive. Microphone capture needs no new package:
-    # pulseaudio-utils (parec/pacat) is already installed for the volume widget.
-    _install_missing_apt_packages "read-aloud mbrola voices" mbrola mbrola-us1 \
-        || warn "mbrola voices unavailable (enable Debian's contrib and non-free components to install them); read-aloud uses espeak-ng"
+    # mbrola voice is missing. The release closure does not carry mbrola-us1
+    # on purpose, so release mode must not call that an incomplete closure and
+    # must not call system apt for it. `unzip` above extracts the checksum-pinned
+    # Vosk wheel and acoustic-model archive. Microphone capture needs no new
+    # package: pulseaudio-utils (parec/pacat) is already installed for the volume
+    # widget.
+    if ! _release_closure_refuses_system_apt; then
+        _install_missing_apt_packages "read-aloud mbrola voices" mbrola mbrola-us1 \
+            || warn "mbrola voices unavailable (enable Debian's contrib and non-free components to install them); read-aloud uses espeak-ng"
+    fi
 }
 
 ensure_kilix_build_deps() {
@@ -688,7 +713,7 @@ _pleb_desktop_state_dir() {
             else
                 return 1
             fi ;;
-        none|off|disabled|command|custom|cap|kilix-cap|mansion|tui|kilix-tui|land|kilix-land|kilix-land-desktop)
+        none|off|disabled|command|custom|cap|kilix-cap|mansion|tui|kilix-tui|land|kilix-land|kilix-land-desktop|icewm|kilix-icewm|zell|zell-neuronte|kilix-zell)
             return 1 ;;
         *)
             die "unknown KILIX_DESKTOP_PROVIDER=${KILIX_DESKTOP_PROVIDER:-}" ;;
@@ -919,6 +944,14 @@ install_screensaver() {
         || die "Could not publish Pleb ScreenSaver command; rerun the install"
 }
 
+install_notifications() {
+    local dest=/usr/local/lib/pleb
+    run_root install -D -m 0644 "$PLEB_ROOT/lib/notification_center.py" "$dest/.notification_center.py.new" \
+        || die "Could not stage Pleb notifications"
+    run_root mv -fT -- "$dest/.notification_center.py.new" "$dest/notification_center.py" \
+        || die "Could not publish Pleb notifications; rerun the install"
+}
+
 do_install() {
     [ -f "$PLEB_BIN_SRC" ]    || die "missing $PLEB_BIN_SRC"
     [ -f "$PLEB_DESKTOP_IN" ] || die "missing $PLEB_DESKTOP_IN"
@@ -971,6 +1004,7 @@ do_install() {
     install_capture_portal
     install_lid_policy
     install_screensaver
+    install_notifications
     run_root install -D -m 0755 "$PLEB_BIN_SRC" "$SESSION_BIN_DST"
 
     log "installing xsession entry -> $XSESSION_DST"
@@ -1043,6 +1077,7 @@ do_uninstall() {
     done
     for f in "$LID_POLICY_DST" /usr/local/lib/pleb/capture_transport.so \
             /usr/local/lib/pleb/screensaver.py /usr/local/lib/pleb/session-bin/xdg-screensaver \
+            /usr/local/lib/pleb/notification_center.py /usr/local/lib/pleb/.notification_center.py.new \
             /usr/local/share/xdg-desktop-portal/portals/pleb.portal \
             /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service; do
         if [ -e "$f" ] || [ -L "$f" ]; then

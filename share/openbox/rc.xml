@@ -442,13 +442,20 @@
 </menu>
 
 <applications>
-  <!-- Intentionally empty.
+  <!-- One rule, for the rescue terminal pleb-session opens when Kilix is missing
+       or crash-loops. Openbox does not focus new windows (focusNew no above),
+       so without it that terminal appears unfocused and takes no typing until
+       it is clicked. pleb-session gives it the instance name pleb-recovery
+       (xterm -name), the first element of WM_CLASS; the class stays XTerm.
 
        Kilix is NOT pinned here. The launcher requests maximized state and
        disables only the host decoration, while Openbox keeps the window on
        the normal layer. Adding <layer>above</layer> for Kilix would reintroduce
        exactly the bug this integration fixes — a browser window that is
        focused but permanently hidden behind the terminal. -->
+  <application name="pleb-recovery">
+    <focus>yes</focus>
+  </application>
 </applications>
 
 </openbox_config>

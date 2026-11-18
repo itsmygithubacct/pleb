@@ -165,6 +165,7 @@ _acquire_update_lock() {
     trap _release_update_lock EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
+    trap 'exit 129' HUP
 }
 
 _snapshot_update_path() {
@@ -930,7 +931,7 @@ _update_transaction_rollback() {
 
 _update_cleanup() {
     local rc=$? rollback_ok=1
-    trap - EXIT INT TERM
+    trap - EXIT INT TERM HUP
     set +e
     if [ "${_UPDATE_TXN_ACTIVE:-0}" = 1 ] \
         && [ "${_UPDATE_TXN_COMMITTED:-0}" != 1 ]; then
@@ -980,6 +981,7 @@ _update_transaction_begin() {
     trap _update_cleanup EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
+    trap 'exit 129' HUP
     chmod 0700 "$_UPDATE_TXN_DIR"
 
     _write_kilix_submodule_map committed "$_UPDATE_TXN_DIR/submodules" \
@@ -1476,6 +1478,25 @@ EOF
 }
 
 _ensure_go_for_kilix_build() {
+    if [ -n "${PLEBIAN_OS_KILIX_GO_DEBIAN_VERSION:-}" ]; then
+        # Closure files are sourced, not exported. Pass the exact package file
+        # pins on, so the installer can fetch the same bytes from snapshot or
+        # the release mirror once trixie-backports has replaced the upload.
+        local -a debian_go_files=()
+        local debian_go_key
+        for debian_go_key in PLEBIAN_OS_KILIX_GO_DEB_AMD64_FILE \
+                PLEBIAN_OS_KILIX_GO_DEB_AMD64_BYTES PLEBIAN_OS_KILIX_GO_DEB_AMD64_SHA256 \
+                PLEBIAN_OS_KILIX_GO_DEB_SRC_FILE PLEBIAN_OS_KILIX_GO_DEB_SRC_BYTES \
+                PLEBIAN_OS_KILIX_GO_DEB_SRC_SHA256 PLEBIAN_OS_KILIX_GO_DEB_SNAPSHOT \
+                PLEBIAN_OS_KILIX_GO_DEB_MIRROR_URL; do
+            debian_go_files+=("$debian_go_key=${!debian_go_key:-}")
+        done
+        env "${debian_go_files[@]}" "$PLEB_ROOT/scripts/install-debian-go.sh" \
+            "${PLEBIAN_OS_KILIX_GO_VERSION:-}" "$PLEBIAN_OS_KILIX_GO_DEBIAN_VERSION" \
+            || die "Debian Go toolchain install failed"
+        export PATH="/usr/lib/go-1.27/bin:$PATH" GOROOT=/usr/lib/go-1.27 GOENV=off GOTOOLCHAIN=local
+        return 0
+    fi
     local min="${PLEBIAN_OS_KILIX_GO_MIN_VERSION:-1.26}"
     local version="${PLEBIAN_OS_KILIX_GO_VERSION:-}" arch sha=""
     local go_bin_dir="${GO_BIN_DIR:-/usr/local/bin}"
@@ -1790,7 +1811,7 @@ do_update() {
         pleb_release_hop "$hop_mode" "$hop_target" "$dry_run" "$offline" \
             "$_UPDATE_YES" "$_UPDATE_RESTART" "$hop_tag"
         _release_update_lock
-        trap - EXIT INT TERM
+        trap - EXIT INT TERM HUP
         return 0
     fi
     [ "$dry_run" = 0 ] && [ "$offline" = 0 ] \
@@ -1806,7 +1827,7 @@ do_update() {
     if [ "$preserve_only" = 1 ]; then
         _preserve_only_update_checkouts
         _release_update_lock
-        trap - EXIT INT TERM
+        trap - EXIT INT TERM HUP
         return 0
     fi
     if [ "${PLEB_RELEASE_HOP_APPLY:-0}" != 1 ]; then
@@ -1890,6 +1911,10 @@ do_update() {
     refresh_kilix_voice
 
     if _kilix_fork_enabled; then
+        # Reconcile the package selection even when source-id avoids a rebuild.
+        if [ -n "${PLEBIAN_OS_KILIX_GO_DEBIAN_VERSION:-}" ]; then
+            _ensure_go_for_kilix_build
+        fi
         if _kilix_fork_needs_rebuild; then
             _rebuild_kilix_fork
         else
@@ -1913,5 +1938,5 @@ do_update() {
     _update_pleb_self
     _offer_restart
     _release_update_lock
-    trap - EXIT INT TERM
+    trap - EXIT INT TERM HUP
 }

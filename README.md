@@ -5,9 +5,9 @@ Pleb is a LightDM session plus the `pleb` command that make one screen-filling
 log in, and Kilix, with its clickable page strip and pane controls visible, is
 the only thing on screen.
 
-**Status:** ships in Plebian-OS as its login session. Plebian-OS 0.2.2 selects
-Pleb's `v0.2.2` tag; the 0.2.3 release candidate pins commit `92c81c0e` in
-[`releases/0.2.3.env`](https://github.com/itsmygithubacct/plebian-os/blob/main/releases/0.2.3.env),
+**Status:** ships in Plebian-OS as its login session. Plebian-OS 0.2.3 selects
+Pleb's `v0.2.3` tag (commit `56b46bed`) in
+[`releases/0.2.3.env`](https://github.com/itsmygithubacct/plebian-os/blob/v0.2.3/releases/0.2.3.env),
 and first-boot provisioning clones it to `~/.local/gpu_terminal/sources/pleb`
 and runs a managed `pleb install`. Pleb also installs on its own on an existing
 Debian or Ubuntu desktop that uses LightDM, as one more session at the greeter.
@@ -125,10 +125,10 @@ On a Plebian-OS image it then hands over to `plebian-os-update`; on a
 standalone machine it applies the closure itself. Before moving any checkout it
 copies local edits to a verified snapshot, and a failure restores the previous
 coherent stack. See [docs/updates.md](docs/updates.md) and
-[docs/RECOVERY.md](docs/RECOVERY.md). In the 0.2.3 candidate, the first
-`pleb update --to` on a standalone machine that has never selected a closure is
-refused; that is a recorded
-[known issue](https://github.com/itsmygithubacct/plebian-os/blob/main/releases/0.2.3-notes.md#known-issues).
+[docs/RECOVERY.md](docs/RECOVERY.md). A standalone machine whose Pleb
+reports VERSION 0.2.1 and that has never selected a closure runs a bare
+`pleb update` before `pleb update --to 0.2.3`; see the
+[0.2.3 notes](https://github.com/itsmygithubacct/plebian-os/blob/v0.2.3/releases/0.2.3-notes.md#standalone-debian-machines-with-a-version-021-pleb).
 
 ## Watch the episode
 

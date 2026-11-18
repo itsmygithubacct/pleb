@@ -21,6 +21,10 @@ _PLEB_HOP_PHASE=""
 _PLEB_HOP_EMERGENCY_ROLLBACK=0
 _PLEB_HOP_RECOVERY_RESULT=""
 
+# The installed release. A selected closure names it. A standalone machine that
+# has never selected one has only its Pleb checkout, so that checkout's VERSION
+# decides adjacent hops: it is the release the component directions are judged
+# against. Anything that names no valid release is "unknown" and refused.
 _pleb_release_version() {
     local version="${PLEBIAN_OS_VERSION:-${PLEBIAN_OS_RELEASE:-}}"
     if [ -z "$version" ]; then
@@ -33,12 +37,62 @@ _pleb_release_version() {
     fi
 }
 
+# True when the configuration names a selected Plebian-OS release.
+_pleb_release_selected() {
+    [ -n "${PLEBIAN_OS_VERSION:-}${PLEBIAN_OS_RELEASE:-}" ]
+}
+
+# A standalone machine selecting its first closure: no closure.env and no
+# selected release. Its rollback returns to that unselected state.
+_pleb_first_standalone_selection() {
+    [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" != 1 ] \
+        && [ ! -e "$PLEB_CLOSURE_USER" ] && [ ! -L "$PLEB_CLOSURE_USER" ] \
+        && ! _pleb_release_selected
+}
+
 _pleb_valid_release_tag() {
     local version="$1" tag="$2" suffix
     [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[1-9][0-9]*)?$ ]] || return 1
     [ "$tag" = "v$version" ] && return 0
     suffix="${tag#"v$version-rc"}"
     [ "$suffix" != "$tag" ] && [[ "$suffix" =~ ^[1-9][0-9]*$ ]]
+}
+
+# The exact release tag the selected closure records, or nothing. Selectors from
+# 0.2.3 on write PLEBIAN_OS_RELEASE_TAG and PLEBIAN_OS_RELEASE_TAG_OBJECT beside
+# the numeric version, so a candidate and its final are told apart. A closure
+# written earlier records neither and keeps the numeric-only behaviour.
+_pleb_recorded_release_tag() {
+    local version="$1" tag="${PLEBIAN_OS_RELEASE_TAG:-}"
+    local object="${PLEBIAN_OS_RELEASE_TAG_OBJECT:-}"
+    _pleb_release_selected && [ -n "$tag" ] || return 0
+    if ! _pleb_valid_release_tag "$version" "$tag" \
+            || [[ ! "$object" =~ ^[0-9a-f]{40}$ ]]; then
+        warn "ignoring recorded release tag '$tag': it does not identify a tag object of release $version"
+        return 0
+    fi
+    printf '%s\n' "$tag"
+}
+
+# True when the selected closure records a numbered candidate of VERSION.
+_pleb_recorded_candidate() {
+    local version="$1" tag
+    tag="$(_pleb_recorded_release_tag "$version")"
+    [ -n "$tag" ] && [ "$tag" != "v$version" ]
+}
+
+_pleb_version_older() {
+    [ "$1" != "$2" ] \
+        && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]
+}
+
+# True when the selected closure is exactly VERSION at TAG. A closure without
+# a recorded tag is judged by its version alone, as before 0.2.3.
+_pleb_selected_identity_is() {
+    local version="$1" tag="$2" recorded
+    [ "$(_pleb_release_version)" = "$version" ] || return 1
+    recorded="$(_pleb_recorded_release_tag "$version" 2>/dev/null)"
+    [ -z "$recorded" ] || [ "$recorded" = "$tag" ]
 }
 
 _pleb_remote_release_inventory() {
@@ -171,6 +225,9 @@ raise SystemExit(1)
 
 _pleb_enforce_adjacent_hop() {
     local current="$1" target="$2" inventory="$3" next="" version
+    if [ "$current" = unknown ] && ! _pleb_release_selected; then
+        die "the installed release is unknown: no closure is selected and $PLEB_ROOT/VERSION names no release"
+    fi
     [ "$current" != unknown ] \
         || die "the installed release is unknown; set PLEBIAN_OS_VERSION before selecting $target"
     [ "$current" != "$target" ] || return 0
@@ -243,6 +300,27 @@ _pleb_active_state_dir() {
     printf '%s\n' "$PLEB_STATE_HOME/release-hop"
 }
 
+# What the selector may replace, as it stands now. Recorded when a hop enters
+# its `selecting` phase and compared when an interrupted hop is recovered.
+_pleb_closure_fingerprint() {
+    local path
+    local -a paths
+    if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
+        paths=("$PLEB_ENV_SYSTEM" "$PLEB_CLOSURE_SYSTEM")
+    else
+        paths=("$PLEB_ENV_USER" "$PLEB_CLOSURE_USER")
+    fi
+    for path in "${paths[@]}"; do
+        if [ -f "$path" ] && [ ! -L "$path" ]; then
+            printf '%s\n' "$(sha256sum -- "$path" | awk '{print $1}')"
+        elif [ -e "$path" ] || [ -L "$path" ]; then
+            printf '%s\n' other
+        else
+            printf '%s\n' absent
+        fi
+    done
+}
+
 _pleb_record_active_selector() {
     local phase="${1:-selecting}" state tmp
     state="$(_pleb_active_state_dir)"
@@ -258,7 +336,104 @@ _pleb_record_active_selector() {
     } >"$tmp"
     chmod 0600 "$tmp"
     mv -fT -- "$tmp" "$state/active"
+    tmp="$(mktemp "$state/.baseline.XXXXXX")" || die "could not stage release-hop state"
+    _pleb_closure_fingerprint >"$tmp"
+    chmod 0600 "$tmp"
+    mv -fT -- "$tmp" "$state/baseline"
+    if _pleb_first_standalone_selection; then
+        tmp="$(mktemp "$state/.unselected.XXXXXX")" || die "could not stage release-hop state"
+        _pleb_unselected_checkouts >"$tmp" \
+            || { rm -f -- "$tmp"; die "could not record the unselected checkouts"; }
+        chmod 0600 "$tmp"
+        mv -fT -- "$tmp" "$state/unselected-checkouts"
+    else
+        rm -f -- "$state/unselected-checkouts"
+    fi
     _pleb_write_private_line "$state/phase" "$phase"
+}
+
+# Where a never-selected standalone machine's checkouts stand: KEY, commit (or
+# "absent"), branch (or "-"). An unselected machine follows branches, so its
+# rollback cannot be reconciled from pins; it is put back on these commits.
+_pleb_unselected_checkouts() {
+    local key dir commit branch
+    for key in PLEB_REF KILIX_REF KILIX95_REF; do
+        case "$key" in
+            PLEB_REF) dir="$PLEB_ROOT" ;;
+            KILIX_REF) dir="$KILIX_DIR" ;;
+            KILIX95_REF) dir="$KILIX95_DIR" ;;
+        esac
+        if [ -e "$dir/.git" ]; then
+            commit="$(git -C "$dir" rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" \
+                && [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || return 1
+            branch="$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+            [ -n "$branch" ] && git check-ref-format "refs/heads/$branch" || branch=-
+        else
+            commit=absent branch=-
+        fi
+        printf '%s\t%s\t%s\n' "$key" "$commit" "$branch"
+    done
+}
+
+# Prints the validated record, or nothing when this hop has none.
+_pleb_load_unselected_checkouts() {
+    local file key commit branch count=0
+    file="$(_pleb_active_state_dir)/unselected-checkouts"
+    [ -f "$file" ] && [ ! -L "$file" ] || return 0
+    while IFS=$'\t' read -r key commit branch; do
+        case "$key" in PLEB_REF|KILIX_REF|KILIX95_REF) ;; *) return 1 ;; esac
+        [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || [ "$commit" = absent ] || return 1
+        [ "$branch" = - ] || git check-ref-format "refs/heads/$branch" || return 1
+        printf '%s\t%s\t%s\n' "$key" "$commit" "$branch"
+        count=$((count + 1))
+    done <"$file"
+    [ "$count" = 3 ]
+}
+
+_pleb_unselected_checkout_dir() {
+    case "$1" in
+        PLEB_REF) printf '%s\n' "$PLEB_ROOT" ;;
+        KILIX_REF) printf '%s\n' "$KILIX_DIR" ;;
+        KILIX95_REF) printf '%s\n' "$KILIX95_DIR" ;;
+    esac
+}
+
+# The restored stack is pinned to the recorded commits, which leaves each
+# checkout detached. Put back a branch that still points at its commit.
+_pleb_reattach_unselected_branches() {
+    local record="$1" key commit branch dir
+    while IFS=$'\t' read -r key commit branch; do
+        [ "$commit" != absent ] && [ "$branch" != - ] || continue
+        dir="$(_pleb_unselected_checkout_dir "$key")"
+        [ "$(git -C "$dir" rev-parse --verify HEAD 2>/dev/null)" = "$commit" ] || continue
+        git -C "$dir" symbolic-ref --quiet HEAD >/dev/null 2>&1 && continue
+        if [ "$(git -C "$dir" rev-parse --verify --quiet "refs/heads/$branch" 2>/dev/null)" != "$commit" ]; then
+            warn "$dir is back at ${commit:0:12} but branch $branch has moved; left detached"
+            continue
+        fi
+        git -C "$dir" -c submodule.recurse=false checkout --quiet "$branch" \
+            || warn "$dir is back at ${commit:0:12} but could not return to branch $branch"
+    done <<<"$record"
+}
+
+# True when this hop recorded a baseline and the closure still matches it: the
+# interrupted selector never replaced anything, so there is nothing of THIS hop
+# to roll back. Asking the selector to roll back anyway restores the newest
+# record on the machine, which an EARLIER hop wrote: a whole-release downgrade.
+_pleb_selection_changed_nothing() {
+    local baseline
+    baseline="$(_pleb_active_state_dir)/baseline"
+    [ -f "$baseline" ] && [ ! -L "$baseline" ] || return 1
+    [ "$(cat -- "$baseline")" = "$(_pleb_closure_fingerprint)" ]
+}
+
+# On an image the selector also installs itself. While the installed copy is
+# still the hop's target selector, its rollback has not restored the tools.
+_pleb_installed_selector_is_target() {
+    local dst="${PLEBIAN_OS_SELECTOR_DST:-/usr/local/bin/plebian-os-select-closure}"
+    [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ] || return 1
+    [ -f "$dst" ] && [ ! -L "$dst" ] || return 1
+    [ "$(sha256sum -- "$dst" | awk '{print $1}')" = "$_PLEB_HOP_SELECTOR_SHA" ]
 }
 
 _pleb_set_active_phase() {
@@ -309,7 +484,9 @@ _pleb_load_active_selector() {
 }
 
 _pleb_clear_active_selector() {
-    rm -f -- "$(_pleb_active_state_dir)/active" "$(_pleb_active_state_dir)/phase"
+    rm -f -- "$(_pleb_active_state_dir)/active" "$(_pleb_active_state_dir)/phase" \
+        "$(_pleb_active_state_dir)/baseline" \
+        "$(_pleb_active_state_dir)/unselected-checkouts"
     _PLEB_HOP_PHASE=""
 }
 
@@ -330,10 +507,41 @@ pleb_recover_incomplete_release_hop() {
         log "interrupted rollback was cancelled safely; release $_PLEB_HOP_TARGET remains selected"
         return 0
     fi
+    if [ "$_PLEB_HOP_PHASE" = selecting ] && _pleb_selection_changed_nothing; then
+        # A stale attempt would make a later same-tag --rollback look like this
+        # interrupted reselect. This path does not call the selector, so clear
+        # the marker here.
+        rm -f -- "$PLEB_STATE_HOME/selection-attempt"
+        if [ "$(_pleb_release_version)" = "$_PLEB_HOP_TARGET" ]; then
+            warn "interrupted reselect of $_PLEB_HOP_TARGET; the installed closure is unchanged and nothing was rolled back"
+            _pleb_clear_active_selector
+            _PLEB_HOP_RECOVERY_RESULT=reselect-interrupted
+        else
+            warn "the interrupted selection had not replaced the closure; nothing is rolled back"
+            _pleb_clear_active_selector
+            _PLEB_HOP_RECOVERY_RESULT=unchanged
+        fi
+        return 0
+    fi
     _pleb_selector_env "$_PLEB_HOP_SELECTOR" --rollback || rc=$?
+    # Status 13 is the selector saying an update is still running: its own
+    # rollback is not done, so nothing is settled.
+    if [ "$rc" -ne 0 ] && [ "$rc" != 13 ] && [ "$_PLEB_HOP_PHASE" = selected ] \
+            && _pleb_selection_changed_nothing \
+            && ! _pleb_installed_selector_is_target; then
+        # A driver that died after the selector's rollback ran, before it
+        # cleared this marker, finds nothing left to roll back. The selector
+        # reports every failure as status 1, so this does not rest on the
+        # status: the session and closure files are exactly what was recorded
+        # before the hop, and the selector installed on an image is no longer
+        # the target's (a rollback that failed part-way keeps the selected
+        # tools). Only the stack and the marker are left to settle.
+        warn "the selector exited with status $rc (its message is above); the closure is the one recorded before the hop, so there is nothing left to roll back; reconciling the stack"
+        rc=0
+    fi
     if [ "$rc" -ne 0 ]; then
         if [ "$_PLEB_HOP_PHASE" = selecting ] \
-                && [ "$(_pleb_release_version)" != "$_PLEB_HOP_TARGET" ]; then
+                && ! _pleb_selected_identity_is "$_PLEB_HOP_TARGET" "$_PLEB_HOP_TAG"; then
             warn "interrupted selector left no restorable selected closure; clearing its pre-selection marker"
             _pleb_clear_active_selector
             _PLEB_HOP_RECOVERY_RESULT=unchanged
@@ -342,7 +550,7 @@ pleb_recover_incomplete_release_hop() {
         die "interrupted release hop is blocked: closure rollback failed with status $rc; owner: F109 recovery operator"
     fi
     _pleb_restore_selected_stack 1 \
-        || die "interrupted release hop is blocked: previous-stack reconciliation failed; owner: F109 recovery operator"
+        || die "interrupted release hop is blocked: previous-stack reconciliation failed; $(_pleb_reconcile_hint); owner: F109 recovery operator"
     _pleb_clear_active_selector
     _PLEB_HOP_RECOVERY_RESULT=rolled-back
     log "interrupted release hop restored the previous closure and stack"
@@ -350,7 +558,7 @@ pleb_recover_incomplete_release_hop() {
 
 pleb_release_hop_exit_cleanup() {
     local rc="$1" rollback_rc=0 stack_rc=0
-    trap - EXIT INT TERM
+    trap - EXIT INT TERM HUP
     set +e
     if [ "${_PLEB_HOP_EMERGENCY_ROLLBACK:-0}" = 1 ]; then
         warn "release hop exited before commit; restoring the previous closure and stack"
@@ -363,6 +571,10 @@ pleb_release_hop_exit_cleanup() {
             _pleb_clear_active_selector
         else
             err "emergency release-hop recovery is incomplete: closure status $rollback_rc; stack status $stack_rc; owner: F109 recovery operator"
+            [ "$rollback_rc" != 0 ] || [ "$stack_rc" = 0 ] \
+                || warn "$(_pleb_reconcile_hint)"
+            [ "$rollback_rc" != 13 ] \
+                || warn "the update was still running; once it has finished, run: pleb update --rollback"
             rc=1
         fi
     elif [ "${_PLEB_HOP_EMERGENCY_ROLLBACK:-0}" = 2 ]; then
@@ -402,15 +614,64 @@ _pleb_apply_selected_stack() {
     fi
 }
 
+# A plain `pleb update` holds the update lock when it recovers a hop but does
+# not export it (a hop mode does). Whatever the reconcile runs, the updater on
+# an image or the nested `pleb update` on a standalone machine, takes the same
+# lock on a descriptor of its own and would collide with this process. Print
+# the assignment that hands it the descriptor already held, or nothing when
+# there is none to hand over or it is already exported.
+_pleb_held_lock_assignment() {
+    if [ -z "${PLEB_UPDATE_LOCK_FD:-}" ] && [ "${_UPDATE_LOCK_BORROWED:-0}" != 1 ] \
+            && [[ "${_UPDATE_LOCK_FD:-}" =~ ^[0-9]+$ ]] \
+            && [ -e "/proc/$$/fd/$_UPDATE_LOCK_FD" ]; then
+        printf 'PLEB_UPDATE_LOCK_FD=%s\n' "$_UPDATE_LOCK_FD"
+    fi
+}
+
+# What to run when the closure is back but the stack reconcile failed.
+_pleb_reconcile_hint() {
+    if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
+        printf '%s' "the closure is restored; finish the stack with: plebian-os-update --revalidate-current"
+    else
+        printf '%s' "the closure is restored; finish the stack with: pleb update"
+    fi
+}
+
 _pleb_restore_selected_stack() {
-    local yes="$1"
+    local yes="$1" held
+    local -a lock=()
+    held="$(_pleb_held_lock_assignment)"
+    [ -z "$held" ] || lock=("$held")
     if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
         local updater="${PLEBIAN_OS_UPDATER_DST:-/usr/local/bin/plebian-os-update}"
-        [ -x "$updater" ] && "$updater" --revalidate-current
+        [ -x "$updater" ] && env "${lock[@]}" "$updater" --revalidate-current
     else
-        local -a args=(--no-restart)
+        local -a args=(--no-restart) pins=()
+        local record="" key commit branch
         [ "$yes" = 1 ] && args+=(--yes)
-        PLEB_RELEASE_HOP_APPLY=1 "$PLEB_ROOT/bin/pleb" update "${args[@]}"
+        # Back to a never-selected machine: no closure pins exist to reconcile
+        # from, and an unpinned update would move every checkout to its branch
+        # head. Pin this run to the commits recorded before the selection.
+        if [ ! -e "$PLEB_CLOSURE_USER" ] && [ ! -L "$PLEB_CLOSURE_USER" ]; then
+            record="$(_pleb_load_unselected_checkouts)" || {
+                err "the recorded pre-selection checkouts are malformed: $(_pleb_active_state_dir)/unselected-checkouts"
+                return 1
+            }
+        fi
+        if [ -n "$record" ]; then
+            while IFS=$'\t' read -r key commit branch; do
+                if [ "$commit" = absent ]; then
+                    [ ! -e "$(_pleb_unselected_checkout_dir "$key")/.git" ] \
+                        || warn "$(_pleb_unselected_checkout_dir "$key") did not exist before the selection and is left in place"
+                    continue
+                fi
+                pins+=("$key=$commit")
+            done <<<"$record"
+            log "restoring the never-selected stack to its pre-selection commits"
+        fi
+        env "${pins[@]}" "${lock[@]}" PLEB_RELEASE_HOP_APPLY=1 "$PLEB_ROOT/bin/pleb" update "${args[@]}" \
+            || return
+        [ -z "$record" ] || _pleb_reattach_unselected_branches "$record"
     fi
 }
 
@@ -431,8 +692,12 @@ pleb_release_show() {
 pleb_release_hop() {
     local mode="$1" requested="$2" dry_run="$3" offline="$4" yes="$5" restart="$6" requested_tag="${7:-}"
     local current inventory target latest selector_rc=0 apply_rc=0 recovered=0
+    local current_label recorded_tag
     _pleb_refuse_release_env_overrides
     current="$(_pleb_release_version)"
+    recorded_tag="$(_pleb_recorded_release_tag "$current")"
+    current_label="$current"
+    [ -z "$recorded_tag" ] || current_label="$recorded_tag"
     if [ -f "$(_pleb_active_state_dir)/active" ] \
             && [ "$(cat "$(_pleb_active_state_dir)/phase" 2>/dev/null || true)" != complete ]; then
         pleb_recover_incomplete_release_hop
@@ -440,7 +705,13 @@ pleb_release_hop() {
     fi
     if [ "$mode" = rollback ]; then
         if [ "$recovered" = 1 ]; then
-            log "the interrupted release hop was rolled back"
+            if [ "$_PLEB_HOP_RECOVERY_RESULT" = unchanged ]; then
+                log "the interrupted release hop had changed nothing; the installed release is as it was"
+            elif [ "$_PLEB_HOP_RECOVERY_RESULT" = reselect-interrupted ]; then
+                log "interrupted reselect of the installed release; the installed closure is unchanged"
+            else
+                log "the interrupted release hop was rolled back"
+            fi
             return 0
         fi
         _pleb_load_active_selector
@@ -450,6 +721,7 @@ pleb_release_hop() {
         trap 'pleb_release_hop_exit_cleanup $?' EXIT
         trap 'exit 130' INT
         trap 'exit 143' TERM
+        trap 'exit 129' HUP
         _pleb_selector_env "$_PLEB_HOP_SELECTOR" --rollback || selector_rc=$?
         if [ "$selector_rc" != 0 ]; then
             _PLEB_HOP_EMERGENCY_ROLLBACK=0
@@ -495,8 +767,23 @@ pleb_release_hop() {
         latest)
             latest="$(tail -n 1 <<<"$inventory" | cut -f1)"
             [ -n "$latest" ] || die "could not determine the latest published release"
-            if [ "$latest" = "$current" ]; then
-                log "release $current is already the latest published release"
+            # A never-selected machine is not "on" the release its Pleb
+            # checkout declares; --latest selects that release for it.
+            if [ "$latest" = "$current" ] && _pleb_release_selected; then
+                # A recorded candidate of the published final moves to that
+                # final by the ordinary hop: its tag selector, trust and
+                # rollback. A final, or an unrecorded closure, stays.
+                if _pleb_recorded_candidate "$current"; then
+                    log "release candidate $recorded_tag is installed and final release v$current is published; selecting it"
+                else
+                    log "release $current is already the latest published release"
+                    return 0
+                fi
+            elif _pleb_recorded_candidate "$current" \
+                    && _pleb_version_older "$latest" "$current"; then
+                # Stable inventory never lists candidates, so this candidate's
+                # final is not published. Another candidate needs --release-tag.
+                log "release candidate $recorded_tag is installed; no final release $current or later is published, so it stays selected"
                 return 0
             fi
             target="$latest"
@@ -529,10 +816,15 @@ pleb_release_hop() {
     trap 'pleb_release_hop_exit_cleanup $?' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
+    trap 'exit 129' HUP
     if _pleb_apply_selected_stack "$yes" "$restart"; then
         _pleb_set_active_phase complete
         _PLEB_HOP_EMERGENCY_ROLLBACK=0
-        log "release hop $current -> $target completed"
+        if [ "$current_label" != "$current" ] || [ "$_PLEB_HOP_TAG" != "v$target" ]; then
+            log "release hop $current_label -> $_PLEB_HOP_TAG completed"
+        else
+            log "release hop $current -> $target completed"
+        fi
         return 0
     else
         apply_rc=$?
@@ -546,11 +838,11 @@ pleb_release_hop() {
         _pleb_clear_active_selector
         die "target stack apply failed with status $apply_rc; the previous closure and stack were restored"
     fi
-    die "target stack apply failed with status $apply_rc; closure rollback succeeded but previous-stack reconciliation failed"
+    die "target stack apply failed with status $apply_rc; closure rollback succeeded but previous-stack reconciliation failed; $(_pleb_reconcile_hint)"
 }
 
 pleb_report_newer_release() {
-    local current inventory latest
+    local current inventory latest tag
     current="$(_pleb_release_version)"
     if [ "${PLEB_RELEASE_OFFLINE:-0}" = 1 ]; then
         warn "could not check for a newer published release: PLEB_RELEASE_OFFLINE=1"
@@ -561,12 +853,23 @@ pleb_report_newer_release() {
         return 0
     }
     latest="$(tail -n 1 <<<"$inventory" | cut -f1)"
-    if [ "$current" = unknown ]; then
+    if ! _pleb_release_selected && [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" != 1 ]; then
+        warn "no Plebian-OS release closure is selected; this Pleb checkout declares release $current"
+        [ -z "$latest" ] || warn "select the newest published release with: pleb update --to $latest"
+    elif [ "$current" = unknown ]; then
         warn "could not compare published release $latest with an unknown installed release"
     elif [ -n "$latest" ] && [ "$latest" != "$current" ] \
             && [ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | head -n 1)" = "$current" ]; then
         warn "newer published release $latest is available; this bare update did not select it"
         warn "move by an accepted hop with: pleb update --latest"
+    elif _pleb_recorded_candidate "$current"; then
+        tag="$(_pleb_recorded_release_tag "$current")"
+        if [ "$latest" = "$current" ]; then
+            warn "final release v$current is published; this machine runs release candidate $tag and this bare update did not select it"
+            warn "move to the final with: pleb update --latest"
+        else
+            log "installed release candidate $tag; no final release $current is published yet"
+        fi
     else
         log "installed release $current is the newest published release"
     fi

@@ -1,5 +1,81 @@
 # Changelog
 
+## 0.2.3 — 2026-11-16
+
+Released as part of the coordinated Plebian-OS 0.2.3 release. The exact stack
+closure, qualification and known issues are owned by Plebian-OS in
+`releases/0.2.3.env` and `releases/0.2.3-notes.md`.
+
+- **Move a release candidate to its final.** Selections record
+  `PLEBIAN_OS_RELEASE_TAG` and `PLEBIAN_OS_RELEASE_TAG_OBJECT`. A recorded
+  candidate moves to its published final on `pleb update --latest`, the bare
+  `pleb update` names that move, and a final never moves to a candidate.
+  Machines on the 0.2.3 release candidates record no tag and move once with
+  `pleb update --to 0.2.3`.
+- **A hangup during an update rolls back in order.** Every `pleb update` now
+  defers SIGHUP as it does Ctrl-C and SIGTERM. A release hop's closure rollback
+  therefore runs after the interrupted update has rolled back, and
+  `/etc/pleb/session.env` returns to its pre-hop contents. If the selector
+  reports that the update is still running (status 13), the hop says to run
+  `pleb update --rollback` once it has finished.
+  With this Pleb, a hop whose closure rollback already ran but whose marker
+  was never cleared is settled by the next `pleb update`. On an image the stack
+  is reconciled with `plebian-os-update --revalidate-current`; on a standalone
+  machine it is reconciled with a nested `pleb update` pinned to the closure
+  (or to the checkout positions recorded before the first selection). A plain
+  `pleb update` hands the update lock it holds to either, so they no longer
+  collide with it. The marker is then cleared instead of reporting the hop as
+  blocked, and if the reconcile fails the message names the command to run.
+  The 0.2.2 Pleb recovers through the 0.2.2 updater, which moves to the latest
+  published release, and its plain `pleb update` cannot finish a recovery (it
+  holds the lock the updater needs); the 0.2.3 selector therefore settles the
+  marker after a successful rollback, so that case needs none.
+- **The rescue terminal takes typing at once.** The xterm opened when Kilix is
+  missing or crash-loops, or a required window manager fails, no longer waits
+  for a click. It starts with a distinct instance name (`xterm -name
+  pleb-recovery`; the class stays XTerm, so it keeps its X resources and
+  colours). One Openbox application rule focuses that name (`focusNew` stays
+  off for every other window), and `xdotool` focuses it when no window manager
+  runs; `pleb install` now lists `xdotool`.
+- **First standalone selection.** A standalone machine that never selected a
+  closure can run `pleb update --to 0.2.3`. Its checkout positions are
+  recorded first, and a rollback or failed apply returns Pleb, Kilix and Kilix
+  95 to them. A Pleb at VERSION 0.2.1 runs a bare `pleb update` first.
+- **Durable Debian Go.** Install the pinned `golang-1.27-go` and
+  `golang-1.27-src` files from snapshot.debian.org or the release mirror once
+  trixie-backports has replaced the selected upload; nothing is installed
+  unless every file matches. Release-selected Debian Go is installed on build
+  and upgrade and reconciled when a newer Debian package is present.
+- **Release packages.** In release mode on an installed Plebian-OS,
+  `pleb install` refuses a missing runtime package by name ("release package
+  closure is incomplete; missing …") instead of installing it from the system
+  apt, so an operator apt source never supplies one. A package held with
+  `apt-mark hold`, or installed for a second architecture, counts as
+  installed. The refusal says what to do ("run 'plebian-os-update --revalidate-current' to reinstall this release's
+  packages; if it is still missing, report it"). Outside release
+  mode, or on a machine that is not Plebian-OS, it uses the system apt as
+  before.
+- **Interrupted updates.** An interrupted same-version reselect is reported as
+  `reselect-interrupted` and leaves the closure unchanged. A hop whose
+  interrupted selection replaced nothing is not rolled back.
+- **Desktop session.** Notifications stack in one window, and a pane is
+  focused by clicking its notification icon; icons resolve managed
+  configuration links. Zell runtime settings are carried through Pleb
+  sessions, and GUI routing and screen-lock controls are preserved across
+  release hops.
+- **Release reporting.** Kilix Secrets and Neuronte are named in the
+  release-controlled report. Release bootstrap runs from verified source
+  blobs, and an explicit candidate identity is preserved through upgrades and
+  recovery.
+- **Maintenance releases.** Release upgrades accept a four-part maintenance
+  version such as `0.2.2.1`.
+
+## 0.2.2 — 2026-09-23
+
+Released as part of the coordinated Plebian-OS 0.2.2 release. Its exact stack
+closure and acceptance evidence are owned by Plebian-OS in
+`releases/0.2.2.env` and `releases/0.2.2-notes.md`.
+
 ## 0.2.1 — 2026-08-25
 
 Selected for the coordinated Plebian-OS 0.2.1 candidate. The exact stack
@@ -32,7 +108,7 @@ closure and acceptance evidence are owned by Plebian-OS in
   A durable outer phase record and the selector/component transactions restore
   the previous coherent generation after failure or an interrupted hop.
 
-## 0.2.0 — Unreleased
+## 0.2.0 — 2026-08-19
 
 Selected for the coordinated Plebian-OS 0.2.0 candidate. The exact stack
 closure and acceptance evidence are recorded by Plebian-OS in

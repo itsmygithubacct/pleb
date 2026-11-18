@@ -106,7 +106,16 @@ def recorded_apt_transactions(home: Path) -> list[list[str]]:
         ensure_system_deps
         """
     )
-    env = clean_env(home)
+    # This host's closure sets release mode and the installed-machine marker is
+    # present, which makes ensure_system_deps refuse. The recording is the
+    # development transaction, so pin both away from the host.
+    env = clean_env(
+        home,
+        PLEBIAN_OS_RELEASE_MODE="0",
+        PLEBIAN_OS_MACHINE_MARKER=str(home / "absent-build-info.env"),
+        PLEB_CLOSURE_SYSTEM=str(home / "absent-system-closure.env"),
+        PLEB_CLOSURE_USER=str(home / "absent-user-closure.env"),
+    )
     env["PATH"] = f"{stubs}:{env.get('PATH', '/usr/bin:/bin')}"
     result = subprocess.run(
         ["bash", "-c", script], cwd=ROOT, env=env, text=True,

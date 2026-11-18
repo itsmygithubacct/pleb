@@ -95,10 +95,15 @@ class OpenboxProfileTests(unittest.TestCase):
         commands = [e.text for e in self.tree.findall(".//o:command", NS)]
         self.assertEqual(commands, ["pleb-lock", "pleb-lock"])
 
-    def test_no_application_rules_and_kilix_is_not_pinned_above(self):
+    def test_only_the_rescue_terminal_has_an_application_rule_and_kilix_is_not_pinned_above(self):
         # Pinning Kilix to the 'above' layer would recreate the exact bug this
         # integration fixes: a focused browser permanently behind the terminal.
-        self.assertEqual(self.tree.findall(".//o:applications/o:application", NS), [])
+        rules = self.tree.findall(".//o:applications/o:application", NS)
+        # Exactly one rule, for the rescue terminal. Everything else keeps
+        # focusNew off (test_focus_and_placement_policy), and no rule pins a layer.
+        self.assertEqual([r.attrib for r in rules], [{"name": "pleb-recovery"}])
+        self.assertEqual([c.tag.split("}")[1] + "=" + (c.text or "").strip() for c in rules[0]],
+                         ["focus=yes"])
         # parsed elements only — the header comment discusses the 'above' layer
         # precisely to explain why it is not used
         layers = [e.text for e in self.tree.findall(".//o:layer", NS)]
