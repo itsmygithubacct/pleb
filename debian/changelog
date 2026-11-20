@@ -1,3 +1,11 @@
+pleb (0.2.3+packaging2) UNRELEASED; urgency=medium
+
+  * On a packaged install, pleb status and pleb doctor no longer tell the
+    operator to run pleb install. pleb update runs apt, and rollback is the
+    previous frozen suite. The settings command is /usr/bin/kilix-settings.
+
+ -- itsmygithubacct <itsmygithubacct@users.noreply.github.com>  Fri, 20 Nov 2026 22:13:00 +0000
+
 pleb (0.2.3+packaging1) UNRELEASED; urgency=medium
 
   * Add the pleb package: the tree in /usr/lib/pleb with a PACKAGED marker,

@@ -72,15 +72,29 @@ wm_check_name() {
 cmd_status() {
     log "Pleb kiosk desktop — status"
     local eng="$KILIX_DEFAULT"
+    local install_hint="run: pleb install" bootstrap_hint="  (run $KILIX_DIR/bootstrap.sh)"
+    local missing_tool="missing ($install_hint)" settings_missing="command not linked"
+    local profile_match="  (matches checkout)" tmux_tui="$TMUX_TUI_BIN" tmux_cli="$TMUX_CLI_BIN"
+    if [ "$PLEB_PACKAGED" = 1 ]; then
+        install_hint=""
+        bootstrap_hint=""
+        missing_tool="not installed"
+        settings_missing="command not installed at $KILIX_SETTINGS_LINK"
+        profile_match=""
+        if [ -f "$TMUX_TUI_LINK" ] && [ -x "$TMUX_TUI_LINK" ]; then tmux_tui="$TMUX_TUI_LINK"; fi
+        if [ -f "$TMUX_CLI_LINK" ] && [ -x "$TMUX_CLI_LINK" ]; then tmux_cli="$TMUX_CLI_LINK"; fi
+    fi
     if [ -x "$eng" ] && "$eng" --which >/dev/null 2>&1; then
         info "engine   : $("$eng" --which 2>/dev/null | tail -1)  [$eng]"
+    elif [ "$PLEB_PACKAGED" = 1 ] && [ ! -x "$eng" ]; then
+        info "engine   : not installed at $eng"
     else
-        info "engine   : NOT RUNNABLE at $eng  (run $KILIX_DIR/bootstrap.sh)"
+        info "engine   : NOT RUNNABLE at $eng$bootstrap_hint"
     fi
     if [ -f "$XSESSION_DST" ]; then info "session  : installed ($XSESSION_DST)"
-    else info "session  : not installed  (run: pleb install)"; fi
+    else info "session  : not installed${install_hint:+  ($install_hint)}"; fi
     if [ -x "$SESSION_BIN_DST" ] && ! cmp -s "$PLEB_BIN_SRC" "$SESSION_BIN_DST"; then
-        info "launcher : $SESSION_BIN_DST  (STALE: differs from $PLEB_BIN_SRC — run: pleb install)"
+        info "launcher : $SESSION_BIN_DST  (STALE: differs from $PLEB_BIN_SRC${install_hint:+ — $install_hint})"
     elif [ -x "$SESSION_BIN_DST" ]; then info "launcher : $SESSION_BIN_DST"
     else info "launcher : not installed"; fi
     local wm_mode wm_desc openbox_bin wm_name
@@ -94,11 +108,11 @@ cmd_status() {
     esac
     info "wm       : $wm_desc"
     if [ -n "$openbox_bin" ]; then info "openbox  : $openbox_bin"
-    else info "openbox  : not installed  (run: pleb install)"; fi
+    else info "openbox  : not installed${install_hint:+  ($install_hint)}"; fi
     if [ ! -f "$OPENBOX_CONFIG_DST" ]; then
-        info "wm config: not installed  (run: pleb install)"
+        info "wm config: not installed${install_hint:+  ($install_hint)}"
     elif cmp -s "$OPENBOX_CONFIG_SRC" "$OPENBOX_CONFIG_DST"; then
-        info "wm config: $OPENBOX_CONFIG_DST  (matches checkout)"
+        info "wm config: $OPENBOX_CONFIG_DST$profile_match"
     else
         info "wm config: $OPENBOX_CONFIG_DST  (STALE: differs from $OPENBOX_CONFIG_SRC)"
     fi
@@ -115,19 +129,22 @@ cmd_status() {
     if [ -x "$KILIX_SETTINGS_LINK" ]; then
         info "settings : $GPU_TERMINAL_SETTINGS_FILE  [$KILIX_SETTINGS_LINK]"
     else
-        info "settings : $GPU_TERMINAL_SETTINGS_FILE  (command not linked)"
+        info "settings : $GPU_TERMINAL_SETTINGS_FILE  ($settings_missing)"
     fi
-    if [ -L "$KILIX_LINK" ]; then info "kilix cmd: $KILIX_LINK -> $(readlink "$KILIX_LINK")"
+    if [ "$PLEB_PACKAGED" = 1 ]; then
+        if [ -f "$KILIX_LINK" ] && [ -x "$KILIX_LINK" ]; then info "kilix cmd: $KILIX_LINK"
+        else info "kilix cmd: not installed at $KILIX_LINK"; fi
+    elif [ -L "$KILIX_LINK" ]; then info "kilix cmd: $KILIX_LINK -> $(readlink "$KILIX_LINK")"
     else info "kilix cmd: not linked (run: pleb install)"; fi
     if [ -x "$KILIX_TEMPS_BIN" ] && [ -x "$KILIX_MEMORY_BIN" ]; then
         info "tools    : Temps and Memory installed from kilix-tui-utils"
     else
-        info "tools    : Temps or Memory missing (run: pleb install)"
+        info "tools    : Temps or Memory $missing_tool"
     fi
-    if [ -x "$TMUX_TUI_BIN" ] && [ -x "$TMUX_CLI_BIN" ]; then
-        info "tmux     : manager $TMUX_TUI_BIN; cli alias $TMUX_CLI_BIN"
+    if [ -x "$tmux_tui" ] && [ -x "$tmux_cli" ]; then
+        info "tmux     : manager $tmux_tui; cli alias $tmux_cli"
     else
-        info "tmux     : manager or tb alias missing (run: pleb install)"
+        info "tmux     : manager or tb alias $missing_tool"
     fi
     if desktop_enabled; then
         info "desktop  : enabled via ${KILIX_DESKTOP_PROVIDER:-auto}${KILIX_DESKTOP_NAME:+ ($KILIX_DESKTOP_NAME)}"
@@ -242,11 +259,18 @@ print(settings.stt_model())
 
 cmd_doctor() {
     local ok=1
+    local install_hint=" — run: pleb install" bootstrap_hint=" — run: $KILIX_DIR/bootstrap.sh"
+    if [ "$PLEB_PACKAGED" = 1 ]; then
+        install_hint=""
+        bootstrap_hint=""
+    fi
     log "checking prerequisites"
     if [ -x "$KILIX_DEFAULT" ] && "$KILIX_DEFAULT" --which >/dev/null 2>&1; then
         info "[ok]  kilix engine: $("$KILIX_DEFAULT" --which 2>/dev/null | tail -1)"
+    elif [ "$PLEB_PACKAGED" = 1 ] && [ ! -x "$KILIX_DEFAULT" ]; then
+        info "[!!]  kilix engine not installed at $KILIX_DEFAULT"; ok=0
     else
-        info "[!!]  kilix engine not runnable at $KILIX_DEFAULT — run: $KILIX_DIR/bootstrap.sh"; ok=0
+        info "[!!]  kilix engine not runnable at $KILIX_DEFAULT$bootstrap_hint"; ok=0
     fi
     for t in Xorg startx xset xsetroot xprop; do
         if command -v "$t" >/dev/null 2>&1; then info "[ok]  $t"; else info "[!!]  missing: $t"; ok=0; fi
@@ -261,7 +285,7 @@ cmd_doctor() {
             else info "[--]  openbox absent — the session falls back to the no-WM fixed geometry"; fi ;;
         openbox)
             if command -v openbox >/dev/null 2>&1; then info "[ok]  openbox: $(command -v openbox)"
-            else info "[!!]  PLEB_WM=openbox but openbox is not installed — run: pleb install"; ok=0; fi ;;
+            else info "[!!]  PLEB_WM=openbox but openbox is not installed$install_hint"; ok=0; fi ;;
         *)
             # PLEB_WM is a command vector here; an all-whitespace value parses to
             # an empty array, so check the length before indexing it.
@@ -278,17 +302,17 @@ cmd_doctor() {
         if cmp -s "$OPENBOX_CONFIG_SRC" "$OPENBOX_CONFIG_DST"; then
             info "[ok]  openbox profile matches $OPENBOX_CONFIG_SRC"
         else
-            info "[!!]  openbox profile differs from $OPENBOX_CONFIG_SRC — run: pleb install"; ok=0
+            info "[!!]  openbox profile differs from $OPENBOX_CONFIG_SRC$install_hint"; ok=0
         fi
     else
-        info "[!!]  openbox profile not installed at $OPENBOX_CONFIG_DST — run: pleb install"; ok=0
+        info "[!!]  openbox profile not installed at $OPENBOX_CONFIG_DST$install_hint"; ok=0
     fi
     if [ ! -x "$SESSION_BIN_DST" ]; then
         info "[--]  session launcher not installed at $SESSION_BIN_DST"
     elif cmp -s "$PLEB_BIN_SRC" "$SESSION_BIN_DST"; then
         info "[ok]  installed session launcher matches $PLEB_BIN_SRC"
     else
-        info "[!!]  installed session launcher $SESSION_BIN_DST is stale (differs from $PLEB_BIN_SRC) — run: pleb install"; ok=0
+        info "[!!]  installed session launcher $SESSION_BIN_DST is stale (differs from $PLEB_BIN_SRC)$install_hint"; ok=0
     fi
     if [ -n "${DISPLAY:-}" ]; then
         if ! command -v xprop >/dev/null 2>&1; then
@@ -306,7 +330,7 @@ cmd_doctor() {
     if [ -x "$KILIX_TEMPS_BIN" ] && [ -x "$KILIX_MEMORY_BIN" ]; then
         info "[ok]  Kilix Temps and Memory dashboards"
     else
-        info "[!!]  Kilix Temps or Memory is not installed — run: pleb install"; ok=0
+        info "[!!]  Kilix Temps or Memory is not installed$install_hint"; ok=0
     fi
     if command -v Xephyr >/dev/null 2>&1; then info "[ok]  Xephyr (nested testing)"
     else info "[--]  Xephyr absent — 'pleb test' will use a spare VT instead"; fi
@@ -350,9 +374,10 @@ main() {
                         *)   die "usage: pleb kiosk on | off" ;;
                     esac ;;
         update)     if [ "$PLEB_PACKAGED" = 1 ]; then
-                        die "Pleb is installed from Debian packages; update with: sudo apt update && sudo apt upgrade"
-                    fi
-                    do_update "$@" ;;
+                        do_packaged_update "$@"
+                    else
+                        do_update "$@"
+                    fi ;;
         status)     cmd_status ;;
         doctor)     cmd_doctor ;;
         screen-size|font-size)

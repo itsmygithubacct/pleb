@@ -904,10 +904,9 @@ install_capture_portal() {
         /usr/local/share/xdg-desktop-portal/portals/pleb.portal
     run_root install -D -m 0644 "$PLEB_ROOT/share/portals/org.freedesktop.impl.portal.desktop.pleb.service" \
         /usr/local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.pleb.service
-    # The distribution owns this audio/video policy. A standalone Pleb install
-    # uses its host's session manager and must not change another desktop's
-    # WirePlumber profile or portal preferences.
-    if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ]; then
+    # A managed checkout installs the policy that plebian-desktop-base ships
+    # on packaged systems. Standalone installs use the host desktop policy.
+    if [ "${PLEBIAN_OS_MANAGED_INSTALL:-0}" = 1 ] && [ "${PLEB_PACKAGED:-0}" != 1 ]; then
         run_root install -D -m 0644 "$PLEB_ROOT/share/portals/50pleb-video-only.conf" \
             /etc/wireplumber/wireplumber.conf.d/50pleb-video-only.conf
         run_root install -D -m 0644 "$PLEB_ROOT/share/portals/pleb-portals.conf" \

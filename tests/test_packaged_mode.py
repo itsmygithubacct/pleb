@@ -89,6 +89,9 @@ PACKAGED_DESTINATIONS = {
     "PLEB_LOCK_DST": "/usr/bin/pleb-lock",
     "LID_POLICY_DST": "/usr/lib/systemd/logind.conf.d/50-pleb-lid.conf",
     "KILIX_LINK": "/usr/bin/kilix",
+    "KILIX_SETTINGS_LINK": "/usr/bin/kilix-settings",
+    "TMUX_TUI_LINK": "/usr/bin/tmux-tui",
+    "TMUX_CLI_LINK": "/usr/bin/tb",
     "PLEB_LINK": "/usr/bin/pleb",
     "PLEB_RECOVERY_DOC_DST": "/usr/share/pleb/RECOVERY.md",
     "NOTIFICATION_THEME_DST": "/usr/share/themes/Smoke/xfce-notify-4.0/gtk.css",
@@ -106,10 +109,11 @@ class DetectionTests(Fixture):
         self.assertEqual(values, PACKAGED_DESTINATIONS)
 
     def test_an_unmarked_tree_keeps_the_checkout_destinations(self):
-        values = self.common("PLEB_PACKAGED", "SESSION_BIN_DST", "PLEB_LINK")
+        values = self.common("PLEB_PACKAGED", "SESSION_BIN_DST", "PLEB_LINK", "KILIX_SETTINGS_LINK")
         self.assertEqual(values, {"PLEB_PACKAGED": "0",
                                   "SESSION_BIN_DST": "/usr/local/bin/pleb-session",
-                                  "PLEB_LINK": "/usr/local/bin/pleb"})
+                                  "PLEB_LINK": "/usr/local/bin/pleb",
+                                  "KILIX_SETTINGS_LINK": "/usr/local/bin/kilix-settings"})
 
     def test_a_checkout_or_a_symlinked_marker_is_not_packaged(self):
         self.mark()
@@ -158,15 +162,75 @@ class CommandTests(Fixture):
         self.assertIn("unsafe Kilix settings TUI", result.stderr)
         self.assertFalse((self.home / ".local/gpu_terminal/settings.conf").exists())
 
-    def test_update_and_uninstall_defer_to_apt(self):
+    def test_uninstall_defers_to_apt(self):
         self.mark()
-        for command, hint in (("update", "sudo apt update && sudo apt upgrade"),
-                              ("uninstall", "sudo apt remove pleb")):
-            with self.subTest(command=command):
-                result = self.pleb(command)
-                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                self.assertIn(hint, result.stderr)
+        result = self.pleb("uninstall")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("sudo apt remove pleb", result.stderr)
         self.assertEqual(self.privileged_calls(), [])
+
+    def test_update_forwards_arguments_and_exit_status_to_the_selected_updater(self):
+        # Load the real CLI, then substitute recorders for both update backends.
+        script = ('source "$1/bin/pleb" version >/dev/null; shift; '
+                  'unset -f do_update do_packaged_update; main update "$@"')
+        for backend in ("do_update", "do_packaged_update"):
+            stub = self.stubs / backend
+            stub.write_text('#!/bin/sh\nprintf "<%s>\\n" "${0##*/}" "$@"\nexit 23\n')
+            stub.chmod(0o755)
+        for packaged, expected in ((False, "do_update"), (True, "do_packaged_update")):
+            with self.subTest(packaged=packaged):
+                if packaged:
+                    self.mark()
+                result = subprocess.run(
+                    ["bash", "-c", script, "sh", str(self.tree), "--dry-run", "two words", ""],
+                    env=self.env(), capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(result.returncode, 23, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), [f"<{expected}>", "<--dry-run>", "<two words>", "<>"])
+
+    def test_packaged_diagnostics_describe_missing_files_without_checkout_advice(self):
+        absent = str(self.base / "absent")
+        paths = dict(XSESSION_DST=absent, OPENBOX_CONFIG_DST=absent, KILIX_LINK=absent,
+                     KILIX_SETTINGS_LINK=absent, TMUX_TUI_LINK=absent, TMUX_CLI_LINK=absent)
+        for command in ("status", "doctor"):
+            self.assertIn("run: pleb install", self.pleb(command, **paths).stdout)
+        self.mark()
+        for command, code in (("status", 0), ("doctor", 1)):
+            with self.subTest(command=command):
+                result = self.pleb(command, **paths)
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertNotIn("run: pleb install", result.stdout + result.stderr)
+                self.assertIn("not installed", result.stdout)
+                if command == "status":
+                    self.assertIn(f"kilix cmd: not installed at {absent}", result.stdout)
+                    self.assertIn(f"command not installed at {absent}", result.stdout)
+                    self.assertIn("tmux     : manager or tb alias not installed", result.stdout)
+
+    def test_packaged_status_accepts_executables_symlinks_and_per_user_tmux(self):
+        self.mark()
+        kilix = self.stubs / "kilix"
+        manager = self.stubs / "tmux-tui"
+        cli = self.stubs / "tb"
+        for exe in (kilix, manager, cli):
+            exe.write_text("#!/bin/sh\nexit 0\n")
+            exe.chmod(0o755)
+        paths = dict(KILIX_LINK=str(kilix), TMUX_TUI_LINK=str(manager), TMUX_CLI_LINK=str(cli))
+        result = self.pleb("status", **paths)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"kilix cmd: {kilix}", result.stdout)
+        self.assertIn(f"manager {manager}; cli alias {cli}", result.stdout)
+
+        target = self.kilix / "kilix"
+        kilix.rename(target)
+        kilix.symlink_to(target)
+        local_cli = self.home / ".local/bin/tb"
+        local_cli.parent.mkdir(parents=True)
+        cli.rename(local_cli)
+        result = self.pleb("status", **paths)
+        self.assertIn(f"kilix cmd: {kilix}", result.stdout)
+        self.assertIn(f"manager {manager}; cli alias {local_cli}", result.stdout)
+        target.unlink()
+        self.assertIn(f"kilix cmd: not installed at {kilix}", self.pleb("status", **paths).stdout)
 
     def test_an_unmarked_install_still_takes_the_checkout_path(self):
         # PLEB_SKIP_DEPS keeps apt out; the first root step reaches the stub.

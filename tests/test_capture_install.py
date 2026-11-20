@@ -11,9 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CaptureInstallTests(unittest.TestCase):
-    def install(self, target, managed, *, compiler="cc", success=True):
+    def install(self, target, managed, *, source=ROOT, compiler="cc", success=True):
         env = clean_env(target, PLEBIAN_OS_MANAGED_INSTALL=str(int(managed)),
-                        FIXTURE_ROOT=str(target), PLEB_ROOT=str(ROOT), CC=compiler)
+                        FIXTURE_ROOT=str(target), PLEB_ROOT=str(source), CC=compiler)
         script = self.install_script()
         result = subprocess.run(["bash", "-c", script], env=env, cwd=ROOT, capture_output=True, text=True)
         if success:
@@ -157,7 +157,7 @@ install_capture_portal
         self.assertIn("for module in $PLEB_CAPTURE_MODULES; do", uninstall)
         self.assertNotIn("/usr/local/lib/pleb/capture_portal.py", uninstall)
 
-    def test_distribution_installs_explicit_capture_and_video_only_policy(self):
+    def test_managed_checkout_installs_explicit_capture_and_video_only_policy(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
             self.install(target, True)
@@ -167,6 +167,21 @@ install_capture_portal
             self.assertIn("org.freedesktop.impl.portal.ScreenCast=pleb", preferences)
             self.assertIn("org.freedesktop.impl.portal.Screenshot=pleb", preferences)
             self.assertIn("default=gtk", preferences)
+
+    def test_managed_package_preserves_the_installed_desktop_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "root"
+            source = Path(directory) / "pleb"
+            shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(".git", "__pycache__", "tests", "debian"))
+            (source / "PACKAGED").write_text("deb\n")
+            files = [target / "etc/wireplumber/wireplumber.conf.d/50pleb-video-only.conf",
+                     target / "etc/xdg-desktop-portal/pleb-portals.conf"]
+            for path in files:
+                path.parent.mkdir(parents=True)
+                path.write_text("locally configured\n")
+            self.install(target, True, source=source)
+            for path in files:
+                self.assertEqual(path.read_text(), "locally configured\n")
 
     def test_failed_transport_build_preserves_the_installed_backend(self):
         with tempfile.TemporaryDirectory() as directory:

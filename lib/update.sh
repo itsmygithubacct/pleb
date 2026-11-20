@@ -1734,6 +1734,49 @@ _rebuild_kilix_fork() {
     log "fork rebuilt."
 }
 
+do_packaged_update() {
+    local rollback="To roll back, install the previous release's frozen suite. Only checkout updates create a recovery snapshot."
+    local arg package status _UPDATE_RESTART=no
+    local -a installed_packages=() apt_options=()
+
+    if [ "$#" -eq 1 ]; then
+        case "$1" in
+            --check-source-checkouts) info "apt owns updates on this packaged installation."; return 0 ;;
+            --recover-interrupted|--rollback) die "$rollback" ;;
+            -h|--help)
+                info "Usage: pleb update [-y|--yes] [--no-restart|--restart]"
+                info "       pleb update --check-source-checkouts"
+                info "$rollback"
+                return 0 ;;
+        esac
+    fi
+    for arg in "$@"; do
+        case "$arg" in
+            -y|--yes) apt_options=(-y) ;;
+            --restart) _UPDATE_RESTART=yes ;;
+            --no-restart) _UPDATE_RESTART=no ;;
+            *) die "unknown packaged update option or combination: $*" ;;
+        esac
+    done
+
+    for package in task-pleb-desktop pleb-desktop pleb kilix; do
+        if status="$(dpkg-query -W -f '${db:Status-Status}' "$package" 2>/dev/null)" \
+                && [ "$status" = installed ]; then
+            installed_packages+=("$package")
+        fi
+    done
+    [ "${#installed_packages[@]}" -gt 0 ] || die "No installed Pleb desktop packages found."
+    run_root apt-get update || return
+    LC_ALL=C apt-cache policy "${installed_packages[@]}" || return
+    info "apt-get upgrade can also upgrade other installed Debian packages."
+    # Preserve apt's automatic-install marks on the named dependencies.
+    run_root apt-get upgrade --only-upgrade "${apt_options[@]}" "${installed_packages[@]}" || return
+    info "$rollback"
+    if [ "$_UPDATE_RESTART" = yes ]; then
+        _offer_restart
+    fi
+}
+
 do_update() {
     _UPDATE_YES=0
     _UPDATE_RESTART=ask
