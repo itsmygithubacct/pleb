@@ -589,8 +589,12 @@ if [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] \
         || _pleb_notify_theme=""
     case "$_pleb_notify_theme" in
         ""|Default)
+            _pleb_notify_theme=Smoke
+            if [ -r /usr/share/themes/Pleb-Smoke/xfce-notify-4.0/gtk.css ]; then
+                _pleb_notify_theme=Pleb-Smoke
+            fi
             xfconf-query --channel xfce4-notifyd --property /theme \
-                --create --type string --set Smoke \
+                --create --type string --set "$_pleb_notify_theme" \
                 || echo "pleb-session: could not initialize dark notification theme" ;;
     esac
     unset _pleb_notify_theme

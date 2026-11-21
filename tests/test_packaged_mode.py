@@ -94,7 +94,7 @@ PACKAGED_DESTINATIONS = {
     "TMUX_CLI_LINK": "/usr/bin/tb",
     "PLEB_LINK": "/usr/bin/pleb",
     "PLEB_RECOVERY_DOC_DST": "/usr/share/pleb/RECOVERY.md",
-    "NOTIFICATION_THEME_DST": "/usr/share/themes/Smoke/xfce-notify-4.0/gtk.css",
+    "NOTIFICATION_THEME_DST": "/usr/share/themes/Pleb-Smoke/xfce-notify-4.0/gtk.css",
 }
 
 
@@ -109,11 +109,18 @@ class DetectionTests(Fixture):
         self.assertEqual(values, PACKAGED_DESTINATIONS)
 
     def test_an_unmarked_tree_keeps_the_checkout_destinations(self):
-        values = self.common("PLEB_PACKAGED", "SESSION_BIN_DST", "PLEB_LINK", "KILIX_SETTINGS_LINK")
+        values = self.common("PLEB_PACKAGED", "SESSION_BIN_DST", "PLEB_LINK", "KILIX_SETTINGS_LINK",
+                             "NOTIFICATION_THEME_DST")
         self.assertEqual(values, {"PLEB_PACKAGED": "0",
                                   "SESSION_BIN_DST": "/usr/local/bin/pleb-session",
                                   "PLEB_LINK": "/usr/local/bin/pleb",
-                                  "KILIX_SETTINGS_LINK": "/usr/local/bin/kilix-settings"})
+                                  "KILIX_SETTINGS_LINK": "/usr/local/bin/kilix-settings",
+                                  "NOTIFICATION_THEME_DST": "/usr/local/share/themes/Smoke/xfce-notify-4.0/gtk.css"})
+
+    def test_package_stages_its_own_notification_theme(self):
+        rules = (ROOT / "debian/rules").read_text()
+        self.assertIn("$(P)" + PACKAGED_DESTINATIONS["NOTIFICATION_THEME_DST"], rules)
+        self.assertNotIn("/usr/share/themes/Smoke/xfce-notify-4.0/gtk.css", rules)
 
     def test_a_checkout_or_a_symlinked_marker_is_not_packaged(self):
         self.mark()
@@ -268,6 +275,35 @@ class SessionPathTests(unittest.TestCase):
         "/usr/local/share/doc/pleb/RECOVERY.md": "/usr/local/share/doc/pleb/RECOVERY.md",
         "/opt/fixture/screensaver.py": "/opt/fixture/screensaver.py",
     }
+
+    def test_notification_theme_selection(self):
+        text = (ROOT / "bin/pleb-session").read_text()
+        start = text.index("# --- notification appearance")
+        end = text.index("# --- clipboard ownership", start)
+        block = text[start:end].replace("/usr/share/themes/", '"$1"/')
+        query = r'''xfconf-query() {
+    case "$*" in
+        "--channel xfce4-notifyd --property /theme") printf '%s\n' "$CURRENT_THEME" ;;
+        "--channel xfce4-notifyd --property /theme --create --type string --set "*) printf '%s\n' "$9" ;;
+        *) return 1 ;;
+    esac
+}
+'''
+        for available, default in (((), None), (("Pleb-Smoke",), None),
+                                   (("Smoke",), "Smoke"), (("Smoke", "Pleb-Smoke"), "Pleb-Smoke")):
+            themes = self.tree / ("+".join(available) or "empty")
+            for name in available:
+                css = themes / name / "xfce-notify-4.0/gtk.css"
+                css.parent.mkdir(parents=True)
+                css.touch()
+            for current, expected in (("", default), ("Default", default),
+                                      ("Smoke", None), ("Retro", None), ("Pleb-Smoke", None)):
+                with self.subTest(available=available, current=current):
+                    result = subprocess.run(
+                        ["bash", "-uc", query + block, "sh", str(themes)],
+                        env={"PATH": os.defpath, "CURRENT_THEME": current, "DBUS_SESSION_BUS_ADDRESS": "stub"},
+                        capture_output=True, text=True, check=True, timeout=10)
+                    self.assertEqual(result.stdout.splitlines(), [expected] if expected else [])
 
     def test_without_the_marker_nothing_is_mapped(self):
         for path in self.CASES:

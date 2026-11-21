@@ -240,7 +240,7 @@ if [ "$PLEB_PACKAGED" = 1 ]; then
     PLEB_LINK="${PLEB_LINK:-/usr/bin/pleb}"
     PLEB_RECOVERY_DOC_DST="${PLEB_RECOVERY_DOC_DST:-/usr/share/pleb/RECOVERY.md}"
     OPENBOX_CONFIG_DST="${OPENBOX_CONFIG_DST:-$PLEB_ROOT/share/openbox/rc.xml}"
-    NOTIFICATION_THEME_DST="${NOTIFICATION_THEME_DST:-/usr/share/themes/Smoke/xfce-notify-4.0/gtk.css}"
+    NOTIFICATION_THEME_DST="${NOTIFICATION_THEME_DST:-/usr/share/themes/Pleb-Smoke/xfce-notify-4.0/gtk.css}"
 fi
 SESSION_BIN_DST="${SESSION_BIN_DST:-/usr/local/bin/pleb-session}"
 PLEB_LOCK_DST="${PLEB_LOCK_DST:-/usr/local/bin/pleb-lock}"

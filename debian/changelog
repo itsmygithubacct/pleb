@@ -1,3 +1,10 @@
+pleb (0.2.3+packaging3) UNRELEASED; urgency=medium
+
+  * Ship the notification stylesheet as Pleb-Smoke so xfce4-notifyd keeps
+    its Smoke stylesheet.
+
+ -- itsmygithubacct <itsmygithubacct@users.noreply.github.com>  Sat, 21 Nov 2026 13:23:01 +0000
+
 pleb (0.2.3+packaging2) UNRELEASED; urgency=medium
 
   * On a packaged install, pleb status and pleb doctor no longer tell the
